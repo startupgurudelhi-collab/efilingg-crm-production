@@ -258,11 +258,11 @@ Rahul Roy,8823456711,rahul@royco.in,Roy Logistics,Company Registration,LinkedIn 
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const text = event.target?.result as string;
-      const ok = restoreBackupData(text, currentUserId);
+      const ok = await restoreBackupData(text, currentUserId);
       if (ok) {
-        setSuccessMessage('Database state successfully loaded and synchronised.');
+        setSuccessMessage('Database state successfully loaded and synchronised on central server.');
         onRefreshData();
       } else {
         setErrorMessage('File signature is invalid or corrupt. Restoration skipped.');

@@ -1692,21 +1692,113 @@ export function generateBackupData(): string {
   return JSON.stringify(backup, null, 2);
 }
 
-export function restoreBackupData(jsonDataStr: string, adminUserId: string): boolean {
+export async function restoreBackupData(jsonDataStr: string, adminUserId: string): Promise<boolean> {
   try {
-    const data = JSON.parse(jsonDataStr);
-    if (!data.employees || !data.leads || !data.followups) {
+    const rawData = JSON.parse(jsonDataStr);
+    
+    // Build a flat dictionary of keys and stringified values
+    const payload: Record<string, string> = {};
+
+    // 1. Check if it's a server exported backup containing "files"
+    if (rawData.files && typeof rawData.files === 'object') {
+      const files = rawData.files;
+      for (const key of Object.keys(files)) {
+        if (key.startsWith('efilingg_crm_')) {
+          const val = files[key];
+          payload[key] = typeof val === 'string' ? val : JSON.stringify(val);
+        }
+      }
+    } 
+    
+    // 2. Check if it contains direct flat "efilingg_crm_" keys at the root
+    let hasFlatKeys = false;
+    for (const key of Object.keys(rawData)) {
+      if (key.startsWith('efilingg_crm_')) {
+        hasFlatKeys = true;
+        const val = rawData[key];
+        payload[key] = typeof val === 'string' ? val : JSON.stringify(val);
+      }
+    }
+
+    // 3. Otherwise, check standard entities at the root (employees, leads, followups, etc.)
+    if (!hasFlatKeys && Object.keys(payload).length === 0) {
+      if (!rawData.employees || !rawData.leads || !rawData.followups) {
+        return false;
+      }
+
+      // Convert standard keys to efilingg_crm_ keys
+      const mapping: Record<string, string> = {
+        employees: 'employees',
+        leads: 'leads',
+        followups: 'followups',
+        history: 'history',
+        transfers: 'transfers',
+        proposals: 'proposals',
+        notifications: 'notifications',
+        logs: 'logs',
+        services: 'services',
+        proposaltemplate: 'proposaltemplate',
+        offerlettertemplate: 'offerlettertemplate',
+        historical_payroll: 'historical_payroll',
+        attendance: 'attendance',
+        attendance_audit: 'attendance_audit',
+        team_leader_mappings: 'team_leader_mappings',
+        leave_requests: 'leave_requests',
+        resignations: 'resignations',
+        chat_conversations: 'chat_conversations',
+        chat_messages: 'chat_messages',
+        chat_announcements: 'chat_announcements',
+        chat_tasks: 'chat_tasks',
+        chat_notifications: 'chat_notifications',
+        chat_audit_logs: 'chat_audit_logs'
+      };
+
+      for (const [rawKey, suffix] of Object.entries(mapping)) {
+        if (rawData[rawKey]) {
+          const val = rawData[rawKey];
+          const dbKey = `efilingg_crm_${suffix}`;
+          payload[dbKey] = typeof val === 'string' ? val : JSON.stringify(val);
+        }
+      }
+    }
+
+    if (Object.keys(payload).length === 0) {
       return false;
     }
 
-    setStorageString(KEY_EMPLOYEES, JSON.stringify(data.employees));
-    setStorageString(KEY_LEADS, JSON.stringify(data.leads));
-    setStorageString(KEY_FOLLOWUPS, JSON.stringify(data.followups));
-    if (data.history) setStorageString(KEY_HISTORY, JSON.stringify(data.history));
-    if (data.transfers) setStorageString(KEY_TRANSFERS, JSON.stringify(data.transfers));
-    if (data.proposals) setStorageString(KEY_PROPOSALS, JSON.stringify(data.proposals));
-    if (data.notifications) setStorageString(KEY_NOTIFICATIONS, JSON.stringify(data.notifications));
-    if (data.logs) setStorageString(KEY_LOGS, JSON.stringify(data.logs));
+    // First save all of them locally in crmMemoryStore and also localStorage for those keys
+    // to update the local client state instantly
+    for (const [key, val] of Object.entries(payload)) {
+      if (key.includes('_theme') || key.includes('_is_fresh_load') || key === 'efilingg_crm_session' || key.includes('good_practice_shown_')) {
+        localStorage.setItem(key, val);
+      } else {
+        crmMemoryStore[key] = val;
+      }
+    }
+
+    // If PostgreSQL is active and configured, post the bulk payload in a single transact step
+    try {
+      const res = await fetch('/api/postgres/status');
+      const statusData = await res.json();
+      if (statusData && statusData.success && statusData.enabled && statusData.isConnected) {
+        console.log('[Database Sync] Backup Restore: Database detected. Writing all keys into Postgres bulk transactional route.');
+        const importRes = await fetch('/api/admin/backup-import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ backup: { files: payload } })
+        });
+        const importData = await importRes.json();
+        if (!importData || !importData.success) {
+          console.warn('[Database Sync] PostgreSQL bulk import failed:', importData);
+        } else {
+          console.log(`[Database Sync] Successfully pushed ${importData.restoredCount} keys directly to central PostgreSQL database.`);
+        }
+      } else {
+        console.log('[Database Sync] PostgreSQL not active/configured. Skip bulk write.');
+      }
+    } catch (pgError) {
+      console.warn('[Database Sync] Failed to execute central PostgreSQL transaction:', pgError);
+    }
 
     const admin = getEmployeeById(adminUserId);
     writeActivityLog(
@@ -1714,7 +1806,7 @@ export function restoreBackupData(jsonDataStr: string, adminUserId: string): boo
       admin?.name || 'Admin',
       admin?.role || 'admin',
       'Database Restored',
-      `Complete database backup restored by Admin. Backup date was ${data.backupDate || 'Unknown'}`
+      `Complete database backup restored by Admin. Backup contains ${Object.keys(payload).length} keys.`
     );
 
     return true;

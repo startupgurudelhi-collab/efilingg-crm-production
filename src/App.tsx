@@ -54,12 +54,7 @@ function AppContent() {
         localStorage.setItem('efilingg_crm_is_fresh_load', 'true');
       }
 
-      // 1. Initial Local Setup so DB is ready instantly
-      initializeDB();
-      if (!active) return;
-      setSessionUser(getCurrentSession());
-
-      // 2. Perform background pull from PostgreSQL database to load synced cloud data
+      // 1. Prioritize PostgreSQL initialization first so it becomes the primary source of truth
       try {
         const { initializePostgresSync, subscribeToSync } = await import('./lib/postgresSync');
         if (!active) return;
@@ -71,15 +66,19 @@ function AppContent() {
           setSyncError(meta.errorMessage);
         });
 
+        // Initialize and hydrate the memory cache with remote Postgres values BEFORE checking session/initializing
         await initializePostgresSync();
-        if (!active) return;
-        
-        // Refresh session user in case employee passwords/details changed on cloud
-        setSessionUser(getCurrentSession());
-        handleRefreshAllData();
       } catch (err) {
-        console.warn('Supabase cloud sync background initialization deferred:', err);
+        console.warn('PostgreSQL sync initialization deferred/failed:', err);
+        // Fallback: Initialize with local defaults immediately in case of networking issues
+        initializeDB();
       }
+
+      if (!active) return;
+      // 2. Finalize local definitions with fallback seeds on uninitialized keys, then load session user
+      initializeDB();
+      setSessionUser(getCurrentSession());
+      handleRefreshAllData();
     };
 
     runSyncAndInit();

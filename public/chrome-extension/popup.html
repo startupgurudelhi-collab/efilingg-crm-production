@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      width: 320px;
+      background-color: #f8fafc;
+      color: #0f172a;
+    }
+    .header {
+      background: linear-gradient(135deg, #022c22 0%, #047857 100%);
+      color: #ffffff;
+      padding: 16px;
+      text-align: center;
+      border-bottom: 3px solid #10b981;
+    }
+    .header h2 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .header p {
+      margin: 4px 0 0 0;
+      font-size: 10px;
+      opacity: 0.8;
+      font-weight: 500;
+    }
+    .container {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .status-card {
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .status-title {
+      font-[10px];
+      font-weight: 700;
+      color: #64748b;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+    .status-badge {
+      font-size: 12px;
+      font-weight: 700;
+      padding: 6px 10px;
+      border-radius: 8px;
+      color: #047857;
+      background-color: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      display: inline-block;
+      text-align: center;
+    }
+    .status-error {
+      color: #be123c;
+      background-color: #fff1f2;
+      border: 1px solid #fecdd3;
+    }
+    .client-detail {
+      font-size: 11px;
+      line-height: 1.4;
+    }
+    .client-detail span {
+      font-weight: 700;
+      color: #475569;
+    }
+    .grid-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    button, a.btn {
+      font-family: inherit;
+      box-sizing: border-box;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.2s;
+      text-decoration: none;
+      text-align: center;
+    }
+    .btn-primary {
+      color: #ffffff;
+      background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #4338ca 0%, #312e81 100%);
+    }
+    .btn-success {
+      color: #ffffff;
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    }
+    .btn-success:hover {
+      background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    }
+    .btn-secondary {
+      color: #334155;
+      background-color: #e2e8f0;
+    }
+    .btn-secondary:hover {
+      background-color: #cbd5e1;
+    }
+    .btn-danger {
+      color: #be123c;
+      background-color: #ffe4e6;
+    }
+    .btn-danger:hover {
+      background-color: #fecdd3;
+    }
+    .footer {
+      padding: 10px;
+      background-color: #f1f5f9;
+      border-top: 1px solid #e2e8f0;
+      text-align: center;
+      font-size: 9px;
+      color: #64748b;
+      font-weight: bold;
+    }
+    .copy-success {
+      color: #059669;
+      font-size: 9px;
+      font-weight: 700;
+      text-align: center;
+      margin-top: -4px;
+      height: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2>Efilingg CRM V2</h2>
+    <p>GST Portal Auto-Login Assistant</p>
+  </div>
+  
+  <div class="container">
+    <div class="status-card">
+      <div class="status-title">Active Assist Status</div>
+      <div id="status-display" class="status-badge">Checking connection...</div>
+      
+      <div id="client-info-section" class="client-detail" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #cbd5e1;">
+        <div><span>GSTIN:</span> <span id="info-gstin" style="font-family: monospace; font-weight: bold; font-size: 11.5px; color: #047857;">-</span></div>
+        <div><span>Username:</span> <span id="info-username" style="font-weight: bold;">-</span></div>
+      </div>
+    </div>
+    
+    <div id="copy-feedback" class="copy-success"></div>
+
+    <a href="https://services.gst.gov.in/services/login" target="_blank" class="btn btn-primary" id="open-portal-btn">
+      🌐 Open GST Portal Page
+    </a>
+    
+    <div class="grid-buttons">
+      <button class="btn btn-secondary" id="copy-user-btn" disabled>📋 Copy User</button>
+      <button class="btn btn-secondary" id="copy-pass-btn" disabled>🔏 Copy Pass</button>
+    </div>
+    
+    <button class="btn btn-danger" id="clear-session-btn" style="display: none;">
+      🗑️ Force Wipe Session
+    </button>
+  </div>
+  
+  <div class="footer">
+    Efilingg Corporate Security Systems &copy; 2026
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+{
+  "name": "efilingg-desktop-agent",
+  "version": "2.0.0",
+  "description": "Secure Offline Windows Utility for Efilingg CRM V2 GST Portal Autofill",
+  "main": "agent.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node agent.js",
+    "compile": "npx pkg . --targets node18-win-x64 --output bin/EfilinggDesktopAgent.exe",
+    "create-installer": "node generate-installer.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "uuid": "^9.0.1",
+    "ws": "^8.14.2"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
+  "bin": "agent.js",
+  "pkg": {
+    "assets": [
+      "config.template.json"
+    ]
+  }
+}

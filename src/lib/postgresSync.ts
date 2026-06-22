@@ -14,10 +14,28 @@ export let postgresConfigured = false;
 export let postgresConnected = false;
 export let postgresErrorMsg: string | null = null;
 
+async function safeFetchJson<T = any>(url: string, options?: RequestInit): Promise<T | null> {
+  try {
+    const res = await fetch(url, options);
+    if (!res.ok) {
+      console.warn(`[Database Sync safeFetchJson] HTTP error ${res.status} on ${url}`);
+      return null;
+    }
+    const contentType = res.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      console.warn(`[Database Sync safeFetchJson] non-JSON response from ${url}`);
+      return null;
+    }
+    return await res.json();
+  } catch (err) {
+    console.warn(`[Database Sync safeFetchJson] fetch error on ${url}:`, err);
+    return null;
+  }
+}
+
 export async function detectPostgresStatus(): Promise<boolean> {
   try {
-    const res = await fetch('/api/postgres/status');
-    const data = await res.json();
+    const data = await safeFetchJson<{ success: boolean; enabled: boolean; isConnected: boolean; errorMessage: string | null }>('/api/postgres/status');
     if (data && data.success) {
       postgresConfigured = data.enabled;
       postgresConnected = data.isConnected;
@@ -33,6 +51,11 @@ export async function detectPostgresStatus(): Promise<boolean> {
         updateSyncMeta({ status: 'connected', errorMessage: null });
       }
       return usePostgresSync;
+    } else {
+      postgresConfigured = false;
+      postgresConnected = false;
+      usePostgresSync = false;
+      updateSyncMeta({ status: 'error', errorMessage: 'Could not fetch database status configuration.' });
     }
   } catch (err: any) {
     console.error('[Database Sync Checker] Failed to verify state:', err);
@@ -158,17 +181,16 @@ export async function pushToPostgres(key: string, value: string): Promise<boolea
 
   activePushesCount++;
   try {
-    const res = await fetch('/api/postgres/push', {
+    const data = await safeFetchJson<{ success: boolean; error?: string }>('/api/postgres/push', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key, value })
     });
-    const data = await res.json();
     if (data && data.success) {
       updateSyncMeta({ status: 'connected', errorMessage: null, lastSyncedAt: new Date().toLocaleTimeString() });
       return true;
     } else {
-      updateSyncMeta({ status: 'error', errorMessage: data.error || 'Server push failed' });
+      updateSyncMeta({ status: 'error', errorMessage: data?.error || 'Server push failed (non-JSON or bad status)' });
       return false;
     }
   } catch (err: any) {
@@ -299,10 +321,9 @@ export async function pullFromPostgres(): Promise<boolean> {
 
   updateSyncMeta({ status: 'syncing', errorMessage: null });
   try {
-    const res = await fetch('/api/postgres/pull');
-    const apiResult = await res.json();
-    if (!apiResult.success) {
-      updateSyncMeta({ status: 'error', errorMessage: apiResult.error || 'Pull transaction failed' });
+    const apiResult = await safeFetchJson<{ success: boolean; rows?: any[]; error?: string }>('/api/postgres/pull');
+    if (!apiResult || !apiResult.success) {
+      updateSyncMeta({ status: 'error', errorMessage: apiResult?.error || 'Pull transaction failed (non-JSON or bad status)' });
       isCloudPullCompleted = true;
       initializeDB();
       return false;
@@ -321,35 +342,10 @@ export async function pullFromPostgres(): Promise<boolean> {
 
     for (const key of SYNC_KEYS) {
       const cloudVal = dbRowMap.get(key);
-      const localVal = crmMemoryStore[key] || null;
 
       if (cloudVal !== undefined && cloudVal !== null) {
-        // Hydrate the in-memory cache with cloud value
-        try {
-          if (localVal && localVal !== cloudVal) {
-            try {
-              const cloudParsed = JSON.parse(cloudVal);
-              const localParsed = JSON.parse(localVal);
-              if (Array.isArray(cloudParsed) && Array.isArray(localParsed)) {
-                if (key.endsWith('employees')) {
-                  const merged = mergeEmployeeLists(localParsed, cloudParsed);
-                  crmMemoryStore[key] = JSON.stringify(merged);
-                } else {
-                  const merged = mergeArraysCloudWins(localParsed as any[], cloudParsed as any[]);
-                  crmMemoryStore[key] = JSON.stringify(merged);
-                }
-              } else {
-                crmMemoryStore[key] = cloudVal;
-              }
-            } catch (e) {
-              crmMemoryStore[key] = cloudVal;
-            }
-          } else {
-            crmMemoryStore[key] = cloudVal;
-          }
-        } catch (e) {
-          console.error(`Failed to restore key ${key}:`, e);
-        }
+        // Hydrate the in-memory cache directly with the cloud value to prevent local seed contamination
+        crmMemoryStore[key] = cloudVal;
       }
     }
 

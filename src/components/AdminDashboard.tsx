@@ -1261,8 +1261,8 @@ export default function AdminDashboard({
                     onChange={(e) => setEmpDepartment(e.target.value)}
                     className="w-full p-2 bg-white dark:bg-slate-900 border border-indigo-200 dark:border-slate-800 rounded-xl text-xs text-indigo-700 dark:text-indigo-400 font-bold"
                   >
-                    <option value="SALES & MARKETING">SALES & MARKETING (V1 CRM)</option>
-                    <option value="OPERATION MANAGEMENT">OPERATION MANAGEMENT (V2 ERP)</option>
+                    <option value="SALES & MARKETING">SALES & MARKETING</option>
+                    <option value="OPERATION MANAGEMENT">OPERATION MANAGEMENT</option>
                   </select>
                 </div>
 

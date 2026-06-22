@@ -282,7 +282,7 @@ function AppContent() {
                       : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                 >
-                  💼 SALES & MARKETING COMPLIANCE (V1)
+                  💼 SALES & MARKETING COMPLIANCE
                 </button>
                 <button
                   onClick={() => setSelectedDepartmentView('ops')}
@@ -292,7 +292,7 @@ function AppContent() {
                       : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                 >
-                  ⚙️ OPERATION MANAGEMENT SYSTEM (V2)
+                  ⚙️ OPERATION MANAGEMENT SYSTEM
                 </button>
               </div>
               <div className="text-[9.5px] font-black font-mono uppercase tracking-widest text-slate-400">

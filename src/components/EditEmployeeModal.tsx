@@ -236,8 +236,8 @@ export default function EditEmployeeModal({ employee, onClose, onSave }: EditEmp
                   onChange={(e) => setDepartment(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl text-slate-850 dark:text-slate-101 font-bold text-indigo-600 dark:text-indigo-400"
                 >
-                  <option value="SALES & MARKETING">SALES & MARKETING (V1 CRM)</option>
-                  <option value="OPERATION MANAGEMENT">OPERATION MANAGEMENT (V2 ERP)</option>
+                  <option value="SALES & MARKETING">SALES & MARKETING</option>
+                  <option value="OPERATION MANAGEMENT">OPERATION MANAGEMENT</option>
                 </select>
               </div>
             </div>

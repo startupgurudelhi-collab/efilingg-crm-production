@@ -13,7 +13,7 @@ import {
   ChatAttachment
 } from '../types/chat';
 import { Employee } from '../types';
-import { getEmployees, getISTISOString } from './db';
+import { getEmployees, getISTISOString, crmMemoryStore } from './db';
 import { pushToPostgres } from './postgresSync';
 
 const STORAGE_PREFIX = 'efilingg_crm_';
@@ -25,6 +25,31 @@ const KEYS = {
   notifications: `${STORAGE_PREFIX}chat_notifications`,
   logs: `${STORAGE_PREFIX}chat_audit_logs`,
 };
+
+function getChatStorageItem(key: string): string | null {
+  const memoryVal = crmMemoryStore[key];
+  if (memoryVal !== undefined && memoryVal !== null) {
+    return memoryVal;
+  }
+  try {
+    const localVal = localStorage.getItem(key);
+    if (localVal) {
+      crmMemoryStore[key] = localVal;
+    }
+    return localVal;
+  } catch (e) {
+    return null;
+  }
+}
+
+function setChatStorageItem(key: string, value: string) {
+  crmMemoryStore[key] = value;
+  try {
+    localStorage.setItem(key, value);
+  } catch (e) {
+    console.error('[localStorage set failed]', e);
+  }
+}
 
 // --- INITIAL DATA SEEDING & RESOLVING ---
 
@@ -101,7 +126,7 @@ export function seedDefaultGroups() {
 
 function getConversationsRaw(): ChatConversation[] {
   try {
-    const val = localStorage.getItem(KEYS.conversations);
+    const val = getChatStorageItem(KEYS.conversations);
     return val ? JSON.parse(val) : [];
   } catch (e) {
     return [];
@@ -110,7 +135,7 @@ function getConversationsRaw(): ChatConversation[] {
 
 function saveConversationsRaw(conversations: ChatConversation[]) {
   const value = JSON.stringify(conversations);
-  localStorage.setItem(KEYS.conversations, value);
+  setChatStorageItem(KEYS.conversations, value);
   pushToPostgres(KEYS.conversations, value);
 }
 
@@ -205,7 +230,7 @@ export function toggleArchiveConversation(conversationId: string, userId: string
 
 export function getMessages(conversationId: string): ChatMessage[] {
   try {
-    const val = localStorage.getItem(KEYS.messages);
+    const val = getChatStorageItem(KEYS.messages);
     const all: ChatMessage[] = val ? JSON.parse(val) : [];
     return all.filter(m => m.conversationId === conversationId);
   } catch (e) {
@@ -215,7 +240,7 @@ export function getMessages(conversationId: string): ChatMessage[] {
 
 export function getAllMessagesRaw(): ChatMessage[] {
   try {
-    const val = localStorage.getItem(KEYS.messages);
+    const val = getChatStorageItem(KEYS.messages);
     return val ? JSON.parse(val) : [];
   } catch (e) {
     return [];
@@ -224,7 +249,7 @@ export function getAllMessagesRaw(): ChatMessage[] {
 
 export function saveAllMessagesRaw(messages: ChatMessage[]) {
   const value = JSON.stringify(messages);
-  localStorage.setItem(KEYS.messages, value);
+  setChatStorageItem(KEYS.messages, value);
   pushToPostgres(KEYS.messages, value);
 }
 
@@ -345,7 +370,7 @@ export function markMessagesAsRead(conversationId: string, userId: string) {
 
 export function getAnnouncements(): ChatAnnouncement[] {
   try {
-    const val = localStorage.getItem(KEYS.announcements);
+    const val = getChatStorageItem(KEYS.announcements);
     return val ? JSON.parse(val) : [];
   } catch (e) {
     return [];
@@ -374,7 +399,7 @@ export function addAnnouncement(
 
   all.unshift(announcement); // latest first
   const value = JSON.stringify(all);
-  localStorage.setItem(KEYS.announcements, value);
+  setChatStorageItem(KEYS.announcements, value);
   pushToPostgres(KEYS.announcements, value);
 
   // Alert all active CRM employees immediately in Notification desk
@@ -399,7 +424,7 @@ export function acknowledgeAnnouncement(announcementId: string, userId: string):
   if (!item.seenBy.includes(userId)) {
     item.seenBy.push(userId);
     const value = JSON.stringify(all);
-    localStorage.setItem(KEYS.announcements, value);
+    setChatStorageItem(KEYS.announcements, value);
     pushToPostgres(KEYS.announcements, value);
 
     const employee = getEmployees().find(e => e.id === userId);
@@ -413,7 +438,7 @@ export function acknowledgeAnnouncement(announcementId: string, userId: string):
 
 export function getChatTasks(): ChatTask[] {
   try {
-    const val = localStorage.getItem(KEYS.tasks);
+    const val = getChatStorageItem(KEYS.tasks);
     return val ? JSON.parse(val) : [];
   } catch (e) {
     return [];
@@ -447,7 +472,7 @@ export function createChatTask(
 
   all.push(newTask);
   const value = JSON.stringify(all);
-  localStorage.setItem(KEYS.tasks, value);
+  setChatStorageItem(KEYS.tasks, value);
   pushToPostgres(KEYS.tasks, value);
 
   // Link inside discussion message
@@ -479,7 +504,7 @@ export function toggleChatTaskStatus(taskId: string, userId: string): boolean {
 
   task.status = task.status === 'pending' ? 'completed' : 'pending';
   const value = JSON.stringify(all);
-  localStorage.setItem(KEYS.tasks, value);
+  setChatStorageItem(KEYS.tasks, value);
   pushToPostgres(KEYS.tasks, value);
 
   const employee = getEmployees().find(e => e.id === userId);
@@ -498,7 +523,7 @@ export function toggleChatTaskStatus(taskId: string, userId: string): boolean {
 
 export function getChatNotifications(userId: string): ChatNotification[] {
   try {
-    const val = localStorage.getItem(KEYS.notifications);
+    const val = getChatStorageItem(KEYS.notifications);
     const all: ChatNotification[] = val ? JSON.parse(val) : [];
     return all.filter(n => n.userId === userId || n.userId === 'all');
   } catch (e) {
@@ -514,7 +539,7 @@ export function addChatNotification(
   link: string
 ): ChatNotification {
   try {
-    const val = localStorage.getItem(KEYS.notifications);
+    const val = getChatStorageItem(KEYS.notifications);
     const all: ChatNotification[] = val ? JSON.parse(val) : [];
     
     const newNotif: ChatNotification = {
@@ -529,7 +554,7 @@ export function addChatNotification(
     };
 
     all.push(newNotif);
-    localStorage.setItem(KEYS.notifications, JSON.stringify(all));
+    setChatStorageItem(KEYS.notifications, JSON.stringify(all));
     pushToPostgres(KEYS.notifications, JSON.stringify(all));
     return newNotif;
   } catch (e) {
@@ -542,7 +567,7 @@ export function addChatNotification(
 
 export function markChatNotificationsRead(userId: string) {
   try {
-    const val = localStorage.getItem(KEYS.notifications);
+    const val = getChatStorageItem(KEYS.notifications);
     const all: ChatNotification[] = val ? JSON.parse(val) : [];
     let changed = false;
 
@@ -554,7 +579,7 @@ export function markChatNotificationsRead(userId: string) {
     });
 
     if (changed) {
-      localStorage.setItem(KEYS.notifications, JSON.stringify(all));
+      setChatStorageItem(KEYS.notifications, JSON.stringify(all));
       pushToPostgres(KEYS.notifications, JSON.stringify(all));
     }
   } catch (e) {}
@@ -564,7 +589,7 @@ export function markChatNotificationsRead(userId: string) {
 
 export function getChatAuditLogs(): ChatAuditLog[] {
   try {
-    const val = localStorage.getItem(KEYS.logs);
+    const val = getChatStorageItem(KEYS.logs);
     return val ? JSON.parse(val) : [];
   } catch (e) {
     return [];
@@ -579,7 +604,7 @@ export function addChatAuditLog(
   details: string
 ) {
   try {
-    const val = localStorage.getItem(KEYS.logs);
+    const val = getChatStorageItem(KEYS.logs);
     const all: ChatAuditLog[] = val ? JSON.parse(val) : [];
     
     const log: ChatAuditLog = {
@@ -595,7 +620,7 @@ export function addChatAuditLog(
     all.unshift(log); // newest first
     // Limit to 500 audit logs to avoid massive sizes
     const trimmed = all.slice(0, 500);
-    localStorage.setItem(KEYS.logs, JSON.stringify(trimmed));
+    setChatStorageItem(KEYS.logs, JSON.stringify(trimmed));
     pushToPostgres(KEYS.logs, JSON.stringify(trimmed));
   } catch (e) {}
 }

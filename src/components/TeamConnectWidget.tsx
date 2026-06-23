@@ -158,17 +158,40 @@ export default function TeamConnectWidget({ currentUser, triggerRefreshParent }:
     }
   };
 
-  // Initial loader
+  // Initial loader & fast background database polling to retrieve other colleagues' messages
   useEffect(() => {
     reloadData();
     
-    // Background polling sync fallback
+    // When the chat widget is active/open, poll the PostgreSQL store every 3.5 seconds to sync messages instantly.
+    // When minimized, poll every 15 seconds to update notification and unread counts badge cleanly.
+    const pollIntervalMs = isOpen ? 3500 : 15000;
+    let isFetching = false;
+
+    const pullLatestLiveSync = async () => {
+      if (isFetching) return;
+      isFetching = true;
+      try {
+        const { pullFromPostgres } = await import('../lib/postgresSync');
+        const pulled = await pullFromPostgres();
+        if (pulled) {
+          reloadData();
+        }
+      } catch (err) {
+        console.warn('[Team Connect Background Sync Error]', err);
+      } finally {
+        isFetching = false;
+      }
+    };
+
+    // Trigger immediate pull on mount or state toggle
+    pullLatestLiveSync();
+
     const syncInterval = setInterval(() => {
-      reloadData();
-    }, 12000);
+      pullLatestLiveSync();
+    }, pollIntervalMs);
 
     return () => clearInterval(syncInterval);
-  }, [currentUser.id, activeConv?.id]);
+  }, [currentUser.id, activeConv?.id, isOpen]);
 
   // Scroll to bottom when new messages show up
   useEffect(() => {
@@ -738,7 +761,7 @@ export default function TeamConnectWidget({ currentUser, triggerRefreshParent }:
             setIsOpen(true);
             reloadData();
           }}
-          className="relative px-5 py-3 rounded-full bg-gradient-to-r from-emerald-600 via-teal-650 to-indigo-650 text-white font-extrabold text-[12px] uppercase shadow-2xl flex items-center space-x-2 cursor-pointer grow-0 select-none tracking-widest border border-white/20 active:scale-95 transition-all outline-none"
+          className="relative px-5 py-3 rounded-full bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-700 dark:hover:bg-emerald-800 text-white font-extrabold text-[12px] uppercase shadow-2xl flex items-center space-x-2 cursor-pointer grow-0 select-none tracking-widest border border-white/20 active:scale-95 transition-all outline-none"
           whileHover={{ scale: 1.04 }}
           whileTap={{ scale: 0.96 }}
           id="team-connect-launcher"

@@ -195,21 +195,79 @@ export default function AdminDashboard({
   const isTeamLeader = userRole === 'team_leader';
   
   const assignedEmployeeIds = isTeamLeader ? getTLAssignedEmployeeIds(currentUserId) : [];
+
+  const selfIds: string[] = [currentUserId.toLowerCase().trim()];
+  if (loggedInUser) {
+    if (loggedInUser.email) selfIds.push(loggedInUser.email.toLowerCase().trim());
+    if (loggedInUser.name) selfIds.push(loggedInUser.name.toLowerCase().trim());
+    if (loggedInUser.email?.toLowerCase().trim() === 'neha2026@efilingg.com' || loggedInUser.id === 'EMP-YBVHL' || loggedInUser.id === 'EMP-NEHA2026') {
+      selfIds.push('emp-neha2026');
+      selfIds.push('emp-ybvhl');
+    }
+  }
   
   const employees = isTeamLeader 
     ? rawEmployees.filter(e => assignedEmployeeIds.includes(e.id) || e.id === currentUserId)
     : rawEmployees;
 
   const leads = isTeamLeader
-    ? rawLeads.filter(l => assignedEmployeeIds.includes(l.assignedTo) || l.assignedTo === currentUserId)
+    ? rawLeads.filter(l => {
+        if (!l.assignedTo) return false;
+        const normalizedAssigned = l.assignedTo.toLowerCase().trim();
+        if (selfIds.includes(normalizedAssigned)) return true;
+        if (assignedEmployeeIds.includes(l.assignedTo)) return true;
+        const assignedEmployee = rawEmployees.find(e => 
+          e.id.toLowerCase().trim() === normalizedAssigned ||
+          (e.email && e.email.toLowerCase().trim() === normalizedAssigned) ||
+          (e.name && e.name.toLowerCase().trim() === normalizedAssigned)
+        );
+        if (assignedEmployee) {
+          if (assignedEmployeeIds.includes(assignedEmployee.id) || selfIds.includes(assignedEmployee.id.toLowerCase())) {
+            return true;
+          }
+        }
+        return false;
+      })
     : rawLeads;
 
   const followups = isTeamLeader
-    ? rawFollowups.filter(f => assignedEmployeeIds.includes(f.assignedTo) || f.assignedTo === currentUserId)
+    ? rawFollowups.filter(f => {
+        if (!f.assignedTo) return false;
+        const normalizedAssigned = f.assignedTo.toLowerCase().trim();
+        if (selfIds.includes(normalizedAssigned)) return true;
+        if (assignedEmployeeIds.includes(f.assignedTo)) return true;
+        const assignedEmployee = rawEmployees.find(e => 
+          e.id.toLowerCase().trim() === normalizedAssigned ||
+          (e.email && e.email.toLowerCase().trim() === normalizedAssigned) ||
+          (e.name && e.name.toLowerCase().trim() === normalizedAssigned)
+        );
+        if (assignedEmployee) {
+          if (assignedEmployeeIds.includes(assignedEmployee.id) || selfIds.includes(assignedEmployee.id.toLowerCase())) {
+            return true;
+          }
+        }
+        return false;
+      })
     : rawFollowups;
 
   const proposals = isTeamLeader
-    ? rawProposals.filter(p => assignedEmployeeIds.includes(p.employeeId) || p.employeeId === currentUserId)
+    ? rawProposals.filter(p => {
+        if (!p.employeeId) return false;
+        const normalizedEmployee = p.employeeId.toLowerCase().trim();
+        if (selfIds.includes(normalizedEmployee)) return true;
+        if (assignedEmployeeIds.includes(p.employeeId)) return true;
+        const pEmployee = rawEmployees.find(e => 
+          e.id.toLowerCase().trim() === normalizedEmployee ||
+          (e.email && e.email.toLowerCase().trim() === normalizedEmployee) ||
+          (e.name && e.name.toLowerCase().trim() === normalizedEmployee)
+        );
+        if (pEmployee) {
+          if (assignedEmployeeIds.includes(pEmployee.id) || selfIds.includes(pEmployee.id.toLowerCase())) {
+            return true;
+          }
+        }
+        return false;
+      })
     : rawProposals;
 
   useEffect(() => {

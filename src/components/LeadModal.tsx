@@ -79,7 +79,9 @@ export default function LeadModal({
 
   // Followup States
   const [followups, setFollowups] = useState<FollowUp[]>([]);
-  const [nextFollowUpDate, setNextFollowUpDate] = useState('2026-06-05'); // Today default
+  const [nextFollowUpDate, setNextFollowUpDate] = useState(() => {
+    return new Date().toISOString().split('T')[0];
+  }); // Today default
   const [nextFollowUpTime, setNextFollowUpTime] = useState('10:00');
   const [remarks, setRemarks] = useState('');
 

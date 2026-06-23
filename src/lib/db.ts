@@ -369,15 +369,7 @@ export function initializeDB() {
     setStorageString(KEY_OFFER_LETTER_TEMPLATE, JSON.stringify(DEFAULT_OFFER_TEMPLATE));
   }
 
-  // Migrate existing leads' creationDates to "2026-06-08T12:00:00.000Z" once as requested
-  if (!getStorageString('crm_leads_migrated_20260608_final')) {
-    const leadsList = getLeads();
-    leadsList.forEach((l) => {
-      l.creationDate = '2026-06-08T12:00:00.000Z';
-    });
-    saveLeads(leadsList);
-    setStorageString('crm_leads_migrated_20260608_final', 'true');
-  }
+  // Hardcoded lead date migration disabled to prevent overwriting of imported dates & newly created leads.
 
   // Run an automatic sweep to compute if any follow-up has become overdue
   checkAndMarkOverdueFollowUps();

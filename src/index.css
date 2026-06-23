@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+@theme {
+  --color-indigo-650: #4338ca;
+}
+
 /* 
   Tailwind CSS v4 compatibility with html2canvas/jsPDF:
   Override OKLCH variables with HEX-safe colors to prevent parsing crashes in html2canvas!

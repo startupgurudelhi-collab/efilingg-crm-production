@@ -10,14 +10,20 @@ import {
   getV2Auditors, 
   addV2Auditor, 
   getV2TrademarkAttorneys, 
-  addV2TrademarkAttorney 
+  addV2TrademarkAttorney,
+  getV2OtherServiceCategories,
+  addV2OtherServiceCategory,
+  deleteV2OtherServiceCategory
 } from '../../lib/v2_db';
-import { UserCheck, ShieldCheck, Plus, Briefcase, Mail, MapPin, Award } from 'lucide-react';
+import { UserCheck, ShieldCheck, Plus, Briefcase, Mail, MapPin, Award, Tag, Trash2 } from 'lucide-react';
 
 export default function V2Masters() {
-  const [activeTab, setActiveTab] = useState<'auditor' | 'attorney'>('auditor');
+  const [activeTab, setActiveTab] = useState<'auditor' | 'attorney' | 'category'>('auditor');
   const [auditors, setAuditors] = useState<V2Auditor[]>(getV2Auditors());
   const [attorneys, setAttorneys] = useState<V2TrademarkAttorney[]>(getV2TrademarkAttorneys());
+  const [categories, setCategories] = useState<string[]>(getV2OtherServiceCategories());
+  const [newCategory, setNewCategory] = useState('');
+
 
   // Auditor form states
   const [auditName, setAuditName] = useState('');
@@ -106,6 +112,16 @@ export default function V2Masters() {
           }`}
         >
           ⚖️ Trademark Attorney Master
+        </button>
+        <button
+          onClick={() => setActiveTab('category')}
+          className={`px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-xl transition ${
+            activeTab === 'category' 
+              ? 'bg-indigo-600 text-white shadow-xs' 
+              : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
+          }`}
+        >
+          🛠️ Other Service Categories
         </button>
       </div>
 
@@ -246,6 +262,75 @@ export default function V2Masters() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'category' && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+            <div>
+              <h3 className="font-extrabold text-slate-800 dark:text-slate-150 text-sm uppercase">Miscellaneous Service Categories</h3>
+              <p className="text-[10px] text-slate-400">Configure application registry classifications for non-standard, custom corporate filings.</p>
+            </div>
+          </div>
+
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            if (!newCategory.trim()) return;
+            addV2OtherServiceCategory(newCategory.trim());
+            setCategories(getV2OtherServiceCategories());
+            setNewCategory('');
+          }} className="p-4 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-2xl flex gap-3 text-xs items-end">
+            <div className="flex-1 space-y-1">
+              <label className="text-[10px] uppercase font-bold text-slate-500">New Category / Service Name *</label>
+              <input 
+                type="text" 
+                required 
+                value={newCategory} 
+                onChange={e => setNewCategory(e.target.value)} 
+                placeholder="e.g. MSME Udyam, FSSAI Food, etc." 
+                className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl" 
+              />
+            </div>
+            <button type="submit" className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2 rounded-xl cursor-pointer">
+              <Plus className="h-4 w-4" /> Add Category
+            </button>
+          </form>
+
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-2xl overflow-hidden shadow-2xs">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-950 font-bold text-slate-400 select-none uppercase border-b border-slate-100 dark:border-slate-850 text-[10px]">
+                  <th className="p-3 pl-5">Service Category Classification Name</th>
+                  <th className="p-3 text-right pr-5">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-150">
+                {categories.map((cat, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-900/50 transition">
+                    <td className="p-3 pl-5 font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                      <Tag className="h-3.5 w-3.5 text-indigo-500" />
+                      {cat}
+                    </td>
+                    <td className="p-3 text-right pr-5">
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          if (confirm(`Are you sure you want to delete category "${cat}"?`)) {
+                            deleteV2OtherServiceCategory(cat);
+                            setCategories(getV2OtherServiceCategories());
+                          }
+                        }} 
+                        className="p-1 px-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 rounded-lg text-[10px] font-bold cursor-pointer transition flex items-center gap-1 ml-auto"
+                      >
+                        <Trash2 className="h-3 w-3" /> Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

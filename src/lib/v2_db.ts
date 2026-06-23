@@ -926,3 +926,86 @@ export function updateV2TrademarkClient(updated: V2TrademarkClient): void {
   }
 }
 
+export function deleteV2ItrClient(id: string): void {
+  const list = getV2ItrClients();
+  const filtered = list.filter(item => item.id !== id);
+  saveV2Items(KEY_V2_ITR_CLIENTS, filtered);
+}
+
+export function deleteV2TrustClient(id: string): void {
+  const list = getV2TrustClients();
+  const filtered = list.filter(item => item.id !== id);
+  saveV2Items(KEY_V2_TRUST_CLIENTS, filtered);
+}
+
+export function deleteV2DscClient(id: string): void {
+  const list = getV2DscClients();
+  const filtered = list.filter(item => item.id !== id);
+  saveV2Items(KEY_V2_DSC_CLIENTS, filtered);
+}
+
+export function deleteV2OtherServiceClient(id: string): void {
+  const list = getV2OtherServiceClients();
+  const filtered = list.filter(item => item.id !== id);
+  saveV2Items(KEY_V2_OTHER_SERVICES, filtered);
+}
+
+const KEY_V2_OTHER_SERVICES_CATEGORIES = 'efilingg_crm_v2_other_services_categories';
+
+export function getV2OtherServiceCategories(): string[] {
+  return getV2Items<string>(KEY_V2_OTHER_SERVICES_CATEGORIES, [
+    'MSME Udyam Registration (Filing)',
+    'Import Export Code (DGFT IEC)',
+    'NITI Aayog NGO Darpan unique ID',
+    'Exemption Certificate (12A/80G special filing)',
+    'FSSAI Food License filing'
+  ]);
+}
+
+export function addV2OtherServiceCategory(cat: string): void {
+  const current = getV2OtherServiceCategories();
+  if (!current.includes(cat)) {
+    current.push(cat);
+    saveV2Items(KEY_V2_OTHER_SERVICES_CATEGORIES, current);
+  }
+}
+
+export function deleteV2OtherServiceCategory(cat: string): void {
+  const current = getV2OtherServiceCategories();
+  const filtered = current.filter(c => c !== cat);
+  saveV2Items(KEY_V2_OTHER_SERVICES_CATEGORIES, filtered);
+}
+
+export interface V2TaxAuditOverride {
+  clientId: string;
+  status: 'PENDING' | 'COMPLETED' | 'PENDING WITH CA' | 'BALANCE SHEET PENDING' | 'FORM PENDING';
+  assignedEmployeeId?: string;
+  assignedEmployeeName?: string;
+}
+
+const KEY_V2_TAX_AUDIT_OVERRIDES = 'efilingg_crm_v2_tax_audit_overrides';
+
+export function getV2TaxAuditOverrides(): V2TaxAuditOverride[] {
+  return getV2Items<V2TaxAuditOverride>(KEY_V2_TAX_AUDIT_OVERRIDES, [
+    {
+      clientId: 'ITR-CL-1',
+      status: 'PENDING WITH CA',
+      assignedEmployeeId: 'EMP-NEHA',
+      assignedEmployeeName: 'Neha Sharma'
+    }
+  ]);
+}
+
+export function saveV2TaxAuditOverride(clientId: string, status: string, empId?: string, empName?: string) {
+  const list = getV2TaxAuditOverrides();
+  const idx = list.findIndex(item => item.clientId === clientId);
+  if (idx !== -1) {
+    list[idx] = { clientId, status: status as any, assignedEmployeeId: empId, assignedEmployeeName: empName };
+  } else {
+    list.push({ clientId, status: status as any, assignedEmployeeId: empId, assignedEmployeeName: empName });
+  }
+  saveV2Items(KEY_V2_TAX_AUDIT_OVERRIDES, list);
+}
+
+
+

@@ -314,9 +314,9 @@ export default function V2GST({
   }, [returnsSubTab]);
 
   const handleExportClients = () => {
-    const headers = ['Client ID', 'Client Name', 'Client Type', 'Reg Date', 'Email', 'Mobile', 'Address', 'State', 'GSTIN', 'Username', 'Password', 'Returns Mode'];
+    const headers = ['Client ID', 'Client Name', 'Firm Name', 'Client Type', 'Reg Date', 'Email', 'Mobile', 'Address', 'State', 'GSTIN', 'Username', 'Password', 'Returns Mode'];
     const rows = clients.map(c => [
-      c.id, c.clientName, c.clientType, c.dateOfRegistration, c.clientEmail, c.clientMobile, c.clientAddress, c.clientState, c.gstin || '', c.userId, c.password || '', c.returnsMode
+      c.id, c.clientName, c.firmName || '', c.clientType, c.dateOfRegistration, c.clientEmail, c.clientMobile, c.clientAddress, c.clientState, c.gstin || '', c.userId, c.password || '', c.returnsMode
     ]);
     exportToCSVFile('efilingg_v2_gst_clients.csv', headers, rows);
   };
@@ -338,16 +338,17 @@ export default function V2GST({
         if (r.length >= 7) {
           const added = addV2GstClient({
             clientName: r[0],
-            clientType: (r[1] || 'PROPRIETOR') as V2GstClient['clientType'],
-            dateOfRegistration: r[2] || '2026-05-01',
-            clientEmail: r[3] || 'N/A',
-            clientMobile: r[4] || 'N/A',
-            clientAddress: r[5] || 'N/A',
-            clientState: r[6] || 'Delhi',
-            gstin: r[7] || `GSTIN-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-            userId: r[8] || `user_${Math.random().toString(36).substr(2, 5).toLowerCase()}`,
-            password: r[9] || 'GstPassword@2026',
-            returnsMode: (r[10] === 'QUARTERLY' ? 'QUARTERLY' : 'MONTHLY')
+            firmName: r[1] || r[0] + " (Firm)",
+            clientType: (r[2] || 'PROPRIETOR') as V2GstClient['clientType'],
+            dateOfRegistration: r[3] || '2026-05-01',
+            clientEmail: r[4] || 'N/A',
+            clientMobile: r[5] || 'N/A',
+            clientAddress: r[6] || 'N/A',
+            clientState: r[7] || 'Delhi',
+            gstin: r[8] || `GSTIN-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
+            userId: r[9] || `user_${Math.random().toString(36).substr(2, 5).toLowerCase()}`,
+            password: r[10] || 'GstPassword@2026',
+            returnsMode: (r[11] === 'QUARTERLY' ? 'QUARTERLY' : 'MONTHLY')
           });
           newClients.push(added);
         }
@@ -622,9 +623,9 @@ export default function V2GST({
             <button 
               type="button" 
               onClick={() => {
-                const sample = "Company Name,Client Type,Registration Date,Email,Mobile,Address,State,GSTIN,Password,Filing Mode\n"
-                  + "Vijay Retailers,PROPRIETOR,2026-05-12,vijay@retails.com,9910492810,Sadar Bazar Delhi,Delhi,07ABVPK4912A1ZX,Pass@123,MONTHLY\n"
-                  + "Ganesh Builders LLP,LLP,2026-06-01,admin@ganeshbuild.com,8212491204,Sector 4 Noida,Uttar Pradesh,09AAKFG2941F1ZS,Pass$g11,QUARTERLY";
+                const sample = "Client Name,Firm Name,Client Type,Registration Date,Email,Mobile,Address,State,GSTIN,Username,Password,Filing Mode\n"
+                  + "Aditya Gupta,Apex Retails Corp,PROPRIETOR,2026-05-12,aditya@apexretails.com,9910492810,Sadar Bazar Delhi,Delhi,07ABVPK4912A1ZX,aditya_apex,Pass@123,MONTHLY\n"
+                  + "Vijay Singh,Vijay Traders LLP,LLP,2026-06-01,admin@vijaytraders.com,8212491204,Sector 4 Noida,Uttar Pradesh,09AAKFG2941F1ZS,vijay_trader,Pass$g11,QUARTERLY";
                 const blob = new Blob([sample], { type: 'text/csv' });
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -640,7 +641,7 @@ export default function V2GST({
           <p className="text-[10px] text-slate-400">Copy data columns from your worksheet (inclusive of columns) and paste below inside the text area:</p>
           <textarea
             rows={5}
-            placeholder="Business Name&#9;Type&#9;Reg Date&#9;Email&#9;Mobile&#9;Address&#9;State&#9;GSTIN&#9;Password&#9;Filing Mode&#10;Ganesh Traders&#9;PROPRIETOR&#9;22/05/2026&#9;ganesh@traders.com&#9;9218491294&#9;Delhi&#9;Delhi&#9;07AAACG2941F1Z0&#9;MySecretPassword&#9;MONTHLY"
+            placeholder="Client Name&#9;Firm Name&#9;Type&#9;Reg Date&#9;Email&#9;Mobile&#9;Address&#9;State&#9;GSTIN&#9;Username&#9;Password&#9;Filing Mode&#10;Aditya Gupta&#9;Apex Retails Corp&#9;PROPRIETOR&#9;22/05/2026&#9;compliance@apexretails.com&#9;9812492102&#9;Plot 4 Sector 62 Noida&#9;Uttar Pradesh&#9;09AAACA4192G1ZX&#9;apex_retail&#9;GstPassword@2026&#9;MONTHLY"
             value={importText}
             onChange={e => setImportText(e.target.value)}
             className="w-full p-3 bg-slate-50 dark:bg-slate-950 border border-slate-205 dark:border-slate-800 rounded-2xl text-xs font-mono"

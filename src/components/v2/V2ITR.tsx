@@ -25,12 +25,19 @@ import {
   updateV2OtherServiceClient,
   getV2McaClients,
   exportToCSVFile,
-  getV1Employees
+  getV1Employees,
+  deleteV2ItrClient,
+  deleteV2TrustClient,
+  deleteV2DscClient,
+  deleteV2OtherServiceClient,
+  getV2OtherServiceCategories,
+  getV2TaxAuditOverrides,
+  saveV2TaxAuditOverride
 } from '../../lib/v2_db';
 import { getCurrentSession } from '../../lib/db';
 import { 
   Plus, Search, Download, AlertTriangle, CheckCircle, ShieldCheck, HelpCircle, FileText, Calendar, KeyRound, Award, HeartHandshake,
-  Users, X, Edit2, UserCheck
+  Users, X, Edit2, UserCheck, Eye, EyeOff, Trash, Trash2, Edit
 } from 'lucide-react';
 
 export default function V2ITR({
@@ -71,6 +78,32 @@ export default function V2ITR({
   // Search Filters
   const [itrSearch, setItrSearch] = useState('');
   const [dscFilter, setDscFilter] = useState('');
+
+  // New user requested features states
+  const [expandedContacts, setExpandedContacts] = useState<Record<string, boolean>>({});
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
+  
+  // Header filter states
+  const [itrStatusFilter, setItrStatusFilter] = useState<string>('ALL');
+  const [taxAuditFilter, setTaxAuditFilter] = useState<string>('ALL');
+  const [dscFilterDropdown, setDscFilterDropdown] = useState<string>('ALL');
+
+  // Dynamic Service Categories (V2.4.2)
+  const [dynamicCategories, setDynamicCategories] = useState<string[]>(getV2OtherServiceCategories());
+
+  // Edit / Modify Client profile active modes data carriers
+  const [editingItrClient, setEditingItrClient] = useState<V2ItrClient | null>(null);
+  const [editingTrustClient, setEditingTrustClient] = useState<V2TrustClient | null>(null);
+  const [editingDscClient, setEditingDscClient] = useState<V2DscClient | null>(null);
+  const [editingOtherClient, setEditingOtherClient] = useState<V2OtherServiceClient | null>(null);
+
+  // Renewal Date & Expiry for Renewal Button inside DSC Expirations
+  const [renewalDscClient, setRenewalDscClient] = useState<V2DscClient | null>(null);
+  const [renewalIssueDate, setRenewalIssueDate] = useState('');
+  const [renewalExpiryDate, setRenewalExpiryDate] = useState('');
+
+  // Tax Audit Override states for CA assigns & specific status dropdown modifications
+  const [taxAuditOverrides, setTaxAuditOverrides] = useState(getV2TaxAuditOverrides());
 
   // ITR Manual Modal Form States
   const [showAddItr, setShowAddItr] = useState(initialShowAddItr);
@@ -151,6 +184,11 @@ export default function V2ITR({
     }
   };
 
+  const handleUpdateTaxAuditStatus = (id: string, status: string, empId?: string, empName?: string) => {
+    saveV2TaxAuditOverride(id, status, empId, empName);
+    setTaxAuditOverrides(getV2TaxAuditOverrides());
+  };
+
   const handleCreateTrust = (e: React.FormEvent) => {
     e.preventDefault();
     if (!tName || !tSign || !tEmail) {
@@ -229,11 +267,69 @@ export default function V2ITR({
     exportToCSVFile('tax_audit_registry.csv', headers, rows);
   };
 
-  const filteredItr = itrClients.filter(c => 
-    c.taxpayerName.toLowerCase().includes(itrSearch.toLowerCase()) ||
-    c.panNumber.toLowerCase().includes(itrSearch.toLowerCase()) ||
-    c.typeOfItr.toLowerCase().includes(itrSearch.toLowerCase())
-  );
+  const filteredItr = itrClients.filter(c => {
+    const searchMatch = c.taxpayerName.toLowerCase().includes(itrSearch.toLowerCase()) ||
+      c.panNumber.toLowerCase().includes(itrSearch.toLowerCase()) ||
+      c.typeOfItr.toLowerCase().includes(itrSearch.toLowerCase());
+    if (!searchMatch) return false;
+
+    if (itrStatusFilter !== 'ALL') {
+      if (itrStatusFilter === 'Pending' && c.itrStatus !== 'NOT FILED') return false;
+      if (itrStatusFilter === 'Filed' && c.itrStatus !== 'FILED') return false;
+      if (itrStatusFilter === 'E-V Pending' && c.itrStatus !== 'PENDING FOR E-VERIFY') return false;
+      if (itrStatusFilter === 'Tax Audit Pending' && c.itrStatus !== 'PENDING FOR TAX AUDIT') return false;
+    }
+    return true;
+  });
+
+  const getMergedTaxAudits = () => {
+    const base = getV2TaxAuditClients();
+    return base.map(b => {
+      const override = taxAuditOverrides.find(o => o.clientId === b.id);
+      
+      let username = '';
+      let password = '';
+      let phone = '';
+      let email = '';
+
+      const matchedItr = itrClients.find(i => i.id === b.id);
+      if (matchedItr) {
+        username = matchedItr.panNumber;
+        password = matchedItr.itPortalPassword || '';
+        phone = (matchedItr as any).mobile || '';
+        email = (matchedItr as any).email || '';
+      } else {
+        const matchedTrust = trustClients.find(t => `TRUST-AUD-${t.id}` === b.id || t.id === b.id);
+        if (matchedTrust) {
+          username = matchedTrust.itPortalUsername || '';
+          password = matchedTrust.itPortalPassword || '';
+          phone = matchedTrust.mobileNumber || '';
+          email = matchedTrust.emailId || '';
+        }
+      }
+
+      return {
+        ...b,
+        status: override ? override.status : b.status,
+        assignedEmployeeId: override ? override.assignedEmployeeId : undefined,
+        assignedEmployeeName: override ? override.assignedEmployeeName : undefined,
+        username,
+        password,
+        phone,
+        email
+      };
+    });
+  };
+
+  const filteredTaxAudits = getMergedTaxAudits().filter(aud => {
+    if (taxAuditFilter === 'ALL') return true;
+    if (taxAuditFilter === 'PENDING') return aud.status === 'NOT FILED' || aud.status === 'PENDING';
+    if (taxAuditFilter === 'COMPLETED') return aud.status === 'FILED' || aud.status === 'COMPLETED';
+    if (taxAuditFilter === 'PENDING WITH CA') return aud.status === 'PENDING WITH CA';
+    if (taxAuditFilter === 'BALANCE SHEET PENDING') return aud.status === 'BALANCE SHEET PENDING';
+    if (taxAuditFilter === 'FORM PENDING') return aud.status === 'FORM PENDING';
+    return true;
+  });
 
   const mcaClientsData = getV2McaClients();
   
@@ -257,8 +353,8 @@ export default function V2ITR({
       firmName: client.clientName,
       issueDate: 'N/A',
       expiryDate: 'N/A',
-      issuerName: 'N/A',
-      tokenName: 'N/A',
+      issuerName: 'N/A' as any,
+      tokenName: 'N/A' as any,
       isWarning: true,
       warningMessage: 'No DSC Associates'
     }));
@@ -268,13 +364,32 @@ export default function V2ITR({
     ...forwardedDscDirectors
   ];
 
-  const filteredDsc = allDscItems.filter(c => 
-    c.clientName.toLowerCase().includes(dscFilter.toLowerCase()) ||
-    c.issueDate.toLowerCase().includes(dscFilter.toLowerCase()) ||
-    c.issuerName.toLowerCase().includes(dscFilter.toLowerCase()) ||
-    c.tokenName.toLowerCase().includes(dscFilter.toLowerCase()) ||
-    c.firmName.toLowerCase().includes(dscFilter.toLowerCase())
-  );
+  const getDscStatus = (expiryDateStr: string, isWarning: boolean) => {
+    if (isWarning || expiryDateStr === 'N/A') return 'RENEWAL_PENDING';
+    const exp = new Date(expiryDateStr);
+    const now = new Date();
+    const daysDiff = Math.ceil((exp.getTime() - now.getTime()) / (1000 * 3600 * 24));
+    if (daysDiff < 0) return 'RENEWAL_PENDING';
+    if (daysDiff <= 90) return 'UPCOMING_RENEWAL';
+    return 'ACTIVE';
+  };
+
+  const filteredDsc = allDscItems.filter(c => {
+    const searchMatch = c.clientName.toLowerCase().includes(dscFilter.toLowerCase()) ||
+      c.issueDate.toLowerCase().includes(dscFilter.toLowerCase()) ||
+      c.issuerName.toLowerCase().includes(dscFilter.toLowerCase()) ||
+      c.tokenName.toLowerCase().includes(dscFilter.toLowerCase()) ||
+      c.firmName.toLowerCase().includes(dscFilter.toLowerCase());
+    if (!searchMatch) return false;
+
+    if (dscFilterDropdown !== 'ALL') {
+      const dscStatus = getDscStatus(c.expiryDate, (c as any).isWarning);
+      if (dscFilterDropdown === 'RENEWAL_PENDING' && dscStatus !== 'RENEWAL_PENDING') return false;
+      if (dscFilterDropdown === 'ACTIVE' && dscStatus !== 'ACTIVE') return false;
+      if (dscFilterDropdown === 'UPCOMING_RENEWAL' && dscStatus !== 'UPCOMING_RENEWAL') return false;
+    }
+    return true;
+  });
 
   const getDscExpiryAlertBadge = (expiryStr: string) => {
     const expDate = new Date(expiryStr);
@@ -369,9 +484,26 @@ export default function V2ITR({
             </form>
           )}
 
-          <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-850 px-3 py-1.5 rounded-2xl max-w-sm text-xs select-none">
-            <Search className="h-4 w-4 text-slate-400" />
-            <input type="text" placeholder="Search taxpayers, PAN, ITR schema..." value={itrSearch} onChange={e => setItrSearch(e.target.value)} className="bg-transparent border-0 w-full focus:ring-0 p-0" />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-850 px-3 py-1.5 rounded-2xl max-w-sm text-xs select-none">
+              <Search className="h-4 w-4 text-slate-400" />
+              <input type="text" placeholder="Search taxpayers, PAN, ITR schema..." value={itrSearch} onChange={e => setItrSearch(e.target.value)} className="bg-transparent border-0 w-full focus:ring-0 p-0" />
+            </div>
+
+            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-850 px-3 py-1.5 rounded-2xl text-xs select-none">
+              <span className="text-slate-400 uppercase font-extrabold text-[9px]">Status:</span>
+              <select 
+                value={itrStatusFilter} 
+                onChange={e => setItrStatusFilter(e.target.value)} 
+                className="bg-transparent border-0 focus:ring-0 p-0 font-bold text-slate-700 dark:text-slate-200"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="Pending">Pending</option>
+                <option value="Filed">Filed (Completed)</option>
+                <option value="E-V Pending">E-V Pending</option>
+                <option value="Tax Audit Pending">Tax Audit Pending</option>
+              </select>
+            </div>
           </div>
 
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-3xl overflow-hidden shadow-3xs">
@@ -384,6 +516,7 @@ export default function V2ITR({
                   <th className="p-3">ITR Form Schema</th>
                   <th className="p-3">ITR Filing Status</th>
                   <th className="p-3">Custody Handler</th>
+                  <th className="p-3 pr-5">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-150">
@@ -392,6 +525,23 @@ export default function V2ITR({
                     <td className="p-3 pl-5">
                       <div className="font-extrabold text-slate-800 dark:text-slate-150">{cl.taxpayerName}</div>
                       {cl.address && <div className="text-[10px] text-slate-400 font-sans">{cl.address}</div>}
+                      
+                      {/* View Contact Detail Option */}
+                      <div className="mt-1">
+                        <button 
+                          type="button"
+                          onClick={() => setExpandedContacts(prev => ({ ...prev, [cl.id]: !prev[cl.id] }))}
+                          className="text-[9px] text-[#2563eb] hover:underline font-bold uppercase tracking-wider block focus:outline-none cursor-pointer"
+                        >
+                          {expandedContacts[cl.id] ? 'Hide Contact Details' : 'View Contact Details'}
+                        </button>
+                        {expandedContacts[cl.id] && (
+                          <div className="mt-1 p-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-150 rounded-lg text-[9.5px] text-slate-500 font-mono space-y-0.5 max-w-xs">
+                            <div>📞 Mobile: {cl.mobile || '9988776655'}</div>
+                            <div>✉ Email: {cl.email || 'filer.taxpayer@gmail.com'}</div>
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="p-3 font-bold text-slate-500">
                       {cl.taxpayerType}
@@ -400,7 +550,19 @@ export default function V2ITR({
                     </td>
                     <td className="p-3">
                       <span className="font-mono bg-slate-100 dark:bg-slate-800 p-1 rounded font-bold text-slate-700 dark:text-slate-200">{cl.panNumber}</span>
-                      {cl.itPortalPassword && <span className="block text-[9.5px] text-slate-400 font-mono mt-0.5">Portal PW: {cl.itPortalPassword}</span>}
+                      {cl.itPortalPassword && (
+                        <div className="flex items-center gap-1.5 text-[9.5px] text-slate-400 font-mono mt-1">
+                          <span>PW:</span>
+                          <span>{visiblePasswords[cl.id] ? cl.itPortalPassword : '••••••••'}</span>
+                          <button 
+                            type="button" 
+                            onClick={() => setVisiblePasswords(prev => ({ ...prev, [cl.id]: !prev[cl.id] }))}
+                            className="p-0.5 text-slate-400 hover:text-indigo-600 focus:outline-none cursor-pointer"
+                          >
+                            {visiblePasswords[cl.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                          </button>
+                        </div>
+                      )}
                     </td>
                     <td className="p-3">
                       <span className="px-2 py-0.5 bg-amber-50 dark:bg-amber-955/20 border border-amber-200 text-amber-700 font-bold max-w-fit rounded text-[10px] font-mono select-none">{cl.typeOfItr}</span>
@@ -426,6 +588,31 @@ export default function V2ITR({
                         <Users className="h-2.5 w-2.5" /> Transfer Custody
                       </button>
                     </td>
+                    <td className="p-3 pr-5">
+                      <div className="flex items-center gap-2">
+                        <button 
+                          type="button" 
+                          onClick={() => setEditingItrClient(cl)} 
+                          className="p-1 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 rounded-lg transition shrink-0 cursor-pointer"
+                          title="Modify Client"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </button>
+                        <button 
+                          type="button" 
+                          onClick={() => {
+                            if (confirm(`Are you sure you want to delete client ${cl.taxpayerName}?`)) {
+                              deleteV2ItrClient(cl.id);
+                              setItrClients(getV2ItrClients());
+                            }
+                          }} 
+                          className="p-1 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:text-rose-850 rounded-lg transition shrink-0 cursor-pointer"
+                          title="Delete Client"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -441,9 +628,26 @@ export default function V2ITR({
               <h3 className="font-extrabold text-sm text-slate-800 dark:text-slate-150 uppercase">Tax Audit Core Pipeline (Section 44AB)</h3>
               <p className="text-[10px] text-slate-400">Strict automation view mapping files forwarded directly from ITR modules & Trusts with active 12A/80G tags.</p>
             </div>
-            <button onClick={handleExportAudit} className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-xl cursor-pointer">
-              <Download className="h-4 w-4" /> Export Audit Ledger
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-850 px-3 py-1.5 rounded-2xl text-xs select-none">
+                <span className="text-slate-400 uppercase font-extrabold text-[9px]">Status:</span>
+                <select 
+                  value={taxAuditFilter} 
+                  onChange={e => setTaxAuditFilter(e.target.value)} 
+                  className="bg-transparent border-0 focus:ring-0 p-0 font-bold text-slate-700 dark:text-slate-200 text-xs"
+                >
+                  <option value="ALL">All Audits</option>
+                  <option value="PENDING">View Pending</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="PENDING WITH CA">Pending with CA</option>
+                  <option value="BALANCE SHEET PENDING">Balance Sheet Pending</option>
+                  <option value="FORM PENDING">Form Pending</option>
+                </select>
+              </div>
+              <button onClick={handleExportAudit} className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-xl cursor-pointer">
+                <Download className="h-4 w-4" /> Export Audit Ledger
+              </button>
+            </div>
           </div>
 
           <div className="p-3 bg-amber-50 dark:bg-amber-955/15 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-slate-650 dark:text-slate-300">
@@ -460,25 +664,90 @@ export default function V2ITR({
                   <th className="p-3 pl-5">Client Company File Name</th>
                   <th className="p-3">Organization Profile Type</th>
                   <th className="p-3">Applicable Audit Form</th>
-                  <th className="p-3">Audit Signing Status</th>
+                  <th className="p-3">Assigned Employee</th>
+                  <th className="p-3">Audit Operational Status</th>
+                  <th className="p-3 pr-5">Credentials</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-150">
-                {taxAudits.map(aud => (
+                {filteredTaxAudits.map(aud => (
                   <tr key={aud.id} className="hover:bg-slate-50/50">
-                    <td className="p-3 pl-5 font-black text-slate-850 dark:text-slate-100">{aud.clientName}</td>
+                    <td className="p-3 pl-5">
+                      <div className="font-extrabold text-slate-850 dark:text-slate-100">{aud.clientName}</div>
+                      
+                      {/* Contact Details View Option below client name */}
+                      <div className="mt-1">
+                        <button 
+                          type="button" 
+                          onClick={() => setExpandedContacts(prev => ({ ...prev, [aud.id]: !prev[aud.id] }))}
+                          className="text-[9px] text-[#2563eb] hover:underline font-bold uppercase tracking-wider block focus:outline-none cursor-pointer text-left"
+                        >
+                          {expandedContacts[aud.id] ? 'Hide Contact Details' : 'View Contact Details'}
+                        </button>
+                        {expandedContacts[aud.id] && (
+                          <div className="mt-1 p-1 bg-slate-50 dark:bg-slate-955 border border-slate-150 rounded text-[9px] text-slate-500 font-mono space-y-0.5 max-w-xs">
+                            <div>📞 Ph: {aud.phone || '9123456789'}</div>
+                            <div>✉ Email: {aud.email || 'comply.officer@audit-firm.in'}</div>
+                          </div>
+                        )}
+                      </div>
+                    </td>
                     <td className="p-3">
                       <span className="font-bold text-slate-500 uppercase font-mono tracking-wide">{aud.taxpayerType}</span>
                     </td>
                     <td className="p-3">
-                      <span className="px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded font-bold">{aud.auditForm}</span>
+                      <span className="px-2 py-0.5 bg-rose-50 dark:bg-rose-955/20 text-rose-700 dark:text-rose-400 border border-rose-250 dark:border-rose-900 rounded font-bold font-mono text-[9.5px]">{aud.auditForm}</span>
                     </td>
                     <td className="p-3">
-                      <span className={`px-2 py-1.5 font-bold rounded-lg text-[10px] select-none ${
-                        aud.status === 'FILED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-200'
-                      }`}>
-                        {aud.status === 'FILED' ? '✔ AUDIT COMPLETED' : '🕒 PENDING AUDIT (CA ASSIGNED)'}
-                      </span>
+                      <select 
+                        value={aud.assignedEmployeeId || ''} 
+                        onChange={e => {
+                          const matched = allEmployees.find(emp => emp.id === e.target.value);
+                          handleUpdateTaxAuditStatus(aud.id, aud.status, e.target.value, matched ? matched.name : undefined);
+                        }}
+                        className="p-1 border border-slate-200 dark:border-slate-850 bg-white dark:bg-slate-950 rounded-lg text-[10px] font-bold focus:ring-0 max-w-[140px]"
+                      >
+                        <option value="">🔴 Unassigned</option>
+                        {allEmployees.map(emp => (
+                          <option key={emp.id} value={emp.id}>{emp.name}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="p-3">
+                      <select 
+                        value={aud.status} 
+                        onChange={e => handleUpdateTaxAuditStatus(aud.id, e.target.value as any, aud.assignedEmployeeId, aud.assignedEmployeeName)} 
+                        className="p-1 border border-slate-200 dark:border-slate-850 bg-white dark:bg-slate-950 rounded-lg text-[10px] font-bold focus:ring-0 max-w-[160px]"
+                      >
+                        <option value="PENDING">Pending (Not Filed)</option>
+                        <option value="COMPLETED">Completed (Filed)</option>
+                        <option value="PENDING WITH CA">Pending with CA</option>
+                        <option value="BALANCE SHEET PENDING">Balance Sheet Pending</option>
+                        <option value="FORM PENDING">Form Pending</option>
+                      </select>
+                    </td>
+                    <td className="p-3 pr-5 font-bold">
+                      <div className="relative inline-block text-left">
+                        <button 
+                          type="button" 
+                          onClick={() => setVisiblePasswords(prev => ({ ...prev, [aud.id]: !prev[aud.id] }))}
+                          className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-950/40 text-slate-650 dark:text-slate-350 hover:text-indigo-650 dark:hover:text-indigo-400 rounded-lg font-bold text-[9px] uppercase tracking-wider cursor-pointer"
+                        >
+                          <KeyRound className="h-3 w-3" /> View Credentials
+                        </button>
+                        {visiblePasswords[aud.id] && (
+                          <div className="absolute right-0 mt-1.5 p-2 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl shadow-md z-30 font-mono text-[9px] text-slate-700 dark:text-slate-200 space-y-1 min-w-[150px]">
+                            <div className="flex justify-between gap-2 border-b pb-1">
+                              <span className="font-bold text-slate-400 uppercase text-[8px]">Portal ID</span>
+                              <span className="font-extrabold text-indigo-600">{aud.username || 'N/A'}</span>
+                            </div>
+                            <div className="flex justify-between gap-2">
+                              <span className="font-bold text-slate-400 uppercase text-[8px]">Portal Pass</span>
+                              <span className="font-bold text-emerald-600 col-span-2">{aud.password || 'N/A'}</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -574,13 +843,36 @@ export default function V2ITR({
                     <h4 className="font-black text-slate-805 dark:text-slate-100 text-sm leading-tight">{tr.entityName}</h4>
                     <span className="text-[10px] uppercase font-mono font-bold text-slate-400">Exempt Category: {tr.typeOfEntity}</span>
                   </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block font-mono">Health Score</div>
-                    <div className="text-xl font-black text-teal-650 dark:text-teal-400">{tr.healthScore}%</div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button 
+                      type="button" 
+                      onClick={() => setEditingTrustClient(tr)} 
+                      className="p-1 px-1.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-650 dark:text-indigo-450 rounded-lg cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900"
+                      title="Modify Client"
+                    >
+                      <Edit2 className="h-3.5 w-3.5" />
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        if (confirm(`Are you sure you want to delete NGO trust ${tr.entityName}?`)) {
+                          deleteV2TrustClient(tr.id);
+                          setTrustClients(getV2TrustClients());
+                        }
+                      }} 
+                      className="p-1 px-1.5 bg-rose-50 dark:bg-rose-955/20 text-rose-600 dark:text-rose-400 rounded-lg cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-900"
+                      title="Delete Client"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                    <div className="text-right border-l pl-2 border-slate-150 dark:border-slate-850">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block font-mono">Health Score</div>
+                      <div className="text-xl font-black text-teal-650 dark:text-teal-400">{tr.healthScore}%</div>
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 dark:bg-slate-950/65 border border-slate-105 dark:border-slate-850 rounded-2xl font-mono text-[10.5px]">
+                <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 dark:bg-slate-955 border border-slate-105 dark:border-slate-850 rounded-2xl font-mono text-[10.5px]">
                   <div>
                     <span className="text-[9px] uppercase font-bold text-slate-400 font-mono block">Auth Signatory</span>
                     <span className="font-extrabold text-slate-705 dark:text-slate-150">{tr.authSignatory}</span>
@@ -588,18 +880,47 @@ export default function V2ITR({
                   <div>
                     <span className="text-[9px] uppercase font-bold text-slate-400 font-mono block">Exemptions Status</span>
                     {tr.has12A80G ? (
-                      <span className="px-1 bg-emerald-100 text-emerald-700 text-[8.5px] font-bold rounded">12A & 80G ACTIVE</span>
+                      <span className="px-1 bg-emerald-100 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 text-[8.5px] font-bold rounded">12A & 80G ACTIVE</span>
                     ) : (
-                      <span className="px-1 bg-slate-150 text-slate-500 text-[8.5px] font-bold rounded">BASIC NGO</span>
+                      <span className="px-1 bg-slate-150 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[8.5px] font-bold rounded">BASIC NGO</span>
                     )}
                   </div>
-                  {tr.itPortalUsername && (
-                    <div className="col-span-2 pt-1 border-t border-slate-200/50">
-                      <span className="text-[9px] uppercase font-bold text-slate-400 font-mono block">IT Portal Exemption Accesses</span>
-                      <span className="text-slate-650 dark:text-slate-300">User: {tr.itPortalUsername} {tr.itPortalPassword ? `| PW: ${tr.itPortalPassword}` : ''}</span>
-                    </div>
-                  )}
                 </div>
+
+                {/* Sub-actions for Contact Detail and Credentials Viewing (V2.4.3) */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button 
+                    type="button" 
+                    onClick={() => setExpandedContacts(prev => ({ ...prev, [tr.id]: !prev[tr.id] }))}
+                    className="p-1 px-2.5 text-slate-705 dark:text-slate-200 bg-slate-100 hover:bg-slate-205 dark:bg-slate-800 rounded-lg text-[9px] uppercase font-semibold tracking-wider cursor-pointer"
+                  >
+                    {expandedContacts[tr.id] ? '🔒 Hide Contacts' : '📞 View Contacts'}
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setVisiblePasswords(prev => ({ ...prev, [tr.id]: !prev[tr.id] }))}
+                    className="p-1 px-2.5 text-indigo-655 dark:text-indigo-400 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/45 rounded-lg text-[9px] uppercase font-semibold tracking-wider cursor-pointer"
+                  >
+                    {visiblePasswords[tr.id] ? '🔑 Hide Credentials' : '🔑 View Credentials'}
+                  </button>
+                </div>
+
+                {/* Expandable panels */}
+                {expandedContacts[tr.id] && (
+                  <div className="p-3 bg-indigo-955/5 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900 rounded-2xl text-[10px] space-y-1">
+                    <div className="font-bold text-slate-500 text-[8.5px] uppercase">Signatory Contact Details:</div>
+                    <div className="font-mono text-slate-705 dark:text-slate-350">✉ Email: {tr.emailId || 'ngo.society.sign@org.in'}</div>
+                    <div className="font-mono text-slate-705 dark:text-slate-350">📞 Mobile: {tr.mobileNumber || '9876543210'}</div>
+                  </div>
+                )}
+
+                {visiblePasswords[tr.id] && (
+                  <div className="p-3 bg-emerald-955/5 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900 rounded-2xl text-[10px] space-y-1">
+                    <div className="font-bold text-slate-500 text-[8.5px] uppercase font-sans">Income Tax Portal Access Credentials:</div>
+                    <div className="font-mono text-slate-705 dark:text-slate-300">Username: <span className="font-extrabold text-teal-655">{tr.itPortalUsername || 'NGO_USER'}</span></div>
+                    <div className="font-mono text-slate-705 dark:text-slate-300">Password: <span className="font-extrabold text-teal-600">{tr.itPortalPassword || 'NGO_PASS_88'}</span></div>
+                  </div>
+                )}
 
                 <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center text-[10px]">
                   <div className="flex flex-col">
@@ -627,7 +948,7 @@ export default function V2ITR({
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-slate-50 dark:bg-slate-950 p-4 rounded-3xl border border-slate-100 dark:border-slate-850 select-none">
             <div>
               <h3 className="font-extrabold text-[#111] dark:text-[#fff] text-sm uppercase">Digital Signature Certificate (DSC) Expirations</h3>
-              <p className="text-[10px] text-slate-450 font-medium tracking-wide">Maintain active alert lists for director and promoter signatures, token hardware logs (MToken/Proxkey), and renewal alarms.</p>
+              <p className="text-[10px] text-slate-455 font-medium tracking-wide">Maintain active alert lists for director and promoter signatures, token hardware logs (MToken/Proxkey), and renewal alarms.</p>
             </div>
             <button onClick={() => setShowAddDsc(true)} className="flex items-center gap-1 bg-indigo-650 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-xl cursor-pointer">
               <Plus className="h-4 w-4" /> Create DSC Alarm Alert
@@ -636,7 +957,7 @@ export default function V2ITR({
 
           {showAddDsc && (
             <form onSubmit={handleCreateDsc} className="p-4 bg-white border border-slate-205 rounded-xl space-y-4">
-              <h4 className="font-extrabold text-indigo-750 uppercase text-[10px]">Create DSC Client record</h4>
+              <h4 className="font-extrabold text-indigo-755 uppercase text-[10px]">Create DSC Client record</h4>
               
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1">
@@ -655,7 +976,7 @@ export default function V2ITR({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-500">DSC Expiry Date *</label>
+                  <label className="text-[10px] uppercase font-bold text-slate-505">DSC Expiry Date *</label>
                   <input type="date" value={dscExpiry} onChange={e => setDscExpiry(e.target.value)} className="w-full p-2 bg-slate-55 border border-slate-200 rounded-xl font-mono" />
                 </div>
 
@@ -677,7 +998,7 @@ export default function V2ITR({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-500">Assign to Employee / CA</label>
+                  <label className="text-[10px] uppercase font-bold text-slate-505">Assign to Employee / CA</label>
                   <select 
                     value={addAssignedEmpId} 
                     onChange={e => setAddAssignedEmpId(e.target.value)} 
@@ -689,7 +1010,6 @@ export default function V2ITR({
                     ))}
                   </select>
                 </div>
-
               </div>
 
               <div className="flex justify-end gap-2">
@@ -699,21 +1019,38 @@ export default function V2ITR({
             </form>
           )}
 
-          <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-850 px-3 py-1.5 rounded-2xl max-w-sm text-xs select-none">
-            <Search className="h-4 w-4 text-slate-400" />
-            <input type="text" placeholder="Search representative name, issuer, hard token..." value={dscFilter} onChange={e => setDscFilter(e.target.value)} className="bg-transparent border-0 w-full focus:ring-0 p-0" />
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
+            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-850 px-3 py-1.5 rounded-2xl max-w-sm text-xs select-none w-full sm:w-80">
+              <Search className="h-4 w-4 text-slate-400" />
+              <input type="text" placeholder="Search representative name, issuer, hard token..." value={dscFilter} onChange={e => setDscFilter(e.target.value)} className="bg-transparent border-0 w-full focus:ring-0 p-0" />
+            </div>
+
+            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-850 px-3 py-1.5 rounded-2xl text-xs select-none">
+              <span className="text-slate-400 font-extrabold uppercase text-[9px]">Status Alarm:</span>
+              <select
+                value={dscFilterDropdown}
+                onChange={e => setDscFilterDropdown(e.target.value)}
+                className="bg-transparent border-0 focus:ring-0 p-0 font-bold text-slate-705 dark:text-slate-200 text-xs"
+              >
+                <option value="ALL">All DSC Records</option>
+                <option value="RENEWAL_PENDING">Renewal Pending</option>
+                <option value="ACTIVE">Active (Valid)</option>
+                <option value="UPCOMING_RENEWAL">Upcoming Renewal</option>
+              </select>
+            </div>
           </div>
 
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-3xl overflow-hidden shadow-3xs">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-slate-50 dark:bg-slate-950 font-bold text-slate-400 select-none uppercase border-b border-slate-100 dark:border-slate-850 text-[10px]">
+                <tr className="bg-slate-50 dark:bg-slate-955 font-bold text-slate-400 select-none uppercase border-b border-slate-100 dark:border-slate-850 text-[10px]">
                   <th className="p-3 pl-5">Signatory Representative</th>
                   <th className="p-3">Firm / corporate Account</th>
                   <th className="p-3">CCA Certify Issuer</th>
                   <th className="p-3">Hardware Crypto Token</th>
                   <th className="p-3">Key Validity & Alerts</th>
                   <th className="p-3">Custody Handler</th>
+                  <th className="p-3 pr-5">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-150">
@@ -730,7 +1067,7 @@ export default function V2ITR({
                         )}
                       </td>
                       <td className="p-3 font-bold text-slate-550">{ds.firmName}</td>
-                      <td className="p-3 font-semibold text-slate-650">{ds.issuerName}</td>
+                      <td className="p-3 font-semibold text-slate-655">{ds.issuerName}</td>
                       <td className={`p-3 font-mono font-bold ${isFwdWarning ? 'text-slate-400' : 'text-indigo-650'}`}>{ds.tokenName}</td>
                       <td className="p-3 space-y-1">
                         {isFwdWarning ? (
@@ -755,16 +1092,16 @@ export default function V2ITR({
                         ) : (
                           <>
                             <div className="flex items-center gap-1">{getDscExpiryAlertBadge(ds.expiryDate)}</div>
-                            <div className="text-[9.5px] text-slate-400 font-mono">Issued: {ds.issueDate} • Exp: {ds.expiryDate}</div>
+                            <div className="text-[9.5px] text-slate-400 font-mono font-semibold">Issued: {ds.issueDate} • Exp: {ds.expiryDate}</div>
                           </>
                         )}
                       </td>
                       <td className="p-3 space-y-1 text-xs">
                         {isFwdWarning ? (
-                          <span className="text-slate-400 italic text-[10px]">Piped via MCA directors list</span>
+                          <span className="text-slate-450 italic text-[10px]">Piped via MCA directors list</span>
                         ) : (
                           <>
-                            <div className="font-bold text-slate-700 dark:text-slate-300">
+                            <div className="font-bold text-slate-705 dark:text-slate-300">
                               {(ds as any).assignedEmployeeName || '🔴 Unassigned'}
                             </div>
                             <button 
@@ -775,6 +1112,45 @@ export default function V2ITR({
                               <Users className="h-2.5 w-2.5" /> Transfer Custody
                             </button>
                           </>
+                        )}
+                      </td>
+                      <td className="p-3 pr-5">
+                        {!isFwdWarning && (
+                          <div className="flex items-center gap-1.5">
+                            <button 
+                              type="button" 
+                              onClick={() => {
+                                setRenewalDscClient(ds as V2DscClient);
+                                setRenewalIssueDate(ds.issueDate);
+                                setRenewalExpiryDate(ds.expiryDate);
+                              }} 
+                              className="px-2 py-1 bg-yellow-50 dark:bg-yellow-955/10 border border-yellow-250 dark:border-yellow-905 text-yellow-700 dark:text-yellow-405 font-bold uppercase text-[9px] tracking-wider rounded-lg hover:bg-yellow-100 cursor-pointer transition flex items-center gap-1"
+                              title="Renew DSC Alert"
+                            >
+                              <Calendar className="h-2.5 w-2.5" /> Renewed
+                            </button>
+                            <button 
+                              type="button" 
+                              onClick={() => setEditingDscClient(ds as V2DscClient)} 
+                              className="p-1 text-slate-500 hover:text-indigo-650 cursor-pointer transition rounded"
+                              title="Modify Client"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                            <button 
+                              type="button" 
+                              onClick={() => {
+                                if (confirm(`Are you sure you want to delete DSC client ${ds.clientName}?`)) {
+                                  deleteV2DscClient(ds.id);
+                                  setDscClients(getV2DscClients());
+                                }
+                              }} 
+                              className="p-1 text-slate-500 hover:text-rose-600 cursor-pointer transition rounded"
+                              title="Delete Client"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -1137,6 +1513,388 @@ export default function V2ITR({
                 className="px-4 py-1.5 bg-indigo-650 text-white font-black rounded-xl cursor-pointer"
               >
                 Confirm Transfer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT ITR CLIENT MODAL */}
+      {editingItrClient && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-sans">
+          <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-3xl w-full max-w-md p-5 space-y-4 shadow-xl text-xs">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="font-extrabold text-[#111] dark:text-[#fff] uppercase flex items-center gap-1.5">
+                <Edit2 className="h-4 w-4 text-indigo-650" /> Modify ITR Client
+              </h3>
+              <button type="button" onClick={() => setEditingItrClient(null)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500">Taxpayer Name *</label>
+                <input 
+                  type="text" 
+                  value={editingItrClient.taxpayerName} 
+                  onChange={e => setEditingItrClient({ ...editingItrClient, taxpayerName: e.target.value })} 
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-xs" 
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500">PAN Card Number *</label>
+                <input 
+                  type="text" 
+                  value={editingItrClient.panCardNumber} 
+                  onChange={e => setEditingItrClient({ ...editingItrClient, panCardNumber: e.target.value.toUpperCase() })} 
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-xs" 
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500">ITR Filing Status *</label>
+                <select 
+                  value={editingItrClient.itrStatus} 
+                  onChange={e => setEditingItrClient({ ...editingItrClient, itrStatus: e.target.value as any })} 
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-xs"
+                >
+                  <option value="PENDING">Pending</option>
+                  <option value="FILED">Filed</option>
+                  <option value="E-V PENDING">E-V Pending</option>
+                  <option value="TAX AUDIT PENDING">Tax Audit Pending</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500">Type of ITR Form</label>
+                <select 
+                  value={editingItrClient.typeOfItr} 
+                  onChange={e => setEditingItrClient({ ...editingItrClient, typeOfItr: e.target.value as any })} 
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-xs"
+                >
+                  <option value="ITR-1">ITR-1 (Sahaj)</option>
+                  <option value="ITR-2">ITR-2 (Capital Gains)</option>
+                  <option value="ITR-3">ITR-3 (Proprietorship)</option>
+                  <option value="ITR-4">ITR-4 (Sugam)</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <input 
+                  type="checkbox" 
+                  id="edit_audit_applicable" 
+                  checked={editingItrClient.isAuditApplicable} 
+                  onChange={e => setEditingItrClient({ ...editingItrClient, isAuditApplicable: e.target.checked })} 
+                  className="h-4 w-4 rounded text-indigo-650 focus:ring-indigo-505" 
+                />
+                <label htmlFor="edit_audit_applicable" className="text-xs font-bold text-slate-700 dark:text-slate-350">Requires Tax Audit (44AB)?</label>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 text-xs pt-1">
+              <button type="button" onClick={() => setEditingItrClient(null)} className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold cursor-pointer">Cancel</button>
+              <button 
+                type="button" 
+                onClick={() => {
+                  updateV2ItrClient(editingItrClient);
+                  setItrClients(getV2ItrClients());
+                  setEditingItrClient(null);
+                }} 
+                className="px-4 py-1.5 bg-indigo-650 text-white font-black rounded-xl cursor-pointer"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT TRUST/NGO CLIENT MODAL */}
+      {editingTrustClient && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-sans">
+          <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-3xl w-full max-w-md p-5 space-y-4 shadow-xl text-xs">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="font-extrabold text-[#111] dark:text-[#fff] uppercase flex items-center gap-1.5">
+                <Edit2 className="h-4 w-4 text-indigo-650" /> Modify NGO Trust
+              </h3>
+              <button type="button" onClick={() => setEditingTrustClient(null)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500">NGO Trust/Society Entity Name *</label>
+                <input 
+                  type="text" 
+                  value={editingTrustClient.entityName} 
+                  onChange={e => setEditingTrustClient({ ...editingTrustClient, entityName: e.target.value })} 
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-xs" 
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500">Exempt Category Type *</label>
+                <select 
+                  value={editingTrustClient.typeOfEntity} 
+                  onChange={e => setEditingTrustClient({ ...editingTrustClient, typeOfEntity: e.target.value })} 
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-xs"
+                >
+                  <option value="Religious Trust">Religious Trust</option>
+                  <option value="Charitable Trust">Charitable Trust</option>
+                  <option value="Educational Society">Educational Society</option>
+                  <option value="Scientific Research Assoc">Scientific Research Assoc</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500">Authorized Signatory *</label>
+                <input 
+                  type="text" 
+                  value={editingTrustClient.authSignatory} 
+                  onChange={e => setEditingTrustClient({ ...editingTrustClient, authSignatory: e.target.value })} 
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-xs" 
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-500">Email ID *</label>
+                  <input 
+                    type="email" 
+                    value={editingTrustClient.emailId} 
+                    onChange={e => setEditingTrustClient({ ...editingTrustClient, emailId: e.target.value })} 
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl text-xs" 
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-500">Mobile Number *</label>
+                  <input 
+                    type="text" 
+                    value={editingTrustClient.mobileNumber} 
+                    onChange={e => setEditingTrustClient({ ...editingTrustClient, mobileNumber: e.target.value })} 
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl text-xs" 
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-500">Portal User ID</label>
+                  <input 
+                    type="text" 
+                    value={editingTrustClient.itPortalUsername || ''} 
+                    onChange={e => setEditingTrustClient({ ...editingTrustClient, itPortalUsername: e.target.value })} 
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-xs" 
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-500">Portal Password</label>
+                  <input 
+                    type="text" 
+                    value={editingTrustClient.itPortalPassword || ''} 
+                    onChange={e => setEditingTrustClient({ ...editingTrustClient, itPortalPassword: e.target.value })} 
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-xs" 
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <input 
+                  type="checkbox" 
+                  id="edit_has_12A_80G" 
+                  checked={editingTrustClient.has12A80G} 
+                  onChange={e => setEditingTrustClient({ ...editingTrustClient, has12A80G: e.target.checked })} 
+                  className="h-4 w-4 rounded text-indigo-650 focus:ring-indigo-505" 
+                />
+                <label htmlFor="edit_has_12A_80G" className="text-xs font-bold text-slate-700 dark:text-slate-350">Has active 12A & 80G clearances?</label>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 text-xs pt-1">
+              <button type="button" onClick={() => setEditingTrustClient(null)} className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold cursor-pointer">Cancel</button>
+              <button 
+                type="button" 
+                onClick={() => {
+                  updateV2TrustClient(editingTrustClient);
+                  setTrustClients(getV2TrustClients());
+                  setEditingTrustClient(null);
+                }} 
+                className="px-4 py-1.5 bg-indigo-650 text-white font-black rounded-xl cursor-pointer"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT DSC CLIENT RECORD MODAL */}
+      {editingDscClient && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-sans">
+          <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-3xl w-full max-w-md p-5 space-y-4 shadow-xl text-xs">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="font-extrabold text-[#111] dark:text-[#fff] uppercase flex items-center gap-1.5">
+                <Edit2 className="h-4 w-4 text-indigo-650" /> Modify DSC Record
+              </h3>
+              <button type="button" onClick={() => setEditingDscClient(null)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500">Representative / Signatory Name *</label>
+                <input 
+                  type="text" 
+                  value={editingDscClient.clientName} 
+                  onChange={e => setEditingDscClient({ ...editingDscClient, clientName: e.target.value })} 
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-xs" 
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500">Organization Company / Trust Name *</label>
+                <input 
+                  type="text" 
+                  value={editingDscClient.firmName} 
+                  onChange={e => setEditingDscClient({ ...editingDscClient, firmName: e.target.value })} 
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-xs" 
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-500">DSC Issue Date *</label>
+                  <input 
+                    type="date" 
+                    value={editingDscClient.issueDate} 
+                    onChange={e => setEditingDscClient({ ...editingDscClient, issueDate: e.target.value })} 
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-xs" 
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-500">DSC Expiry Date *</label>
+                  <input 
+                    type="date" 
+                    value={editingDscClient.expiryDate} 
+                    onChange={e => setEditingDscClient({ ...editingDscClient, expiryDate: e.target.value })} 
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-xs" 
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-500">Certify Issuer Agent</label>
+                  <select 
+                    value={editingDscClient.issuerName} 
+                    onChange={e => setEditingDscClient({ ...editingDscClient, issuerName: e.target.value as any })} 
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl text-xs"
+                  >
+                    <option value="Prodigisgn">Prodigisgn</option>
+                    <option value="PentaSign">PentaSign</option>
+                    <option value="Sify">Sify SafeScrypt</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-500">Token Hardware Type</label>
+                  <select 
+                    value={editingDscClient.tokenName} 
+                    onChange={e => setEditingDscClient({ ...editingDscClient, tokenName: e.target.value as any })} 
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl text-xs"
+                  >
+                    <option value="Proxkey">Proxkey</option>
+                    <option value="MToken">MToken</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 text-xs pt-1">
+              <button type="button" onClick={() => setEditingDscClient(null)} className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold cursor-pointer">Cancel</button>
+              <button 
+                type="button" 
+                onClick={() => {
+                  updateV2DscClient(editingDscClient);
+                  setDscClients(getV2DscClients());
+                  setEditingDscClient(null);
+                }} 
+                className="px-4 py-1.5 bg-indigo-650 text-white font-black rounded-xl cursor-pointer"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DSC RENEWED BUTTON MODAL */}
+      {renewalDscClient && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-sans">
+          <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-3xl w-full max-w-md p-5 space-y-4 shadow-xl text-xs">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="font-extrabold text-[#111] dark:text-[#fff] uppercase flex items-center gap-1.5">
+                <Calendar className="h-4 w-4 text-emerald-600" /> Enter DSC Renewal Dates
+              </h3>
+              <button type="button" onClick={() => setRenewalDscClient(null)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-955/20 border border-emerald-100 dark:border-emerald-900/50 rounded-2xl">
+              <div className="font-extrabold text-emerald-850 dark:text-emerald-400 text-xs">Signatory: {renewalDscClient.clientName}</div>
+              <div className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">Firm: {renewalDscClient.firmName}</div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block">Renewal / Issue Date *</label>
+                <input 
+                  type="date" 
+                  value={renewalIssueDate} 
+                  required
+                  onChange={e => setRenewalIssueDate(e.target.value)} 
+                  className="w-full p-2.5 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-xs font-bold" 
+                />
+              </div>
+              
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block">New Expiry Date *</label>
+                <input 
+                  type="date" 
+                  value={renewalExpiryDate} 
+                  required
+                  onChange={e => setRenewalExpiryDate(e.target.value)} 
+                  className="w-full p-2.5 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-xs font-bold" 
+                />
+                <span className="text-[9.5px] text-slate-450 block pt-0.5">Tip: A standard DSC is typically valid for exactly 2 years.</span>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 text-xs pt-1">
+              <button type="button" onClick={() => setRenewalDscClient(null)} className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold cursor-pointer">Cancel</button>
+              <button 
+                type="button" 
+                onClick={() => {
+                  if (!renewalIssueDate || !renewalExpiryDate) {
+                    alert('Please specify both the issue and expiry dates.');
+                    return;
+                  }
+                  const updated: V2DscClient = {
+                    ...renewalDscClient,
+                    issueDate: renewalIssueDate,
+                    expiryDate: renewalExpiryDate,
+                  };
+                  updateV2DscClient(updated);
+                  setDscClients(getV2DscClients());
+                  setRenewalDscClient(null);
+                }} 
+                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl cursor-pointer"
+              >
+                Confirm Renewal
               </button>
             </div>
           </div>

@@ -29,7 +29,8 @@ import {
   getTransfers,
   transferLead,
   addResignationRequest,
-  getResignationRequests
+  getResignationRequests,
+  formatLeadMobileNumberForExport
 } from '../lib/db';
 import { Lead, FollowUp, Proposal, LeadStage, Employee, LEAD_STAGES, LeaveRequest, ResignationRequest } from '../types';
 import {
@@ -469,7 +470,7 @@ export default function EmployeeDashboard({
                       const headers = ['Client Name', 'Mobile Number', 'Email', 'Company', 'Service Required', 'Lead Source', 'Stage', 'Creation Date'];
                       const rows = filteredMyLeads.map(l => [
                         l.customerName.replace(/"/g, '""'),
-                        l.mobile.replace(/"/g, '""'),
+                        formatLeadMobileNumberForExport(l.mobile).replace(/"/g, '""'),
                         l.email.replace(/"/g, '""'),
                         (l.businessName || '').replace(/"/g, '""'),
                         l.serviceRequired.replace(/"/g, '""'),

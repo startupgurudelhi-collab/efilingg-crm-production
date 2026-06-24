@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import ConfirmModal from './ConfirmModal';
 import { 
   V2ItrClient, 
   V2TaxAuditClient, 
@@ -77,6 +78,7 @@ export default function V2ITR({
 
   // Search Filters
   const [itrSearch, setItrSearch] = useState('');
+  const [itrSubView, setItrSubView] = useState<'CLIENTS' | 'RETURNS'>('CLIENTS');
   const [dscFilter, setDscFilter] = useState('');
 
   // New user requested features states
@@ -90,6 +92,19 @@ export default function V2ITR({
 
   // Dynamic Service Categories (V2.4.2)
   const [dynamicCategories, setDynamicCategories] = useState<string[]>(getV2OtherServiceCategories());
+
+  // Reusable custom confirm modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   // Edit / Modify Client profile active modes data carriers
   const [editingItrClient, setEditingItrClient] = useState<V2ItrClient | null>(null);
@@ -113,6 +128,8 @@ export default function V2ITR({
   const [itrAddress, setItrAddress] = useState('');
   const [itrITPass, setItrITPass] = useState('');
   const [itrIsAudit, setItrIsAudit] = useState(false);
+  const [itrEmail, setItrEmail] = useState('');
+  const [itrMobile, setItrMobile] = useState('');
 
   // Trust Form parameters
   const [showAddTrust, setShowAddTrust] = useState(initialShowAddTrust);
@@ -165,12 +182,15 @@ export default function V2ITR({
       isAuditApplicable: itrIsAudit,
       itrStatus: 'NOT FILED',
       assignedEmployeeId: addAssignedEmpId || undefined,
-      assignedEmployeeName: matchedEmployee ? matchedEmployee.name : undefined
+      assignedEmployeeName: matchedEmployee ? matchedEmployee.name : undefined,
+      emailId: itrEmail || undefined,
+      mobileNumber: itrMobile || undefined
     });
     setItrClients([...itrClients, added]);
     setShowAddItr(false);
     // Reset Form
     setItrName(''); setItrPan(''); setItrAddress(''); setItrITPass(''); setItrIsAudit(false); setAddAssignedEmpId('');
+    setItrEmail(''); setItrMobile('');
   };
 
   const handleUpdateItrStatus = (id: string, newStatus: V2ItrClient['itrStatus']) => {
@@ -453,6 +473,14 @@ export default function V2ITR({
                   <label className="text-[10px] uppercase font-bold text-slate-500">IT Portal Password</label>
                   <input type="text" value={itrITPass} onChange={e => setItrITPass(e.target.value)} className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-mono" />
                 </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-500">Contact Email ID</label>
+                  <input type="email" placeholder="e.g. taxpayer@gmail.com" value={itrEmail} onChange={e => setItrEmail(e.target.value)} className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-500">Contact Mobile Number</label>
+                  <input type="text" placeholder="e.g. 9812345678" value={itrMobile} onChange={e => setItrMobile(e.target.value)} className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-mono" />
+                </div>
                 <div className="flex items-center gap-2 pt-5">
                   <input type="checkbox" id="itrAuditCheck" checked={itrIsAudit} onChange={e => setItrIsAudit(e.target.checked)} className="h-4 w-4 text-indigo-650" />
                   <label htmlFor="itrAuditCheck" className="font-bold text-slate-700 cursor-pointer">Tax Audit Applicable (3CD)</label>
@@ -601,10 +629,16 @@ export default function V2ITR({
                         <button 
                           type="button" 
                           onClick={() => {
-                            if (confirm(`Are you sure you want to delete client ${cl.taxpayerName}?`)) {
-                              deleteV2ItrClient(cl.id);
-                              setItrClients(getV2ItrClients());
-                            }
+                            setConfirmModal({
+                              isOpen: true,
+                              title: 'Delete ITR Client',
+                              message: `Are you sure you want to delete client "${cl.taxpayerName}"? This action is permanent.`,
+                              onConfirm: () => {
+                                deleteV2ItrClient(cl.id);
+                                setItrClients(getV2ItrClients());
+                                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                              }
+                            });
                           }} 
                           className="p-1 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:text-rose-850 rounded-lg transition shrink-0 cursor-pointer"
                           title="Delete Client"
@@ -855,10 +889,16 @@ export default function V2ITR({
                     <button 
                       type="button" 
                       onClick={() => {
-                        if (confirm(`Are you sure you want to delete NGO trust ${tr.entityName}?`)) {
-                          deleteV2TrustClient(tr.id);
-                          setTrustClients(getV2TrustClients());
-                        }
+                        setConfirmModal({
+                          isOpen: true,
+                          title: 'Delete Trust Client',
+                          message: `Are you sure you want to delete NGO trust "${tr.entityName}"? This action is permanent.`,
+                          onConfirm: () => {
+                            deleteV2TrustClient(tr.id);
+                            setTrustClients(getV2TrustClients());
+                            setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                          }
+                        });
                       }} 
                       className="p-1 px-1.5 bg-rose-50 dark:bg-rose-955/20 text-rose-600 dark:text-rose-400 rounded-lg cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-900"
                       title="Delete Client"
@@ -1140,10 +1180,16 @@ export default function V2ITR({
                             <button 
                               type="button" 
                               onClick={() => {
-                                if (confirm(`Are you sure you want to delete DSC client ${ds.clientName}?`)) {
-                                  deleteV2DscClient(ds.id);
-                                  setDscClients(getV2DscClients());
-                                }
+                                setConfirmModal({
+                                  isOpen: true,
+                                  title: 'Delete DSC Client',
+                                  message: `Are you sure you want to delete DSC client "${ds.clientName}"? This action is permanent.`,
+                                  onConfirm: () => {
+                                    deleteV2DscClient(ds.id);
+                                    setDscClients(getV2DscClients());
+                                    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                  }
+                                });
                               }} 
                               className="p-1 text-slate-500 hover:text-rose-600 cursor-pointer transition rounded"
                               title="Delete Client"
@@ -1522,18 +1568,18 @@ export default function V2ITR({
       {/* EDIT ITR CLIENT MODAL */}
       {editingItrClient && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-sans">
-          <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-3xl w-full max-w-md p-5 space-y-4 shadow-xl text-xs">
+          <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-3xl w-full max-w-xl p-6 space-y-4 shadow-xl text-xs">
             <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800">
               <h3 className="font-extrabold text-[#111] dark:text-[#fff] uppercase flex items-center gap-1.5">
-                <Edit2 className="h-4 w-4 text-indigo-650" /> Modify ITR Client
+                <Edit2 className="h-4 w-4 text-indigo-650" /> Modify ITR Client Profile
               </h3>
               <button type="button" onClick={() => setEditingItrClient(null)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400">
                 <X className="h-4 w-4" />
               </button>
             </div>
             
-            <div className="space-y-3">
-              <div className="space-y-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1 sm:col-span-2">
                 <label className="text-[10px] uppercase font-bold text-slate-500">Taxpayer Name *</label>
                 <input 
                   type="text" 
@@ -1547,9 +1593,49 @@ export default function V2ITR({
                 <label className="text-[10px] uppercase font-bold text-slate-500">PAN Card Number *</label>
                 <input 
                   type="text" 
-                  value={editingItrClient.panCardNumber} 
-                  onChange={e => setEditingItrClient({ ...editingItrClient, panCardNumber: e.target.value.toUpperCase() })} 
+                  value={editingItrClient.panNumber} 
+                  onChange={e => setEditingItrClient({ ...editingItrClient, panNumber: e.target.value.toUpperCase() })} 
                   className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-xs" 
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500">IT Portal Password</label>
+                <input 
+                  type="text" 
+                  value={editingItrClient.itPortalPassword || ''} 
+                  onChange={e => setEditingItrClient({ ...editingItrClient, itPortalPassword: e.target.value })} 
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-xs" 
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500">Contact Email ID</label>
+                <input 
+                  type="email" 
+                  value={editingItrClient.emailId || ''} 
+                  onChange={e => setEditingItrClient({ ...editingItrClient, emailId: e.target.value })} 
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl text-xs" 
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500">Contact Mobile Number</label>
+                <input 
+                  type="text" 
+                  value={editingItrClient.mobileNumber || ''} 
+                  onChange={e => setEditingItrClient({ ...editingItrClient, mobileNumber: e.target.value })} 
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-xs" 
+                />
+              </div>
+
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-[10px] uppercase font-bold text-slate-500">Residential Address</label>
+                <input 
+                  type="text" 
+                  value={editingItrClient.address || ''} 
+                  onChange={e => setEditingItrClient({ ...editingItrClient, address: e.target.value })} 
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl text-xs" 
                 />
               </div>
 
@@ -1560,10 +1646,10 @@ export default function V2ITR({
                   onChange={e => setEditingItrClient({ ...editingItrClient, itrStatus: e.target.value as any })} 
                   className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-xs"
                 >
-                  <option value="PENDING">Pending</option>
+                  <option value="NOT FILED">Not Filed</option>
                   <option value="FILED">Filed</option>
-                  <option value="E-V PENDING">E-V Pending</option>
-                  <option value="TAX AUDIT PENDING">Tax Audit Pending</option>
+                  <option value="PENDING FOR E-VERIFY">Pending for E-Verify</option>
+                  <option value="PENDING FOR TAX AUDIT">Pending for Tax Audit</option>
                 </select>
               </div>
 
@@ -1578,10 +1664,13 @@ export default function V2ITR({
                   <option value="ITR-2">ITR-2 (Capital Gains)</option>
                   <option value="ITR-3">ITR-3 (Proprietorship)</option>
                   <option value="ITR-4">ITR-4 (Sugam)</option>
+                  <option value="ITR-5">ITR-5 (Firms/LLPs)</option>
+                  <option value="ITR-6">ITR-6 (Companies)</option>
+                  <option value="ITR-7">ITR-7 (Trusts/NGOs)</option>
                 </select>
               </div>
 
-              <div className="flex items-center gap-2 pt-2">
+              <div className="flex items-center gap-2 pt-2 sm:col-span-2">
                 <input 
                   type="checkbox" 
                   id="edit_audit_applicable" 
@@ -1593,16 +1682,17 @@ export default function V2ITR({
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 text-xs pt-1">
-              <button type="button" onClick={() => setEditingItrClient(null)} className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold cursor-pointer">Cancel</button>
+            <div className="flex justify-end gap-2 text-xs pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button type="button" onClick={() => setEditingItrClient(null)} className="px-3.5 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold cursor-pointer">Cancel</button>
               <button 
                 type="button" 
                 onClick={() => {
                   updateV2ItrClient(editingItrClient);
                   setItrClients(getV2ItrClients());
                   setEditingItrClient(null);
+                  alert('Taxpayer profile and contact credentials updated successfully!');
                 }} 
-                className="px-4 py-1.5 bg-indigo-650 text-white font-black rounded-xl cursor-pointer"
+                className="px-4.5 py-1.5 bg-indigo-650 text-white font-black rounded-xl cursor-pointer"
               >
                 Save Changes
               </button>
@@ -1900,6 +1990,15 @@ export default function V2ITR({
           </div>
         </div>
       )}
+
+      {/* Custom Reusable Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

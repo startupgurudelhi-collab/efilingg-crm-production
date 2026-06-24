@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ConfirmModal from './ConfirmModal';
 import { 
   getV1Employees,
   getV2GstClients,
@@ -39,6 +40,19 @@ export default function V2ClientMapper() {
   const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'unassigned' | 'assigned'>('all');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+
+  // Reusable custom confirm modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   // Load operation employees
   const opsEmployees = getV1Employees();
@@ -206,28 +220,32 @@ export default function V2ClientMapper() {
     const selectedEmp = opsEmployees.find(e => e.id === employeeId);
     if (!selectedEmp) return;
 
-    if (!confirm(`Are you sure you want to map ALL (${filteredClients.length}) visible ${activeService} clients to ${selectedEmp.name}?`)) {
-      return;
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Bulk Map Clients',
+      message: `Are you sure you want to map ALL (${filteredClients.length}) visible ${activeService} clients to ${selectedEmp.name}?`,
+      onConfirm: () => {
+        filteredClients.forEach(client => {
+          const targetObj = { ...client.originalObject };
+          targetObj.assignedEmployeeId = selectedEmp.id;
+          targetObj.assignedEmployeeName = selectedEmp.name;
 
-    filteredClients.forEach(client => {
-      const targetObj = { ...client.originalObject };
-      targetObj.assignedEmployeeId = selectedEmp.id;
-      targetObj.assignedEmployeeName = selectedEmp.name;
+          switch (client.serviceType) {
+            case 'GST': updateV2GstClient(targetObj); break;
+            case 'MCA': updateV2McaClient(targetObj); break;
+            case 'ITR': updateV2ItrClient(targetObj); break;
+            case 'TRUST': updateV2TrustClient(targetObj); break;
+            case 'DSC': updateV2DscClient(targetObj); break;
+            case 'TRADEMARK': updateV2TrademarkClient(targetObj); break;
+            case 'OTHER': updateV2OtherServiceClient(targetObj); break;
+          }
+        });
 
-      switch (client.serviceType) {
-        case 'GST': updateV2GstClient(targetObj); break;
-        case 'MCA': updateV2McaClient(targetObj); break;
-        case 'ITR': updateV2ItrClient(targetObj); break;
-        case 'TRUST': updateV2TrustClient(targetObj); break;
-        case 'DSC': updateV2DscClient(targetObj); break;
-        case 'TRADEMARK': updateV2TrademarkClient(targetObj); break;
-        case 'OTHER': updateV2OtherServiceClient(targetObj); break;
+        setSuccessMessage(`Bulk mapped ${filteredClients.length} clients to ${selectedEmp.name} successfully!`);
+        setTimeout(() => setSuccessMessage(null), 4000);
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
       }
     });
-
-    setSuccessMessage(`Bulk mapped ${filteredClients.length} clients to ${selectedEmp.name} successfully!`);
-    setTimeout(() => setSuccessMessage(null), 4000);
   };
 
   return (
@@ -485,6 +503,15 @@ export default function V2ClientMapper() {
 
         </div>
       </div>
+
+      {/* Custom Reusable Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

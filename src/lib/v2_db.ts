@@ -123,6 +123,8 @@ export interface V2ItrClient {
   itrStatus: 'FILED' | 'NOT FILED' | 'PENDING FOR E-VERIFY' | 'PENDING FOR TAX AUDIT';
   assignedEmployeeId?: string;
   assignedEmployeeName?: string;
+  emailId?: string;
+  mobileNumber?: string;
 }
 
 export interface V2TaxAuditClient {
@@ -932,6 +934,18 @@ export function deleteV2ItrClient(id: string): void {
   saveV2Items(KEY_V2_ITR_CLIENTS, filtered);
 }
 
+export function deleteV2GstClient(id: string): void {
+  const list = getV2GstClients();
+  const filtered = list.filter(item => item.id !== id);
+  saveV2Items(KEY_V2_GST_CLIENTS, filtered);
+}
+
+export function deleteV2McaClient(id: string): void {
+  const list = getV2McaClients();
+  const filtered = list.filter(item => item.id !== id);
+  saveV2Items(KEY_V2_MCA_CLIENTS, filtered);
+}
+
 export function deleteV2TrustClient(id: string): void {
   const list = getV2TrustClients();
   const filtered = list.filter(item => item.id !== id);
@@ -948,6 +962,36 @@ export function deleteV2OtherServiceClient(id: string): void {
   const list = getV2OtherServiceClients();
   const filtered = list.filter(item => item.id !== id);
   saveV2Items(KEY_V2_OTHER_SERVICES, filtered);
+}
+
+export function updateV2Auditor(updated: V2Auditor): void {
+  const list = getV2Auditors();
+  const idx = list.findIndex(item => item.id === updated.id);
+  if (idx !== -1) {
+    list[idx] = updated;
+    saveV2Items(KEY_V2_AUDITORS, list);
+  }
+}
+
+export function deleteV2Auditor(id: string): void {
+  const list = getV2Auditors();
+  const filtered = list.filter(item => item.id !== id);
+  saveV2Items(KEY_V2_AUDITORS, filtered);
+}
+
+export function updateV2TrademarkAttorney(updated: V2TrademarkAttorney): void {
+  const list = getV2TrademarkAttorneys();
+  const idx = list.findIndex(item => item.id === updated.id);
+  if (idx !== -1) {
+    list[idx] = updated;
+    saveV2Items(KEY_V2_ATTORNEYS, list);
+  }
+}
+
+export function deleteV2TrademarkAttorney(id: string): void {
+  const list = getV2TrademarkAttorneys();
+  const filtered = list.filter(item => item.id !== id);
+  saveV2Items(KEY_V2_ATTORNEYS, filtered);
 }
 
 const KEY_V2_OTHER_SERVICES_CATEGORIES = 'efilingg_crm_v2_other_services_categories';

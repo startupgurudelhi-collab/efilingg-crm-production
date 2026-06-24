@@ -45,7 +45,8 @@ import {
   updateResignationStatus,
   transferEmployeeLeadsAndProposals,
   saveEmployees,
-  saveResignationRequests
+  saveResignationRequests,
+  formatLeadMobileNumberForExport
 } from '../lib/db';
 import { Employee, Lead, FollowUp, Proposal, ActivityLog, LeadStage, EmployeeRole, TeamLeaderMapping, LeaveRequest, HistoricalPayroll, ResignationRequest } from '../types';
 import ServicesManager from './ServicesManager';
@@ -2672,7 +2673,7 @@ export default function AdminDashboard({
                   const headers = ['Client Name', 'Mobile Number', 'Email', 'Company', 'Service Required', 'Lead Source', 'Stage', 'Creation Date'];
                   const rows = filteredLeads.map(l => [
                     l.customerName.replace(/"/g, '""'),
-                    l.mobile.replace(/"/g, '""'),
+                    formatLeadMobileNumberForExport(l.mobile).replace(/"/g, '""'),
                     l.email.replace(/"/g, '""'),
                     (l.businessName || '').replace(/"/g, '""'),
                     l.serviceRequired.replace(/"/g, '""'),

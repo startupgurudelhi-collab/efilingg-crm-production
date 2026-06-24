@@ -857,6 +857,27 @@ export function getEmployeeById(id: string): Employee | undefined {
   return getEmployees().find((e) => e.id === id);
 }
 
+export function formatLeadMobileNumberForExport(mobile: string): string {
+  if (!mobile) return '';
+  let cleaned = mobile.replace(/\D/g, '');
+  let result = '';
+  if (cleaned.length === 12 && cleaned.startsWith('91')) {
+    result = `+${cleaned}`;
+  } else if (cleaned.length === 11 && cleaned.startsWith('0')) {
+    result = `+91${cleaned.slice(1)}`;
+  } else if (cleaned.length === 10) {
+    result = `+91${cleaned}`;
+  } else if (cleaned.length > 10) {
+    result = `+91${cleaned.slice(-10)}`;
+  } else if (cleaned.length > 0) {
+    result = `+91${cleaned.padStart(10, '0').slice(-10)}`;
+  } else {
+    result = mobile;
+  }
+  // Prefix with \t (tab character) to force Excel to parse it as text and prevent removing the '+'
+  return `\t${result}`;
+}
+
 // LEADS CRUD
 export function getLeads(): Lead[] {
   return JSON.parse(getStorageString(KEY_LEADS) || '[]');

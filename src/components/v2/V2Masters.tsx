@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import ConfirmModal from './ConfirmModal';
 import { 
   V2Auditor, 
   V2TrademarkAttorney, 
@@ -13,9 +14,13 @@ import {
   addV2TrademarkAttorney,
   getV2OtherServiceCategories,
   addV2OtherServiceCategory,
-  deleteV2OtherServiceCategory
+  deleteV2OtherServiceCategory,
+  updateV2Auditor,
+  deleteV2Auditor,
+  updateV2TrademarkAttorney,
+  deleteV2TrademarkAttorney
 } from '../../lib/v2_db';
-import { UserCheck, ShieldCheck, Plus, Briefcase, Mail, MapPin, Award, Tag, Trash2 } from 'lucide-react';
+import { UserCheck, ShieldCheck, Plus, Briefcase, Mail, MapPin, Award, Tag, Trash2, Edit2, X } from 'lucide-react';
 
 export default function V2Masters() {
   const [activeTab, setActiveTab] = useState<'auditor' | 'attorney' | 'category'>('auditor');
@@ -23,6 +28,22 @@ export default function V2Masters() {
   const [attorneys, setAttorneys] = useState<V2TrademarkAttorney[]>(getV2TrademarkAttorneys());
   const [categories, setCategories] = useState<string[]>(getV2OtherServiceCategories());
   const [newCategory, setNewCategory] = useState('');
+
+  // Reusable custom confirm modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
+  const [editingAuditor, setEditingAuditor] = useState<V2Auditor | null>(null);
+  const [editingAttorney, setEditingAttorney] = useState<V2TrademarkAttorney | null>(null);
 
 
   // Auditor form states
@@ -182,20 +203,49 @@ export default function V2Masters() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {auditors.map(aud => (
-              <div key={aud.id} className="p-4 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-850 rounded-2xl flex items-start gap-3 shadow-2xs">
-                <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/50 rounded-xl text-indigo-650 shrink-0">
-                  <UserCheck className="h-5 w-5" />
-                </div>
-                <div className="flex-1 space-y-1 min-w-0">
-                  <h4 className="font-black text-slate-800 dark:text-slate-100 text-xs">{aud.name}</h4>
-                  <p className="text-[10px] font-bold text-indigo-650 uppercase tracking-widest">{aud.firmName}</p>
-                  <div className="text-[10.5px] text-slate-400 dark:text-slate-350 flex flex-col space-y-0.5 font-mono">
-                    <span>Membership: <span className="font-bold text-slate-650 dark:text-slate-200">{aud.membershipNo}</span></span>
-                    <span>Firm Reg No: <span className="font-bold text-slate-650 dark:text-slate-200">{aud.frnNo}</span></span>
-                    <span>PAN Number: <span className="font-bold text-slate-650 dark:text-slate-200">{aud.panNumber}</span></span>
-                    <span className="flex items-center gap-1 mt-1 font-sans"><Mail className="h-3 w-3 shrink-0" /> {aud.email}</span>
-                    <span className="flex items-center gap-1 font-sans"><MapPin className="h-3 w-3 shrink-0" /> {aud.address}</span>
+              <div key={aud.id} className="p-4 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-850 rounded-2xl flex flex-col justify-between shadow-2xs">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/50 rounded-xl text-indigo-650 shrink-0">
+                    <UserCheck className="h-5 w-5" />
                   </div>
+                  <div className="flex-1 space-y-1 min-w-0">
+                    <h4 className="font-black text-slate-800 dark:text-slate-100 text-xs">{aud.name}</h4>
+                    <p className="text-[10px] font-bold text-indigo-650 uppercase tracking-widest">{aud.firmName}</p>
+                    <div className="text-[10.5px] text-slate-400 dark:text-slate-350 flex flex-col space-y-0.5 font-mono">
+                      <span>Membership: <span className="font-bold text-slate-650 dark:text-slate-200">{aud.membershipNo}</span></span>
+                      <span>Firm Reg No: <span className="font-bold text-slate-650 dark:text-slate-200">{aud.frnNo}</span></span>
+                      <span>PAN Number: <span className="font-bold text-slate-650 dark:text-slate-200">{aud.panNumber}</span></span>
+                      <span className="flex items-center gap-1 mt-1 font-sans"><Mail className="h-3 w-3 shrink-0" /> {aud.email}</span>
+                      <span className="flex items-center gap-1 font-sans"><MapPin className="h-3 w-3 shrink-0" /> {aud.address}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setEditingAuditor(aud)}
+                    className="flex-1 flex items-center justify-center gap-1 py-1 px-2.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/20 text-amber-600 hover:text-amber-700 rounded-lg text-[10px] font-extrabold cursor-pointer transition"
+                  >
+                    <Edit2 className="h-3 w-3" /> Modify Partner / Firm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmModal({
+                        isOpen: true,
+                        title: 'Delete CA Auditor',
+                        message: `Are you sure you want to delete CA Auditor "${aud.name}"? This action is permanent.`,
+                        onConfirm: () => {
+                          deleteV2Auditor(aud.id);
+                          setAuditors(getV2Auditors());
+                          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                        }
+                      });
+                    }}
+                    className="p-1 px-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-955/20 text-rose-600 hover:text-rose-700 rounded-lg text-[10px] font-bold cursor-pointer transition flex items-center gap-1"
+                  >
+                    <Trash2 className="h-3 w-3" /> Delete
+                  </button>
                 </div>
               </div>
             ))}
@@ -248,17 +298,46 @@ export default function V2Masters() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {attorneys.map(att => (
-              <div key={att.id} className="p-4 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-850 rounded-2xl flex items-start gap-3 shadow-2xs">
-                <div className="p-2.5 bg-amber-50 dark:bg-amber-955/15 text-amber-600 rounded-xl shrink-0">
-                  <Award className="h-5 w-5" />
-                </div>
-                <div className="flex-1 space-y-1 min-w-0">
-                  <h4 className="font-black text-slate-800 dark:text-slate-100 text-xs">{att.name}</h4>
-                  <p className="text-[10px] font-mono font-bold text-amber-600">CODE: {att.attorneyCode}</p>
-                  <div className="text-[10.5px] text-slate-400 dark:text-slate-350 flex flex-col space-y-0.5">
-                    <span className="flex items-center gap-1 mt-1"><Mail className="h-3 w-3 shrink-0" /> {att.email}</span>
-                    <span className="flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" /> {att.address}</span>
+              <div key={att.id} className="p-4 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-850 rounded-2xl flex flex-col justify-between shadow-2xs">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 bg-amber-50 dark:bg-amber-955/15 text-amber-600 rounded-xl shrink-0">
+                    <Award className="h-5 w-5" />
                   </div>
+                  <div className="flex-1 space-y-1 min-w-0">
+                    <h4 className="font-black text-slate-800 dark:text-slate-100 text-xs">{att.name}</h4>
+                    <p className="text-[10px] font-mono font-bold text-amber-600">CODE: {att.attorneyCode}</p>
+                    <div className="text-[10.5px] text-slate-400 dark:text-slate-350 flex flex-col space-y-0.5">
+                      <span className="flex items-center gap-1 mt-1"><Mail className="h-3 w-3 shrink-0" /> {att.email}</span>
+                      <span className="flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" /> {att.address}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setEditingAttorney(att)}
+                    className="flex-1 flex items-center justify-center gap-1 py-1 px-2.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-955/20 text-amber-600 hover:text-amber-700 rounded-lg text-[10px] font-extrabold cursor-pointer transition"
+                  >
+                    <Edit2 className="h-3 w-3" /> Modify Attorney
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmModal({
+                        isOpen: true,
+                        title: 'Delete Trademark Attorney',
+                        message: `Are you sure you want to delete Trademark Attorney "${att.name}"? This action is permanent.`,
+                        onConfirm: () => {
+                          deleteV2TrademarkAttorney(att.id);
+                          setAttorneys(getV2TrademarkAttorneys());
+                          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                        }
+                      });
+                    }}
+                    className="p-1 px-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-955/20 text-rose-600 hover:text-rose-700 rounded-lg text-[10px] font-bold cursor-pointer transition flex items-center gap-1"
+                  >
+                    <Trash2 className="h-3 w-3" /> Delete
+                  </button>
                 </div>
               </div>
             ))}
@@ -317,12 +396,18 @@ export default function V2Masters() {
                       <button 
                         type="button" 
                         onClick={() => {
-                          if (confirm(`Are you sure you want to delete category "${cat}"?`)) {
-                            deleteV2OtherServiceCategory(cat);
-                            setCategories(getV2OtherServiceCategories());
-                          }
+                          setConfirmModal({
+                            isOpen: true,
+                            title: 'Delete Service Category',
+                            message: `Are you sure you want to delete category "${cat}"? This action is permanent.`,
+                            onConfirm: () => {
+                              deleteV2OtherServiceCategory(cat);
+                              setCategories(getV2OtherServiceCategories());
+                              setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                            }
+                          });
                         }} 
-                        className="p-1 px-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 rounded-lg text-[10px] font-bold cursor-pointer transition flex items-center gap-1 ml-auto"
+                        className="p-1 px-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-955/20 text-rose-600 hover:text-rose-700 rounded-lg text-[10px] font-bold cursor-pointer transition flex items-center gap-1 ml-auto"
                       >
                         <Trash2 className="h-3 w-3" /> Remove
                       </button>
@@ -334,6 +419,253 @@ export default function V2Masters() {
           </div>
         </div>
       )}
+      {/* Modify Auditor Modal */}
+      {editingAuditor && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg p-6 space-y-4 shadow-xl">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="font-extrabold text-slate-850 dark:text-slate-100 text-xs uppercase flex items-center gap-1.5">
+                <Edit2 className="h-4 w-4 text-amber-500" /> Modify Partner / CA Auditor Profile
+              </h3>
+              <button 
+                type="button" 
+                onClick={() => setEditingAuditor(null)} 
+                className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-650"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block">CA Name *</label>
+                <input 
+                  type="text" 
+                  value={editingAuditor.name}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingAuditor(prev => prev ? { ...prev, name: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl font-bold"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block">Firm Name *</label>
+                <input 
+                  type="text" 
+                  value={editingAuditor.firmName}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingAuditor(prev => prev ? { ...prev, firmName: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block">Email ID *</label>
+                <input 
+                  type="email" 
+                  value={editingAuditor.email}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingAuditor(prev => prev ? { ...prev, email: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block">Membership No *</label>
+                <input 
+                  type="text" 
+                  value={editingAuditor.membershipNo}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingAuditor(prev => prev ? { ...prev, membershipNo: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl font-mono"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block">FRN Number *</label>
+                <input 
+                  type="text" 
+                  value={editingAuditor.frnNo}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingAuditor(prev => prev ? { ...prev, frnNo: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl font-mono"
+                />
+              </div>
+
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block">PAN Number</label>
+                <input 
+                  type="text" 
+                  value={editingAuditor.panNumber || ''}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingAuditor(prev => prev ? { ...prev, panNumber: val.toUpperCase() } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl font-mono uppercase"
+                />
+              </div>
+
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block">Office Address</label>
+                <input 
+                  type="text" 
+                  value={editingAuditor.address || ''}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingAuditor(prev => prev ? { ...prev, address: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 text-xs pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button 
+                type="button" 
+                onClick={() => setEditingAuditor(null)} 
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-500 rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                onClick={() => {
+                  if (!editingAuditor.name || !editingAuditor.firmName || !editingAuditor.email || !editingAuditor.membershipNo || !editingAuditor.frnNo) {
+                    alert('Required fields must be filled.');
+                    return;
+                  }
+                  updateV2Auditor(editingAuditor);
+                  setAuditors(getV2Auditors());
+                  setEditingAuditor(null);
+                  alert('CA Auditor profile updated successfully!');
+                }}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold cursor-pointer"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modify Attorney Modal */}
+      {editingAttorney && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg p-6 space-y-4 shadow-xl">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="font-extrabold text-slate-850 dark:text-slate-100 text-xs uppercase flex items-center gap-1.5">
+                <Edit2 className="h-4 w-4 text-amber-500" /> Modify Trademark Attorney Profile
+              </h3>
+              <button 
+                type="button" 
+                onClick={() => setEditingAttorney(null)} 
+                className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-650"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block">Attorney Full Name *</label>
+                <input 
+                  type="text" 
+                  value={editingAttorney.name}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingAttorney(prev => prev ? { ...prev, name: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl font-bold"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block">Attorney Code *</label>
+                <input 
+                  type="text" 
+                  value={editingAttorney.attorneyCode}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingAttorney(prev => prev ? { ...prev, attorneyCode: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl font-mono uppercase"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block">Corporate Email *</label>
+                <input 
+                  type="email" 
+                  value={editingAttorney.email}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingAttorney(prev => prev ? { ...prev, email: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl"
+                />
+              </div>
+
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block">Chambers / Address</label>
+                <input 
+                  type="text" 
+                  value={editingAttorney.address || ''}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingAttorney(prev => prev ? { ...prev, address: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 text-xs pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button 
+                type="button" 
+                onClick={() => setEditingAttorney(null)} 
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-500 rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                onClick={() => {
+                  if (!editingAttorney.name || !editingAttorney.attorneyCode || !editingAttorney.email) {
+                    alert('Required fields must be filled.');
+                    return;
+                  }
+                  updateV2TrademarkAttorney(editingAttorney);
+                  setAttorneys(getV2TrademarkAttorneys());
+                  setEditingAttorney(null);
+                  alert('Trademark Attorney profile updated successfully!');
+                }}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold cursor-pointer"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Reusable Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

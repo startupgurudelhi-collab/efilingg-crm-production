@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { bulkImportLeads, generateBackupData, restoreBackupData, getLeads, getFollowUps, getEmployees, getActivityLogs, getStorageString } from '../lib/db';
+import { bulkImportLeads, generateBackupData, restoreBackupData, getLeads, getFollowUps, getEmployees, getActivityLogs, getStorageString, formatLeadMobileNumberForExport } from '../lib/db';
 import { Upload, Download, FileSpreadsheet, ServerCrash, CheckCircle2, AlertCircle, FileText, Database, Shield, Radio, Code, Clipboard, Check } from 'lucide-react';
 import { LeadStage } from '../types';
 import { subscribeToSync, pullFromPostgres, pushToPostgres, SYNC_KEYS, getSyncMeta, detectPostgresStatus } from '../lib/postgresSync';
@@ -280,7 +280,8 @@ Rahul Roy,8823456711,rahul@royco.in,Roy Logistics,Company Registration,LinkedIn 
       const list = getLeads();
       csvStr = 'Lead ID,Customer Name,Mobile,Email,Business Name,Service,Source,Stage,Creation Date,Assigned Employee ID\n';
       list.forEach((l) => {
-        csvStr += `${l.id},"${l.customerName}",${l.mobile},${l.email},"${l.businessName}","${l.serviceRequired}","${l.leadSource}","${l.stage}","${l.creationDate}",${l.assignedTo}\n`;
+        const formattedMobile = formatLeadMobileNumberForExport(l.mobile);
+        csvStr += `${l.id},"${l.customerName}","${formattedMobile}",${l.email},"${l.businessName}","${l.serviceRequired}","${l.leadSource}","${l.stage}","${l.creationDate}",${l.assignedTo}\n`;
       });
       filename = 'leads_conversion';
     } else if (reportType === 'followups') {

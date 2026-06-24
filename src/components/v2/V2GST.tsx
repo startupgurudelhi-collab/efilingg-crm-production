@@ -14,13 +14,17 @@ import {
   getV2GstReturnStatuses, 
   saveV2GstReturnStatus, 
   parseCSVData, 
-  exportToCSVFile 
+  exportToCSVFile,
+  deleteV2GstClient,
+  addV2ItrClient
 } from '../../lib/v2_db';
 import { getCurrentSession } from '../../lib/db'; // Correct reference
 import { 
   Building2, Plus, Download, UploadCloud, Search, Calendar, CheckCircle, Clock, AlertCircle, RefreshCw,
-  Edit2, UserCheck, Shield, Lock, Mail, Phone, MapPin, Globe, ExternalLink, X, Users, Eye, EyeOff, FileText, Settings, Key
+  Edit2, UserCheck, Shield, Lock, Mail, Phone, MapPin, Globe, ExternalLink, X, Users, Eye, EyeOff, FileText, Settings, Key, Trash2
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import ConfirmModal from './ConfirmModal';
 
 export default function V2GST({
   initialSubTab,
@@ -42,6 +46,12 @@ export default function V2GST({
   // Return month option starting May 2026 and onwards
   const [selectedMonth, setSelectedMonth] = useState('May 2026');
   const [returnsSubTab, setReturnsSubTab] = useState<'CLIENTS' | 'MONTHLY' | 'QUARTERLY' | 'EXTENSION_ADMIN'>(initialSubTab || 'CLIENTS');
+
+  // Delete & Bulk Delete states
+  const [selectedGstClients, setSelectedGstClients] = useState<string[]>([]);
+  // Transfer to ITR states
+  const [transferToItrClient, setTransferToItrClient] = useState<V2GstClient | null>(null);
+  const [isAuditApplicableForItr, setIsAuditApplicableForItr] = useState(false);
 
   // Chrome Extension Integration & Audit state
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'failed'>('idle');
@@ -130,6 +140,19 @@ export default function V2GST({
   const togglePasswordVisibility = (clientId: string) => {
     setVisiblePasswords(prev => ({ ...prev, [clientId]: !prev[clientId] }));
   };
+
+  // Reusable custom confirm modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   const handleTriggerGstLogin = async (cl: V2GstClient) => {
     try {
@@ -646,6 +669,52 @@ export default function V2GST({
             onChange={e => setImportText(e.target.value)}
             className="w-full p-3 bg-slate-50 dark:bg-slate-950 border border-slate-205 dark:border-slate-800 rounded-2xl text-xs font-mono"
           />
+
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-150 dark:border-slate-800 space-y-2">
+            <label className="text-[10px] uppercase font-bold text-slate-500 block">Or upload Excel / CSV File (.xlsx, .xls, .csv)</label>
+            <div className="flex items-center justify-center w-full">
+              <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-250 dark:border-slate-800 rounded-2xl cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-900/30 transition">
+                <div className="flex flex-col items-center justify-center pt-3 pb-3">
+                  <UploadCloud className="h-6 w-6 text-indigo-500 mb-1" />
+                  <p className="text-[10px] text-slate-500 font-semibold">Click to upload spreadsheet or drag & drop</p>
+                  <p className="text-[9px] text-slate-400 font-mono">Supports XLSX, XLS, or CSV formats</p>
+                </div>
+                <input 
+                  type="file" 
+                  accept=".xlsx,.xls,.csv" 
+                  className="hidden" 
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                      try {
+                        const data = new Uint8Array(event.target?.result as ArrayBuffer);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const sheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[sheetName];
+                        const json = XLSX.utils.sheet_to_json<string[]>(worksheet, { header: 1 });
+                        
+                        if (json.length < 2) {
+                          alert('Spreadsheet has insufficient rows. Must contain a header row and at least one data row.');
+                          return;
+                        }
+                        
+                        // Convert sheet 2D array to CSV text format for text field representation
+                        const csvText = json.map(r => r.join(',')).join('\n');
+                        setImportText(csvText);
+                        alert(`Successfully imported ${json.length - 1} records from spreadsheet. Please verify below and click "Verify & Launch Accounts"!`);
+                      } catch (err) {
+                        console.error(err);
+                        alert('Failed to parse Excel file. Please make sure it is a valid Excel or CSV document.');
+                      }
+                    };
+                    reader.readAsArrayBuffer(file);
+                  }}
+                />
+              </label>
+            </div>
+          </div>
           <div className="flex justify-end gap-2 text-xs">
             <button type="button" onClick={() => setShowImport(false)} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-550 rounded-xl cursor-pointer">Close</button>
             <button type="submit" className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold cursor-pointer">Verify & Launch Accounts</button>
@@ -696,6 +765,27 @@ export default function V2GST({
           </div>
 
           <div className="flex items-center gap-2 text-xs">
+            {returnsSubTab === 'CLIENTS' && selectedGstClients.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmModal({
+                    isOpen: true,
+                    title: 'Confirm Bulk Deletion',
+                    message: `Are you sure you want to bulk-delete ${selectedGstClients.length} selected GST clients? This action is permanent.`,
+                    onConfirm: () => {
+                      selectedGstClients.forEach(id => deleteV2GstClient(id));
+                      setClients(getV2GstClients());
+                      setSelectedGstClients([]);
+                      setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                    }
+                  });
+                }}
+                className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold px-3 py-1.5 rounded-xl cursor-pointer shadow-3xs"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Bulk Delete ({selectedGstClients.length})
+              </button>
+            )}
             {returnsSubTab !== 'CLIENTS' && (
               <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 px-2 py-1 rounded-xl">
                 <Calendar className="h-4.5 w-4.5 text-slate-400 shrink-0" />
@@ -745,6 +835,43 @@ export default function V2GST({
                     
                     {/* Card Body */}
                     <div className="p-5 space-y-4 flex-1">
+                      {/* Selection and Trash controls */}
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-850">
+                        <label className="flex items-center gap-1.5 cursor-pointer text-slate-500 hover:text-slate-700">
+                          <input 
+                            type="checkbox"
+                            checked={selectedGstClients.includes(cl.id)}
+                            onChange={() => {
+                              setSelectedGstClients(prev => 
+                                prev.includes(cl.id) ? prev.filter(id => id !== cl.id) : [...prev, cl.id]
+                              );
+                            }}
+                            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          />
+                          <span className="text-[10px] font-black uppercase select-none text-slate-450">Select Account</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConfirmModal({
+                              isOpen: true,
+                              title: 'Delete GST Client',
+                              message: `Are you sure you want to delete client "${cl.clientName}"? This action is permanent.`,
+                              onConfirm: () => {
+                                deleteV2GstClient(cl.id);
+                                setClients(getV2GstClients());
+                                setSelectedGstClients(prev => prev.filter(id => id !== cl.id));
+                                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                              }
+                            });
+                          }}
+                          className="p-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-955/25 text-rose-600 hover:text-rose-700 rounded-lg transition"
+                          title="Delete Client"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+
                       {/* Name and Entity Badge */}
                       <div className="space-y-1">
                         <div className="flex items-start justify-between gap-2">
@@ -840,13 +967,13 @@ export default function V2GST({
                       )}
                     </div>
 
-                    {/* Footer Actions */}
-                    <div className="p-4 bg-slate-50 dark:bg-slate-950/80 border-t border-slate-150 dark:border-slate-850 flex items-center gap-2">
+                     {/* Footer Actions */}
+                    <div className="p-4 bg-slate-50 dark:bg-slate-950/80 border-t border-slate-150 dark:border-slate-850 flex flex-col sm:flex-row items-center gap-2">
                       <button
                         onClick={() => {
                           setEditingClient(cl);
                         }}
-                        className="flex-1 flex items-center justify-center gap-1 bg-white hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold py-1.5 px-2 rounded-xl text-xs transition duration-200 cursor-pointer"
+                        className="w-full sm:flex-1 flex items-center justify-center gap-1 bg-white hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold py-1.5 px-2 rounded-xl text-xs transition duration-200 cursor-pointer"
                       >
                         <Edit2 className="h-3 w-3 text-amber-500" /> Modify Client
                       </button>
@@ -854,9 +981,18 @@ export default function V2GST({
                         onClick={() => {
                           setTransferringClient(cl);
                         }}
-                        className="flex-1 flex items-center justify-center gap-1 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:hover:bg-emerald-950 text-emerald-800 dark:text-emerald-400 font-bold py-1.5 px-2 rounded-xl text-xs transition duration-200 cursor-pointer"
+                        className="w-full sm:flex-1 flex items-center justify-center gap-1 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:hover:bg-emerald-950 text-emerald-800 dark:text-emerald-400 font-bold py-1.5 px-2 rounded-xl text-xs transition duration-200 cursor-pointer"
                       >
                         <Users className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> Transfer Hand
+                      </button>
+                      <button
+                        onClick={() => {
+                          setTransferToItrClient(cl);
+                          setIsAuditApplicableForItr(false);
+                        }}
+                        className="w-full sm:flex-1 flex items-center justify-center gap-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-950 text-indigo-700 dark:text-indigo-400 font-bold py-1.5 px-2 rounded-xl text-xs transition duration-200 cursor-pointer"
+                      >
+                        💼 ITR Sync
                       </button>
                     </div>
                   </div>
@@ -1008,19 +1144,26 @@ export default function V2GST({
                     </div>
                     
                     <button
-                      onClick={async () => {
-                        if (!confirm('Are you absolutely sure you want to clear secure login history?')) return;
-                        const user = getCurrentSession();
-                        try {
-                          await fetch('/api/admin/clear-logs', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ role: user?.role })
-                          });
-                          setExtensionLogs([]);
-                        } catch (err) {
-                          console.error(err);
-                        }
+                      onClick={() => {
+                        setConfirmModal({
+                          isOpen: true,
+                          title: 'Clear secure login history',
+                          message: 'Are you absolutely sure you want to clear secure login history? This action is irreversible.',
+                          onConfirm: async () => {
+                            const user = getCurrentSession();
+                            try {
+                              await fetch('/api/admin/clear-logs', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ role: user?.role })
+                              });
+                              setExtensionLogs([]);
+                            } catch (err) {
+                              console.error(err);
+                            }
+                            setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                          }
+                        });
                       }}
                       className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 text-rose-600 rounded-lg text-[9px] uppercase font-black tracking-wide cursor-pointer transition border border-rose-100 dark:border-rose-909"
                     >
@@ -1735,6 +1878,129 @@ export default function V2GST({
           </div>
         </div>
       )}
+
+      {/* Transfer to ITR Modal */}
+      {transferToItrClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full border border-slate-200 dark:border-slate-800 p-6 space-y-4 shadow-xl">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100 dark:border-slate-850">
+              <h3 className="text-sm font-black text-indigo-700 uppercase flex items-center gap-1.5">
+                💼 Transfer Taxpayer to ITR Module
+              </h3>
+              <button 
+                onClick={() => setTransferToItrClient(null)} 
+                className="p-1 hover:bg-slate-150 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <p className="text-slate-500 leading-relaxed">
+                You are about to register and sync <strong className="text-slate-800 dark:text-white">"{transferToItrClient.clientName}"</strong> in the core <strong>Income Tax Returns (ITR)</strong> ledger. This maps credential indices, business state, and custody handlers automatically.
+              </p>
+
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-150 dark:border-slate-800 rounded-2xl space-y-2 font-mono text-[11px]">
+                <div>
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Taxpayer Name</span>
+                  <span className="font-extrabold text-slate-700 dark:text-slate-200">{transferToItrClient.clientName}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-slate-400 block text-[9px] uppercase font-bold">Entity Type</span>
+                    <span className="font-extrabold text-slate-600 dark:text-slate-350">{transferToItrClient.clientType}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[9px] uppercase font-bold">Inferred PAN</span>
+                    <span className="font-extrabold text-slate-700 dark:text-slate-200">{transferToItrClient.gstin ? transferToItrClient.gstin.substring(2, 12).toUpperCase() : 'N/A'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Checkbox: Is audit APPLICABLE */}
+              <label className="flex items-start gap-2.5 p-3.5 bg-amber-50/20 dark:bg-amber-955/10 border border-amber-200/50 rounded-2xl cursor-pointer hover:bg-amber-50/40 dark:hover:bg-amber-955/20 transition">
+                <input 
+                  type="checkbox" 
+                  checked={isAuditApplicableForItr}
+                  onChange={(e) => setIsAuditApplicableForItr(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-650 focus:ring-indigo-500 mt-0.5 cursor-pointer"
+                />
+                <div className="space-y-0.5">
+                  <span className="font-bold text-slate-800 dark:text-slate-100 block">Is Tax Audit Applicable?</span>
+                  <span className="text-[10px] text-slate-400 block leading-tight">Tick this if the enterprise requires statutory filing of Form 3CD (Tax Audit Section 44AB).</span>
+                </div>
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2 text-xs pt-2">
+              <button 
+                type="button" 
+                onClick={() => setTransferToItrClient(null)} 
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-250 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-550 rounded-xl font-bold cursor-pointer transition"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                onClick={() => {
+                  let taxpayerType: 'INDIVIDUAL' | 'LLP' | 'PRIVATE LIMITED' | 'TRUST & SOCIETY' | 'SECTION 8' = 'INDIVIDUAL';
+                  let typeOfItr: 'ITR-1' | 'ITR-2' | 'ITR-3' | 'ITR-4' | 'ITR-5' | 'ITR-6' | 'ITR-7' = 'ITR-3';
+                  
+                  const typeUpper = transferToItrClient.clientType.toUpperCase();
+                  if (typeUpper.includes('LLP') || typeUpper.includes('PARTNERSHIP')) {
+                    taxpayerType = 'LLP';
+                    typeOfItr = 'ITR-5';
+                  } else if (typeUpper.includes('PRIVATE LIMITED') || typeUpper.includes('COMPANY') || typeUpper.includes('LTD')) {
+                    taxpayerType = 'PRIVATE LIMITED';
+                    typeOfItr = 'ITR-6';
+                  } else if (typeUpper.includes('TRUST') || typeUpper.includes('SOCIETY')) {
+                    taxpayerType = 'TRUST & SOCIETY';
+                    typeOfItr = 'ITR-7';
+                  } else if (typeUpper.includes('SECTION 8') || typeUpper.includes('NGO')) {
+                    taxpayerType = 'SECTION 8';
+                    typeOfItr = 'ITR-7';
+                  } else {
+                    taxpayerType = 'INDIVIDUAL';
+                    typeOfItr = 'ITR-3'; // Business proprietor Form
+                  }
+
+                  const derivedPan = transferToItrClient.gstin && transferToItrClient.gstin.length >= 12
+                    ? transferToItrClient.gstin.substring(2, 12).toUpperCase()
+                    : 'BBMXJ1928D';
+
+                  addV2ItrClient({
+                    taxpayerName: transferToItrClient.clientName,
+                    taxpayerType: taxpayerType,
+                    panNumber: derivedPan,
+                    typeOfItr: typeOfItr,
+                    address: transferToItrClient.clientAddress || '',
+                    itPortalPassword: transferToItrClient.password || 'Pass@123',
+                    isAuditApplicable: isAuditApplicableForItr,
+                    itrStatus: isAuditApplicableForItr ? 'PENDING FOR TAX AUDIT' : 'NOT FILED',
+                    assignedEmployeeId: transferToItrClient.assignedEmployeeId,
+                    assignedEmployeeName: transferToItrClient.assignedEmployeeName
+                  });
+
+                  alert(`Successfully registered "${transferToItrClient.clientName}" in ITR Ledger.\n\nAssigned Form: ${typeOfItr}\nTax Audit Status: ${isAuditApplicableForItr ? 'REQUIRED' : 'NO'}`);
+                  setTransferToItrClient(null);
+                }}
+                className="px-4.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold cursor-pointer shadow-3xs transition"
+              >
+                Proceed & Register
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Reusable Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

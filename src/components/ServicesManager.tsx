@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getCustomServices, addCustomService, updateCustomService, deleteCustomService } from '../lib/db';
+import ConfirmModal from './v2/ConfirmModal';
 import { CustomService } from '../types';
 import { 
   Briefcase, 
@@ -89,6 +90,19 @@ export default function ServicesManager({ currentUserId, currentUserRole, onRefr
   // Status message
   const [alertMsg, setAlertMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Reusable custom confirm modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
   useEffect(() => {
     loadServices();
   }, []);
@@ -146,12 +160,18 @@ export default function ServicesManager({ currentUserId, currentUserRole, onRefr
 
   // Delete Service
   const handleDelete = (id: string) => {
-    if (window.confirm('Are you holding consent to remove this compliance service from the catalog?')) {
-      deleteCustomService(id, currentUserId);
-      loadServices();
-      if (onRefreshData) onRefreshData();
-      triggerAlert('success', 'Service option eliminated successfully!');
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Remove Compliance Service',
+      message: 'Are you holding consent to remove this compliance service from the catalog? This action is permanent.',
+      onConfirm: () => {
+        deleteCustomService(id, currentUserId);
+        loadServices();
+        if (onRefreshData) onRefreshData();
+        triggerAlert('success', 'Service option eliminated successfully!');
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   // Toggle checklist packages
@@ -882,6 +902,14 @@ export default function ServicesManager({ currentUserId, currentUserRole, onRefr
         </div>
       )}
 
+      {/* Custom Reusable Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

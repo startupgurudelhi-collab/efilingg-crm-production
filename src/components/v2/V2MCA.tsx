@@ -15,13 +15,16 @@ import {
   getV2Auditors, 
   parseCSVData, 
   exportToCSVFile,
-  getV1Employees
+  getV1Employees,
+  deleteV2McaClient
 } from '../../lib/v2_db';
 import { getCurrentSession } from '../../lib/db';
+import ConfirmModal from './ConfirmModal';
 import { 
   Building2, Users, Receipt, Calendar, Plus, Download, UploadCloud, Search, Check, AlertTriangle, ShieldAlert,
-  Edit2, UserCheck, X
+  Edit2, UserCheck, X, Trash2
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 export default function V2MCA({
   initialActiveTab = 'mca',
@@ -50,12 +53,27 @@ export default function V2MCA({
 
   const [addAssignedEmpId, setAddAssignedEmpId] = useState('');
   const [transferringClient, setTransferringClient] = useState<V2McaClient | null>(null);
+  const [selectedMcaClients, setSelectedMcaClients] = useState<string[]>([]);
+  const [editingMcaClient, setEditingMcaClient] = useState<V2McaClient | null>(null);
   const [allEmployees] = useState(getV1Employees());
   const [currentUser, setCurrentUser] = useState<any>(null);
 
   useEffect(() => {
     setCurrentUser(getCurrentSession());
   }, []);
+
+  // Reusable custom confirm modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   // New MCA client form states
   const [showAddForm, setShowAddForm] = useState(initialShowAddForm);
@@ -475,13 +493,34 @@ export default function V2MCA({
               <h2 className="text-sm font-black uppercase text-slate-850 dark:text-slate-100">Company & LLP Directory (MCA)</h2>
               <p className="text-[10px] text-slate-400">Add enterprise client files, configure Director profiles, attach CA Auditors, and synchronize with ITR pipelines.</p>
             </div>
-            <div className="flex gap-2 text-xs">
-              <button onClick={() => { setShowAddForm(true); setShowImport(false); }} className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-xl cursor-pointer">
-                <Plus className="h-4 w-4" /> Add Enterprise
-              </button>
-              <button onClick={() => { setShowImport(true); setShowAddForm(false); }} className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold px-3 py-1.5 rounded-xl cursor-pointer">
-                <UploadCloud className="h-4 w-4" /> Import Excel
-              </button>
+             <div className="flex flex-wrap gap-2 text-xs">
+               {selectedMcaClients.length > 0 && (
+                 <button
+                   type="button"
+                   onClick={() => {
+                     setConfirmModal({
+                       isOpen: true,
+                       title: 'Confirm Bulk Deletion',
+                       message: `Are you sure you want to bulk-delete ${selectedMcaClients.length} selected corporate accounts? This action is permanent.`,
+                       onConfirm: () => {
+                         selectedMcaClients.forEach(id => deleteV2McaClient(id));
+                         setClients(getV2McaClients());
+                         setSelectedMcaClients([]);
+                         setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                       }
+                     });
+                   }}
+                   className="flex items-center gap-1 bg-rose-600 hover:bg-rose-700 text-white font-extrabold px-3 py-1.5 rounded-xl cursor-pointer shadow-3xs"
+                 >
+                   <Trash2 className="h-4 w-4" /> Bulk Delete ({selectedMcaClients.length})
+                 </button>
+               )}
+               <button onClick={() => { setShowAddForm(true); setShowImport(false); }} className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-xl cursor-pointer">
+                 <Plus className="h-4 w-4" /> Add Enterprise
+               </button>
+               <button onClick={() => { setShowImport(true); setShowAddForm(false); }} className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold px-3 py-1.5 rounded-xl cursor-pointer">
+                 <UploadCloud className="h-4 w-4" /> Import Excel
+               </button>
               <button onClick={handleExportMcaClients} className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold px-3 py-1.5 rounded-xl cursor-pointer">
                 <Download className="h-4 w-4" /> Export Excel
               </button>
@@ -781,6 +820,52 @@ export default function V2MCA({
                 onChange={e => setImportText(e.target.value)}
                 className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-slate-850 rounded-2xl text-xs font-mono"
               />
+
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-150 dark:border-slate-800 space-y-2">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block">Or upload Excel / CSV File (.xlsx, .xls, .csv)</label>
+                <div className="flex items-center justify-center w-full">
+                  <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-250 dark:border-slate-800 rounded-2xl cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-900/30 transition">
+                    <div className="flex flex-col items-center justify-center pt-3 pb-3">
+                      <UploadCloud className="h-6 w-6 text-indigo-500 mb-1" />
+                      <p className="text-[10px] text-slate-500 font-semibold">Click to upload spreadsheet or drag & drop</p>
+                      <p className="text-[9px] text-slate-400 font-mono">Supports XLSX, XLS, or CSV formats</p>
+                    </div>
+                    <input 
+                      type="file" 
+                      accept=".xlsx,.xls,.csv" 
+                      className="hidden" 
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                          try {
+                            const data = new Uint8Array(event.target?.result as ArrayBuffer);
+                            const workbook = XLSX.read(data, { type: 'array' });
+                            const sheetName = workbook.SheetNames[0];
+                            const worksheet = workbook.Sheets[sheetName];
+                            const json = XLSX.utils.sheet_to_json<string[]>(worksheet, { header: 1 });
+                            
+                            if (json.length < 2) {
+                              alert('Spreadsheet has insufficient rows. Must contain a header row and at least one data row.');
+                              return;
+                            }
+                            
+                            // Convert sheet 2D array to CSV text format for text field representation
+                            const csvText = json.map(r => r.join(',')).join('\n');
+                            setImportText(csvText);
+                            alert(`Successfully imported ${json.length - 1} records from spreadsheet. Please verify below and click "Ingest Accounts"!`);
+                          } catch (err) {
+                            console.error(err);
+                            alert('Failed to parse Excel file. Please make sure it is a valid Excel or CSV document.');
+                          }
+                        };
+                        reader.readAsArrayBuffer(file);
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
               <div className="flex justify-end gap-2 text-xs">
                 <button type="button" onClick={() => setShowImport(false)} className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-550 rounded-xl cursor-pointer">Cancel</button>
                 <button type="submit" className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold cursor-pointer">Ingest Accounts</button>
@@ -801,7 +886,43 @@ export default function V2MCA({
               return (
                 <div key={cl.id} className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-3xl space-y-3 shadow-3xs flex flex-col justify-between">
                   <div className="space-y-1">
-                    <div className="flex justify-between items-start">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-850">
+                      <label className="flex items-center gap-1.5 cursor-pointer text-slate-500 hover:text-slate-700">
+                        <input 
+                          type="checkbox"
+                          checked={selectedMcaClients.includes(cl.id)}
+                          onChange={() => {
+                            setSelectedMcaClients(prev => 
+                              prev.includes(cl.id) ? prev.filter(id => id !== cl.id) : [...prev, cl.id]
+                            );
+                          }}
+                          className="h-4 w-4 rounded border-slate-300 text-indigo-650 focus:ring-indigo-500 cursor-pointer"
+                        />
+                        <span className="text-[10px] font-black uppercase select-none text-slate-450">Select Corporate</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmModal({
+                            isOpen: true,
+                            title: 'Delete Corporate Client',
+                            message: `Are you sure you want to delete corporate account "${cl.clientName}"? This action is permanent.`,
+                            onConfirm: () => {
+                              deleteV2McaClient(cl.id);
+                              setClients(getV2McaClients());
+                              setSelectedMcaClients(prev => prev.filter(id => id !== cl.id));
+                              setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                            }
+                          });
+                        }}
+                        className="p-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-955/25 text-rose-600 hover:text-rose-700 rounded-lg transition"
+                        title="Delete Client"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="flex justify-between items-start pt-1">
                       <h4 className="font-black text-slate-800 dark:text-slate-100 text-sm leading-tight">{cl.clientName}</h4>
                       <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-[10px] font-bold rounded-lg uppercase whitespace-nowrap text-slate-500 shrink-0 select-none">{cl.clientType.replace(' COMPANY', '')}</span>
                     </div>
@@ -841,13 +962,22 @@ export default function V2MCA({
                         {cl.assignedEmployeeName || '🔴 Unassigned'}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setTransferringClient(cl)}
-                      className="w-full flex items-center justify-center gap-1 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-705 dark:text-slate-205 font-extrabold py-2 px-3 rounded-2xl text-xs transition cursor-pointer"
-                    >
-                      <Users className="h-3.5 w-3.5 text-indigo-500" /> Transfer Hand
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditingMcaClient(cl)}
+                        className="flex-1 flex items-center justify-center gap-1 bg-white hover:bg-slate-100 dark:bg-slate-850 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 font-extrabold py-2 px-3 rounded-2xl text-xs transition cursor-pointer"
+                      >
+                        <Edit2 className="h-3.5 w-3.5 text-amber-500" /> Modify
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTransferringClient(cl)}
+                        className="flex-1 flex items-center justify-center gap-1 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-705 dark:text-slate-205 font-extrabold py-2 px-3 rounded-2xl text-xs transition cursor-pointer"
+                      >
+                        <Users className="h-3.5 w-3.5 text-indigo-500" /> Transfer
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -1328,6 +1458,376 @@ export default function V2MCA({
           </div>
         </div>
       )}
+
+      {/* Modify Client Modal */}
+      {editingMcaClient && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-3xl w-full max-w-4xl p-6 space-y-4 shadow-xl my-8">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="font-extrabold text-slate-800 dark:text-slate-100 text-sm uppercase flex items-center gap-1.5">
+                <Edit2 className="h-4 w-4 text-amber-500" /> Modify Corporate Client Profile
+              </h3>
+              <button 
+                type="button" 
+                onClick={() => setEditingMcaClient(null)} 
+                className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-655"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div className="space-y-1 md:col-span-2">
+                <label className="text-[10px] uppercase font-bold text-slate-400 block">Enterprise Legal Name *</label>
+                <input 
+                  type="text" 
+                  value={editingMcaClient.clientName}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingMcaClient(prev => prev ? { ...prev, clientName: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-400 block">Corporate Structure *</label>
+                <select 
+                  value={editingMcaClient.clientType}
+                  onChange={e => {
+                    const val = e.target.value as any;
+                    setEditingMcaClient(prev => prev ? { ...prev, clientType: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-slate-800 dark:text-slate-100"
+                >
+                  <option value="PRIVATE LIMITED COMPANY">Private Limited Company</option>
+                  <option value="LLP">Limited Liability Partnership (LLP)</option>
+                  <option value="SECTION 8 NGO">Section 8 NGO / Non-Profit</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-400 block">Date of Incorporation</label>
+                <input 
+                  type="date" 
+                  value={editingMcaClient.dateOfRegistration}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingMcaClient(prev => prev ? { ...prev, dateOfRegistration: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-mono font-bold text-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-400 block">Client Email ID</label>
+                <input 
+                  type="email" 
+                  value={editingMcaClient.clientEmail || ''}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingMcaClient(prev => prev ? { ...prev, clientEmail: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-400 block">Client Mobile Contact</label>
+                <input 
+                  type="text" 
+                  value={editingMcaClient.clientMobile || ''}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingMcaClient(prev => prev ? { ...prev, clientMobile: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-400 block">Registered Address</label>
+                <input 
+                  type="text" 
+                  value={editingMcaClient.clientAddress || ''}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingMcaClient(prev => prev ? { ...prev, clientAddress: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-400 block">ROC Jurisdiction State</label>
+                <input 
+                  type="text" 
+                  value={editingMcaClient.clientState}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingMcaClient(prev => prev ? { ...prev, clientState: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-indigo-500 block">Income Tax Portal ID / PAN</label>
+                <input 
+                  type="text" 
+                  value={editingMcaClient.incomeTaxId}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingMcaClient(prev => prev ? { ...prev, incomeTaxId: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-205 dark:border-indigo-950/30 rounded-xl font-mono font-bold uppercase text-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-indigo-500 block">Income Tax Portal Password</label>
+                <input 
+                  type="text" 
+                  value={editingMcaClient.incomeTaxPassword || ''}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingMcaClient(prev => prev ? { ...prev, incomeTaxPassword: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-205 dark:border-indigo-950/30 rounded-xl font-mono text-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              <div className="space-y-1 md:col-span-2">
+                <label className="text-[10px] uppercase font-bold text-slate-400 block font-sans">Auditor firm link</label>
+                <select 
+                  value={editingMcaClient.auditorFirmId || ''}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingMcaClient(prev => prev ? { ...prev, auditorFirmId: val } : null);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl font-sans text-slate-800 dark:text-slate-100"
+                >
+                  <option value="">-- Choose Connected CA Auditor --</option>
+                  {auditors.map(a => (
+                    <option key={a.id} value={a.id}>{a.name} ({a.firmName || 'CA Firm'})</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Directors Section */}
+              <div className="md:col-span-2 p-4 bg-slate-50 dark:bg-slate-955/60 rounded-2xl border border-slate-205 dark:border-slate-850 space-y-3">
+                <div className="flex items-center justify-between pb-1 border-b border-slate-200 dark:border-slate-800">
+                  <h4 className="font-bold text-xs text-slate-700 dark:text-slate-350 flex items-center gap-1">
+                    <Users className="h-4 w-4" /> Board of Directors ({ (editingMcaClient.directors || []).length })
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentDirs = editingMcaClient.directors || [];
+                      setEditingMcaClient({
+                        ...editingMcaClient,
+                        directors: [...currentDirs, { name: '', dinNumber: '', mcaId: '', mcaPassword: '', email: '', mobile: '', dinKycStatus: 'Pending', dinStatus: 'ACTIVE' }]
+                      });
+                    }}
+                    className="text-[10px] text-indigo-600 dark:text-indigo-400 font-extrabold uppercase bg-indigo-50 dark:bg-indigo-955/40 hover:bg-indigo-100 dark:hover:bg-slate-800 px-2.5 py-1 rounded-lg border border-indigo-200/50 flex items-center gap-1 cursor-pointer transition"
+                  >
+                    <Plus className="h-3 w-3" /> Add New Director
+                  </button>
+                </div>
+
+                {(editingMcaClient.directors || []).map((fd, index) => (
+                  <div key={index} className="p-3 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-xl space-y-3 relative group">
+                    <div className="flex justify-between items-center text-[9px] uppercase font-bold text-slate-400">
+                      <span>Director #{index + 1} Profile</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentDirs = [...(editingMcaClient.directors || [])];
+                          currentDirs.splice(index, 1);
+                          setEditingMcaClient({
+                            ...editingMcaClient,
+                            directors: currentDirs
+                          });
+                        }}
+                        className="text-red-500 hover:text-red-700 hover:underline text-[9px] font-bold cursor-pointer"
+                      >
+                        Remove Director
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase font-bold text-slate-450">Director Name {index === 0 && '*'}</label>
+                        <input
+                          type="text"
+                          required={index === 0}
+                          placeholder="e.g. Rahul Sharma"
+                          value={fd.name}
+                          onChange={e => {
+                            const currentDirs = [...(editingMcaClient.directors || [])];
+                            currentDirs[index] = { ...currentDirs[index], name: e.target.value };
+                            setEditingMcaClient({ ...editingMcaClient, directors: currentDirs });
+                          }}
+                          className="w-full p-1.5 bg-slate-50/50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-855 dark:text-slate-100 font-bold"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase font-bold text-slate-455">Director DIN {index === 0 && '*'}</label>
+                        <input
+                          type="text"
+                          required={index === 0}
+                          placeholder="e.g. 08412491"
+                          value={fd.dinNumber}
+                          onChange={e => {
+                            const currentDirs = [...(editingMcaClient.directors || [])];
+                            currentDirs[index] = { ...currentDirs[index], dinNumber: e.target.value };
+                            setEditingMcaClient({ ...editingMcaClient, directors: currentDirs });
+                          }}
+                          className="w-full p-1.5 bg-slate-50/50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg font-mono text-slate-855 dark:text-slate-100"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase font-bold text-slate-455">MCA V3 ID</label>
+                        <input
+                          type="text"
+                          placeholder="Username"
+                          value={fd.mcaId}
+                          onChange={e => {
+                            const currentDirs = [...(editingMcaClient.directors || [])];
+                            currentDirs[index] = { ...currentDirs[index], mcaId: e.target.value };
+                            setEditingMcaClient({ ...editingMcaClient, directors: currentDirs });
+                          }}
+                          className="w-full p-1.5 bg-slate-50/50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg font-mono text-slate-855 dark:text-slate-100"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase font-bold text-slate-455">DIN V3 Password</label>
+                        <input
+                          type="text"
+                          placeholder="Password"
+                          value={fd.mcaPassword || ''}
+                          onChange={e => {
+                            const currentDirs = [...(editingMcaClient.directors || [])];
+                            currentDirs[index] = { ...currentDirs[index], mcaPassword: e.target.value };
+                            setEditingMcaClient({ ...editingMcaClient, directors: currentDirs });
+                          }}
+                          className="w-full p-1.5 bg-slate-50/50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg font-mono text-slate-855 dark:text-slate-100"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase font-bold text-slate-450">Email Contact</label>
+                        <input
+                          type="email"
+                          placeholder="director@company.com"
+                          value={fd.email || ''}
+                          onChange={e => {
+                            const currentDirs = [...(editingMcaClient.directors || [])];
+                            currentDirs[index] = { ...currentDirs[index], email: e.target.value };
+                            setEditingMcaClient({ ...editingMcaClient, directors: currentDirs });
+                          }}
+                          className="w-full p-1.5 bg-slate-50/50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-lg font-mono text-slate-855 dark:text-slate-100"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase font-bold text-slate-450">Mobile Contact</label>
+                        <input
+                          type="tel"
+                          placeholder="e.g. 9812450255"
+                          value={fd.mobile || ''}
+                          onChange={e => {
+                            const currentDirs = [...(editingMcaClient.directors || [])];
+                            currentDirs[index] = { ...currentDirs[index], mobile: e.target.value };
+                            setEditingMcaClient({ ...editingMcaClient, directors: currentDirs });
+                          }}
+                          className="w-full p-1.5 bg-slate-50/50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-lg font-mono text-slate-855 dark:text-slate-100"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase font-bold text-slate-455">DIN KYC Status</label>
+                        <select
+                          value={fd.dinKycStatus || 'Pending'}
+                          onChange={e => {
+                            const currentDirs = [...(editingMcaClient.directors || [])];
+                            currentDirs[index] = { ...currentDirs[index], dinKycStatus: e.target.value as any };
+                            setEditingMcaClient({ ...editingMcaClient, directors: currentDirs });
+                          }}
+                          className="w-full p-1.5 bg-slate-50/50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-lg font-bold text-slate-855 dark:text-slate-100"
+                        >
+                          <option value="Pending">Pending</option>
+                          <option value="Pending with CA">Pending with CA</option>
+                          <option value="Approved">Approved</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-4 p-3 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-850 rounded-2xl md:col-span-2">
+                <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
+                  <input 
+                    type="checkbox" 
+                    checked={editingMcaClient.isInc20aFiled}
+                    onChange={e => {
+                      const val = e.target.checked;
+                      setEditingMcaClient(prev => prev ? { ...prev, isInc20aFiled: val } : null);
+                    }}
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-650 focus:ring-0 cursor-pointer"
+                  />
+                  <span className="font-bold select-none text-[10.5px]">INC-20A Commencement Filed</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
+                  <input 
+                    type="checkbox" 
+                    checked={editingMcaClient.isAdt1Filed}
+                    onChange={e => {
+                      const val = e.target.checked;
+                      setEditingMcaClient(prev => prev ? { ...prev, isAdt1Filed: val } : null);
+                    }}
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-650 focus:ring-0 cursor-pointer"
+                  />
+                  <span className="font-bold select-none text-[10.5px]">ADT-1 Auditor Appointed</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 text-xs pt-3 border-t border-slate-100 dark:border-slate-850">
+              <button 
+                type="button" 
+                onClick={() => setEditingMcaClient(null)} 
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-205 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-bold cursor-pointer transition"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                onClick={() => {
+                  updateV2McaClient(editingMcaClient);
+                  setClients(getV2McaClients());
+                  setEditingMcaClient(null);
+                  alert('Corporate profile and director details updated successfully!');
+                }} 
+                className="px-4.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-extrabold cursor-pointer shadow-xs transition"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Reusable Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

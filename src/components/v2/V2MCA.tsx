@@ -1461,9 +1461,9 @@ export default function V2MCA({
 
       {/* Modify Client Modal */}
       {editingMcaClient && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-3xl w-full max-w-4xl p-6 space-y-4 shadow-xl my-8">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100 dark:border-slate-800">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-3xl w-full max-w-4xl p-6 shadow-xl flex flex-col max-h-[calc(100vh-2rem)] md:max-h-[calc(100vh-4rem)]">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100 dark:border-slate-800 shrink-0">
               <h3 className="font-extrabold text-slate-800 dark:text-slate-100 text-sm uppercase flex items-center gap-1.5">
                 <Edit2 className="h-4 w-4 text-amber-500" /> Modify Corporate Client Profile
               </h3>
@@ -1476,19 +1476,20 @@ export default function V2MCA({
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              <div className="space-y-1 md:col-span-2">
-                <label className="text-[10px] uppercase font-bold text-slate-400 block">Enterprise Legal Name *</label>
-                <input 
-                  type="text" 
-                  value={editingMcaClient.clientName}
-                  onChange={e => {
-                    const val = e.target.value;
-                    setEditingMcaClient(prev => prev ? { ...prev, clientName: val } : null);
-                  }}
-                  className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-slate-800 dark:text-slate-100"
-                />
-              </div>
+            <div className="flex-1 overflow-y-auto pr-2 py-4 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <div className="space-y-1 md:col-span-2">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 block">Enterprise Legal Name *</label>
+                  <input 
+                    type="text" 
+                    value={editingMcaClient.clientName}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setEditingMcaClient(prev => prev ? { ...prev, clientName: val } : null);
+                    }}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-slate-800 dark:text-slate-100"
+                  />
+                </div>
 
               <div className="space-y-1">
                 <label className="text-[10px] uppercase font-bold text-slate-400 block">Corporate Structure *</label>
@@ -1794,8 +1795,9 @@ export default function V2MCA({
                 </label>
               </div>
             </div>
+          </div>
 
-            <div className="flex justify-end gap-2 text-xs pt-3 border-t border-slate-100 dark:border-slate-850">
+            <div className="flex justify-end gap-2 text-xs pt-3 border-t border-slate-100 dark:border-slate-850 shrink-0">
               <button 
                 type="button" 
                 onClick={() => setEditingMcaClient(null)} 

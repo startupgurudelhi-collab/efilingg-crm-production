@@ -313,6 +313,7 @@ function AppContent() {
                   }
                 }}
                 onTriggerProposalPreview={(p) => setActiveProposalPreview(p)}
+                onTriggerProposalDraft={() => setIsCreatingProposal(true)}
               />
             ) : (
               <OperationManagementDashboard />

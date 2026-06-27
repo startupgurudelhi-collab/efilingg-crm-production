@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { getLeads, createProposal, getEmployeeById, getEmployees, getCustomServices } from '../lib/db';
+import { getLeads, createProposal, getEmployeeById, getEmployees, getCustomServices, getTLAssignedEmployeeIds } from '../lib/db';
 import { Lead, Proposal, CustomService } from '../types';
 import { ShieldCheck, Plus, Sparkles, HelpCircle, FileText, Check, DollarSign } from 'lucide-react';
 
@@ -36,11 +36,20 @@ export default function ProposalBuilder({ currentUserId, onRefreshData, onPropos
   const [dbServices, setDbServices] = useState<CustomService[]>([]);
 
   useEffect(() => {
-    // Only show active leads belonging to the logged in user unless they are admin
+    // Show active leads belonging to the logged in user, or team members if team leader, or all if admin
     const allLeads = getLeads();
     const emp = getEmployeeById(currentUserId);
     const isAdmin = emp?.role === 'admin';
-    const filteredLeads = isAdmin ? allLeads : allLeads.filter((l) => l.assignedTo === currentUserId);
+    const isTeamLeader = emp?.role === 'team_leader';
+    
+    let filteredLeads = allLeads;
+    if (isTeamLeader) {
+      const assignedIds = getTLAssignedEmployeeIds(currentUserId);
+      filteredLeads = allLeads.filter((l) => l.assignedTo === currentUserId || (l.assignedTo && assignedIds.includes(l.assignedTo)));
+    } else if (!isAdmin) {
+      filteredLeads = allLeads.filter((l) => l.assignedTo === currentUserId);
+    }
+    
     setLeads(filteredLeads);
     const svs = getCustomServices();
     setDbServices(svs);

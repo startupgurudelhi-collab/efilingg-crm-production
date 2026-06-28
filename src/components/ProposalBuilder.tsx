@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { getLeads, createProposal, getEmployeeById, getEmployees, getCustomServices, getTLAssignedEmployeeIds } from '../lib/db';
 import { Lead, Proposal, CustomService } from '../types';
-import { ShieldCheck, Plus, Sparkles, HelpCircle, FileText, Check, DollarSign } from 'lucide-react';
+import { ShieldCheck, Plus, Sparkles, HelpCircle, FileText, Check, DollarSign, ChevronDown } from 'lucide-react';
 
 interface ProposalBuilderProps {
   currentUserId: string;
@@ -18,6 +18,8 @@ interface ProposalBuilderProps {
 export default function ProposalBuilder({ currentUserId, onRefreshData, onProposalCreated, onClose }: ProposalBuilderProps) {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedLeadId, setSelectedLeadId] = useState('');
+  const [inputValue, setInputValue] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   
   // Custom manual entry fields if not selecting existing client
   const [isManual, setIsManual] = useState(false);
@@ -93,6 +95,21 @@ export default function ProposalBuilder({ currentUserId, onRefreshData, onPropos
     }
   };
 
+  useEffect(() => {
+    if (selectedLeadId && leads.length > 0) {
+      const found = leads.find((l) => l.id === selectedLeadId);
+      if (found) {
+        setInputValue(`${found.customerName} - ${found.serviceRequired} (${found.mobile || ''})`);
+      }
+    }
+  }, [selectedLeadId, leads]);
+
+  const handleOptionClick = (l: Lead) => {
+    handleSelectLeadChange(l.id);
+    setInputValue(`${l.customerName} - ${l.serviceRequired} (${l.mobile || ''})`);
+    setIsDropdownOpen(false);
+  };
+
   const handleGenerate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!clientName.trim() || !clientMobile.trim()) {
@@ -121,6 +138,15 @@ export default function ProposalBuilder({ currentUserId, onRefreshData, onPropos
     onRefreshData();
     onProposalCreated(newProp);
   };
+
+  const filteredOptions = leads.filter((l) => {
+    const term = inputValue.toLowerCase();
+    return (
+      l.customerName.toLowerCase().includes(term) ||
+      (l.mobile && l.mobile.includes(term)) ||
+      (l.serviceRequired && l.serviceRequired.toLowerCase().includes(term))
+    );
+  });
 
   return (
     <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-xl space-y-6 max-w-2xl mx-auto">
@@ -167,20 +193,81 @@ export default function ProposalBuilder({ currentUserId, onRefreshData, onPropos
           </div>
 
           {!isManual ? (
-            <div className="space-y-1">
-              <label className="text-xs text-slate-450 font-bold">Select Active Lead Profile</label>
-              <select
-                value={selectedLeadId}
-                onChange={(e) => handleSelectLeadChange(e.target.value)}
-                className="w-full p-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-205 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                <option value="">-- Choose Existing CRM Client Profile --</option>
-                {leads.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.customerName} - {l.serviceRequired} ({l.mobile})
-                  </option>
-                ))}
-              </select>
+            <div className="space-y-1 relative">
+              <label className="text-xs text-slate-450 font-bold flex justify-between">
+                <span>Select Active Lead Profile</span>
+                {selectedLeadId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedLeadId('');
+                      setInputValue('');
+                      setClientName('');
+                      setClientMobile('');
+                      setClientEmail('');
+                      setClientBusiness('');
+                    }}
+                    className="text-[10px] text-red-500 hover:underline font-semibold cursor-pointer"
+                  >
+                    Clear Selection
+                  </button>
+                )}
+              </label>
+              
+              <div className="relative">
+                <input
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => {
+                    setInputValue(e.target.value);
+                    setIsDropdownOpen(true);
+                    if (!e.target.value) {
+                      setSelectedLeadId('');
+                      setClientName('');
+                      setClientMobile('');
+                      setClientEmail('');
+                      setClientBusiness('');
+                    }
+                  }}
+                  onFocus={() => setIsDropdownOpen(true)}
+                  onBlur={() => {
+                    setTimeout(() => setIsDropdownOpen(false), 200);
+                  }}
+                  placeholder="Type to search client name, mobile or service..."
+                  className="w-full p-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-205 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 pr-10 font-medium"
+                />
+                <div className="absolute right-3 top-3 text-slate-400">
+                  <ChevronDown className="h-4 w-4" />
+                </div>
+              </div>
+
+              {isDropdownOpen && (
+                <div className="absolute left-0 right-0 top-[100%] mt-1 max-h-60 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg z-50 py-1 text-xs divide-y divide-slate-50 dark:divide-slate-850">
+                  {filteredOptions.length === 0 ? (
+                    <div className="p-3 text-slate-400 text-center">
+                      No matching leads found
+                    </div>
+                  ) : (
+                    filteredOptions.map((l) => (
+                      <button
+                        key={l.id}
+                        type="button"
+                        onClick={() => handleOptionClick(l)}
+                        className="w-full text-left px-3 py-2 hover:bg-emerald-50 dark:hover:bg-emerald-950/45 text-slate-700 dark:text-slate-300 transition-colors flex flex-col gap-0.5 cursor-pointer"
+                      >
+                        <span className="font-bold text-slate-900 dark:text-slate-100">
+                          {l.customerName}
+                        </span>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 font-mono">
+                          <span>{l.serviceRequired}</span>
+                          <span>•</span>
+                          <span>{l.mobile}</span>
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-4">

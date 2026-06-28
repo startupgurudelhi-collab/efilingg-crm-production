@@ -123,6 +123,10 @@ export default function AdminDashboard({
   const [endDate, setEndDate] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'INTRESTED' | 'FOLLOWUP PENDING' | 'FINAL DISPOSED' | 'CONVERTED'>('ALL');
 
+  // Search & Filter proposals state
+  const [proposalSearch, setProposalSearch] = useState('');
+  const [proposalDate, setProposalDate] = useState('');
+
   // Add employee Form States
   const [showAddEmp, setShowAddEmp] = useState(false);
   const [empPhoto, setEmpPhoto] = useState<string>('');
@@ -273,6 +277,35 @@ export default function AdminDashboard({
         return false;
       })
     : rawProposals;
+
+  const filteredProposals = proposals.filter((p) => {
+    if (proposalSearch.trim()) {
+      const q = proposalSearch.toLowerCase();
+      const nameMatch = p.clientName && p.clientName.toLowerCase().includes(q);
+      const mobileMatch = p.clientMobile && p.clientMobile.includes(q);
+      const idMatch = p.id && p.id.toLowerCase().includes(q);
+      const serviceMatch = p.serviceRequired && p.serviceRequired.toLowerCase().includes(q);
+      const dateStr = new Date(p.createdAt).toLocaleDateString().toLowerCase();
+      const dateMatch = dateStr.includes(q);
+      
+      if (!nameMatch && !mobileMatch && !idMatch && !serviceMatch && !dateMatch) {
+        return false;
+      }
+    }
+    
+    if (proposalDate) {
+      const pDate = new Date(p.createdAt);
+      const yyyy = pDate.getFullYear();
+      const mm = String(pDate.getMonth() + 1).padStart(2, '0');
+      const dd = String(pDate.getDate()).padStart(2, '0');
+      const formattedPDate = `${yyyy}-${mm}-${dd}`;
+      if (formattedPDate !== proposalDate) {
+        return false;
+      }
+    }
+    
+    return true;
+  });
 
   useEffect(() => {
     // Sync default temporary days for the ACTIVE monthly payroll period
@@ -2958,13 +2991,69 @@ export default function AdminDashboard({
             )}
           </div>
 
+          {/* Proposals Search & Filter Panel */}
+          <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-850/40 flex flex-col md:flex-row gap-3 items-center">
+            <div className="relative flex-1 w-full">
+              <span className="absolute inset-y-0 left-3 flex items-center text-slate-400">
+                <Search className="h-4 w-4" />
+              </span>
+              <input
+                type="text"
+                placeholder="Search by client name, mobile or date (e.g. 28/06/2026)..."
+                value={proposalSearch}
+                onChange={(e) => setProposalSearch(e.target.value)}
+                className="w-full pl-9 pr-8 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+              />
+              {proposalSearch && (
+                <button
+                  onClick={() => setProposalSearch('')}
+                  className="absolute inset-y-0 right-2 px-1.5 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="relative w-full md:w-56">
+              <span className="absolute inset-y-0 left-3 flex items-center text-slate-400">
+                <Calendar className="h-4 w-4" />
+              </span>
+              <input
+                type="date"
+                value={proposalDate}
+                onChange={(e) => setProposalDate(e.target.value)}
+                className="w-full pl-9 pr-8 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+              />
+              {proposalDate && (
+                <button
+                  onClick={() => setProposalDate('')}
+                  className="absolute inset-y-0 right-8 px-1.5 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            {(proposalSearch || proposalDate) && (
+              <button
+                onClick={() => {
+                  setProposalSearch('');
+                  setProposalDate('');
+                }}
+                className="w-full md:w-auto px-4 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition-all cursor-pointer"
+              >
+                Clear Filters
+              </button>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {proposals.length === 0 ? (
+            {filteredProposals.length === 0 ? (
               <div className="p-8 text-center text-slate-450 text-xs md:col-span-2">
-                No corporate proposals dispatched yet. Build a proposal template anytime.
+                {(proposalSearch || proposalDate) ? "No matching proposals found for your search criteria." : "No corporate proposals dispatched yet. Build a proposal template anytime."}
               </div>
             ) : (
-              proposals.map((p) => (
+              filteredProposals.map((p) => (
                 <div key={p.id} className="p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 rounded-2xl flex flex-col justify-between hover:border-emerald-500/25 transition-colors">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">

@@ -256,10 +256,10 @@ export default function AdminDashboard({
 
   const proposals = isTeamLeader
     ? rawProposals.filter(p => {
-        if (!p.employeeId) return false;
-        const normalizedEmployee = p.employeeId.toLowerCase().trim();
+        if (!p.createdBy) return false;
+        const normalizedEmployee = p.createdBy.toLowerCase().trim();
         if (selfIds.includes(normalizedEmployee)) return true;
-        if (assignedEmployeeIds.includes(p.employeeId)) return true;
+        if (assignedEmployeeIds.includes(p.createdBy)) return true;
         const pEmployee = rawEmployees.find(e => 
           e.id.toLowerCase().trim() === normalizedEmployee ||
           (e.email && e.email.toLowerCase().trim() === normalizedEmployee) ||

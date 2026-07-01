@@ -225,9 +225,9 @@ export default function TeamConnectWidget({ currentUser, triggerRefreshParent }:
   useEffect(() => {
     reloadData();
     
-    // When the chat widget is active/open, poll the PostgreSQL store every 3.5 seconds to sync messages instantly.
-    // When minimized, poll every 15 seconds to update notification and unread counts badge cleanly.
-    const pollIntervalMs = isOpen ? 3500 : 15000;
+    // Always poll every 3 seconds to keep messages synced in real-time,
+    // so notification sound plays instantly even when the chat widget is closed/minimized.
+    const pollIntervalMs = 3000;
     let isFetching = false;
 
     const pullLatestLiveSync = async () => {
@@ -254,7 +254,7 @@ export default function TeamConnectWidget({ currentUser, triggerRefreshParent }:
     }, pollIntervalMs);
 
     return () => clearInterval(syncInterval);
-  }, [currentUser.id, activeConv?.id, isOpen]);
+  }, [currentUser.id, activeConv?.id]);
 
   // Scroll to bottom when new messages show up
   useEffect(() => {

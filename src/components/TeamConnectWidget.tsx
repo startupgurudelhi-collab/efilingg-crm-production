@@ -138,6 +138,61 @@ export default function TeamConnectWidget({ currentUser, triggerRefreshParent }:
   const announcementFileInputRef = useRef<HTMLInputElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
+  // Native HTML5 Browser Notification Support
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
+  );
+
+  const requestNotificationPermission = async () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      try {
+        const permission = await Notification.requestPermission();
+        setNotificationPermission(permission);
+        if (permission === 'granted') {
+          // Play a small sound to confirm
+          playNotificationSound();
+          // Show a test notification
+          new Notification('🔔 Notifications Enabled', {
+            body: 'You will now receive instant desktop alerts when a colleague messages you!',
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to request notification permission', err);
+      }
+    }
+  };
+
+  const sendBrowserNotification = (senderName: string, text: string, conversationId: string) => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        const cleanText = text.replace(/📎 Attached Resource:|🎙️ Shared a voice recording./g, '').trim() || 'Sent an attachment';
+        const title = `💬 New Message from ${senderName}`;
+        const options: any = {
+          body: cleanText.length > 80 ? `${cleanText.substring(0, 77)}...` : cleanText,
+          tag: `chat-msg-${conversationId}`, // prevents duplicate stack alerts from the same chat thread
+          renotify: true,
+          requireInteraction: false,
+        };
+        const n = new Notification(title, options);
+        n.onclick = () => {
+          window.focus();
+          const list = getConversations(currentUser.id);
+          const targetConv = list.find(c => c.id === conversationId);
+          if (targetConv) {
+            setIsOpen(true);
+            setActiveWidgetTab('chats');
+            setActiveConv(targetConv);
+            setMessages(getMessages(targetConv.id));
+            markMessagesAsRead(targetConv.id, currentUser.id);
+          }
+          n.close();
+        };
+      } catch (err) {
+        console.warn('[Native Notification Trigger Failed]', err);
+      }
+    }
+  };
+
   // Maintain a record of already seen message IDs during the current session.
   // We initialize it with all currently stored message IDs to prevent alert triggers on load.
   const seenMessageIdsRef = useRef<Set<string>>(new Set());
@@ -206,17 +261,22 @@ export default function TeamConnectWidget({ currentUser, triggerRefreshParent }:
       initialLoadCompletedRef.current = true;
     } else {
       let playSound = false;
+      const messagesToNotify: ChatMessage[] = [];
       allMessages.forEach(m => {
         if (!seenMessageIdsRef.current.has(m.id)) {
           seenMessageIdsRef.current.add(m.id);
           // Only alert for messages sent by others
           if (m.senderId !== currentUser.id) {
             playSound = true;
+            messagesToNotify.push(m);
           }
         }
       });
       if (playSound) {
         playNotificationSound();
+        messagesToNotify.forEach(m => {
+          sendBrowserNotification(m.senderName, m.text, m.conversationId);
+        });
       }
     }
   };
@@ -319,6 +379,7 @@ export default function TeamConnectWidget({ currentUser, triggerRefreshParent }:
               if (payload.senderId !== currentUser.id) {
                 seenMessageIdsRef.current.add(payload.id);
                 playNotificationSound();
+                sendBrowserNotification(payload.senderName, payload.text, payload.conversationId);
               }
 
               // 3. Trigger screen Hud-styled toast alerts if panel is minimized or colleague is on another thread
@@ -820,6 +881,10 @@ export default function TeamConnectWidget({ currentUser, triggerRefreshParent }:
           onClick={() => {
             setIsOpen(true);
             reloadData();
+            // Proactively request browser notification permission if it is still default
+            if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+              requestNotificationPermission();
+            }
           }}
           className="relative px-5 py-3 rounded-full bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-700 dark:hover:bg-emerald-800 text-white font-extrabold text-[12px] uppercase shadow-2xl flex items-center space-x-2 cursor-pointer grow-0 select-none tracking-widest border border-white/20 active:scale-95 transition-all outline-none"
           whileHover={{ scale: 1.04 }}
@@ -925,8 +990,27 @@ export default function TeamConnectWidget({ currentUser, triggerRefreshParent }:
                   </button>
                 )}
               </div>
-              <div className="text-[10px] font-mono font-bold text-slate-400 capitalize hidden sm:block">
-                Colleague: {currentUser.name}
+              <div className="flex items-center space-x-2">
+                {/* Desktop Notification Activator Toggle */}
+                {notificationPermission === 'granted' ? (
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center space-x-1 font-bold bg-emerald-500/10 dark:bg-emerald-500/5 px-2 py-0.5 rounded-lg border border-emerald-500/20">
+                    <Volume2 className="h-3.5 w-3.5 text-emerald-500" />
+                    <span className="hidden sm:inline">Sounds & Desktop Alerts Enabled</span>
+                    <span className="sm:hidden">Active</span>
+                  </span>
+                ) : (
+                  <button
+                    onClick={requestNotificationPermission}
+                    className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold text-[9px] rounded-lg transition-all flex items-center space-x-1 select-none cursor-pointer animate-pulse"
+                    title="Enable browser notifications for this device"
+                  >
+                    <Bell className="h-3 w-3 shrink-0" />
+                    <span>Enable Alerts</span>
+                  </button>
+                )}
+                <div className="text-[10px] font-mono font-bold text-slate-400 capitalize hidden md:block">
+                  Colleague: {currentUser.name}
+                </div>
               </div>
             </div>
 

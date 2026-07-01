@@ -23,7 +23,8 @@ import {
   toggleArchiveConversation,
   getChatAuditLogs,
   createConversation,
-  saveIncomingMessage
+  saveIncomingMessage,
+  getAllMessagesRaw
 } from '../lib/chatDb';
 import { getEmployees } from '../lib/db';
 import { Employee } from '../types';
@@ -137,6 +138,47 @@ export default function TeamConnectWidget({ currentUser, triggerRefreshParent }:
   const announcementFileInputRef = useRef<HTMLInputElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
+  // Maintain a record of already seen message IDs during the current session.
+  // We initialize it with all currently stored message IDs to prevent alert triggers on load.
+  const seenMessageIdsRef = useRef<Set<string>>(new Set());
+  const initialLoadCompletedRef = useRef<boolean>(false);
+
+  const playNotificationSound = () => {
+    try {
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+      const now = ctx.currentTime;
+      
+      // Dual-tone high-quality notification sound (like a chime/ding)
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(587.33, now); // D5
+      osc1.frequency.exponentialRampToValueAtTime(880, now + 0.12); // A5
+      gain1.gain.setValueAtTime(0.2, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.35);
+
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(698.46, now + 0.06); // F5
+      osc2.frequency.exponentialRampToValueAtTime(1174.66, now + 0.2); // D6
+      gain2.gain.setValueAtTime(0.2, now + 0.06);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now + 0.06);
+      osc2.stop(now + 0.45);
+    } catch (err) {
+      console.warn('[WebAudio API Chime Blocked or Failed]', err);
+    }
+  };
+
   // Filter conversations list
   const [convFilter, setConvFilter] = useState<'all' | 'direct' | 'group'>('all');
 
@@ -155,6 +197,27 @@ export default function TeamConnectWidget({ currentUser, triggerRefreshParent }:
     if (activeConv) {
       setMessages(getMessages(activeConv.id));
       markMessagesAsRead(activeConv.id, currentUser.id);
+    }
+
+    // --- SOUND NOTIFICATION TRIGGER ON NEW INCOMING MESSAGE ---
+    const allMessages = getAllMessagesRaw();
+    if (!initialLoadCompletedRef.current) {
+      allMessages.forEach(m => seenMessageIdsRef.current.add(m.id));
+      initialLoadCompletedRef.current = true;
+    } else {
+      let playSound = false;
+      allMessages.forEach(m => {
+        if (!seenMessageIdsRef.current.has(m.id)) {
+          seenMessageIdsRef.current.add(m.id);
+          // Only alert for messages sent by others
+          if (m.senderId !== currentUser.id) {
+            playSound = true;
+          }
+        }
+      });
+      if (playSound) {
+        playNotificationSound();
+      }
     }
   };
 
@@ -254,11 +317,8 @@ export default function TeamConnectWidget({ currentUser, triggerRefreshParent }:
 
               // 2. Play a subtle compliance chime notification sound safely
               if (payload.senderId !== currentUser.id) {
-                try {
-                  const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-120.wav');
-                  audio.volume = 0.45;
-                  audio.play().catch(() => {});
-                } catch (audioErr) {}
+                seenMessageIdsRef.current.add(payload.id);
+                playNotificationSound();
               }
 
               // 3. Trigger screen Hud-styled toast alerts if panel is minimized or colleague is on another thread

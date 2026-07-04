@@ -1,4 +1,5 @@
 // Content Script - Efilingg CRM Assistant
+console.log("Extension loaded");
 console.log("[Efilingg Content] Extension content script loaded and active on page: " + window.location.href);
 
 // Helper to resolve stable API origin and bypass third-party overrides
@@ -91,6 +92,7 @@ document.addEventListener('EfilinggLaunchExtension', (event) => {
 
 // 3. IDENTIFY IF CURRENTLY RUNNING SECURELY ON GOVERNMENT GST PORTAL LOGIN
 if (window.location.hostname.includes("gst.gov.in") && window.location.pathname.includes("/login")) {
+  console.log("GST page detected");
   console.log("[Efilingg Content] GST Portal: Page Match! Querying extension background script for active credentials...");
   
   let attempts = 0;
@@ -285,106 +287,227 @@ function injectAutofillBanner(username, password, usernameField, passwordField) 
           const rawUser = ${JSON.stringify(username)};
           const rawPass = ${JSON.stringify(password)};
           
-          function secureAutofillField(selectors, rawTextValue) {
-            let fieldElement = null;
-            for (const selector of selectors) {
+          function dispatchEventSequence(element) {
+            const events = ['focus', 'beforeinput', 'keydown', 'input', 'keyup', 'change', 'blur'];
+            events.forEach(evType => {
               try {
-                fieldElement = document.querySelector(selector);
-                if (fieldElement) break;
-              } catch (e) {}
-            }
-            
-            if (!fieldElement) {
-              console.warn("[Efilingg Bridge] Target field element not located for selectors:", selectors);
-              return;
-            }
-            
-            // Set autocomplete attribute to off / new-password to block native auto-fill triggers
-            fieldElement.setAttribute('autocomplete', 'new-password');
-            
-            // Set focus to simulate user presence
-            fieldElement.focus();
-            fieldElement.click();
-            
-            // Set element value securely passing React/Angular prototype setter tracks
-            try {
-              const prototypeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-              if (prototypeSetter) {
-                prototypeSetter.call(fieldElement, rawTextValue);
-              } else {
-                fieldElement.value = rawTextValue;
-              }
-            } catch (err) {
-              fieldElement.value = rawTextValue;
-            }
-            
-            // Dispatch standard interaction notifications
-            ['input', 'change', 'blur'].forEach(evType => {
-              try {
-                fieldElement.dispatchEvent(new Event(evType, { bubbles: true, cancelable: true }));
+                let event;
+                if (evType === 'beforeinput') {
+                  event = new InputEvent('beforeinput', { bubbles: true, cancelable: true });
+                } else if (evType.startsWith('key')) {
+                  event = new KeyboardEvent(evType, { bubbles: true, cancelable: true });
+                } else {
+                  event = new Event(evType, { bubbles: true, cancelable: true });
+                }
+                element.dispatchEvent(event);
               } catch (err) {
                 console.warn("[Efilingg Bridge] Dispatch event failed: " + evType, err);
               }
             });
-            
-            // Sync AngularJS scope controllers
-            function syncAngularModel() {
-              try {
-                if (window.angular && window.angular.element) {
-                  const ngEl = window.angular.element(fieldElement);
-                  const scope = ngEl.scope();
-                  const ngModelCtrl = ngEl.controller('ngModel');
-                  if (scope) {
-                    scope.$apply(function() {
-                      if (ngModelCtrl) {
-                        ngModelCtrl.$setViewValue(rawTextValue);
-                        ngModelCtrl.$render();
-                        ngModelCtrl.$setDirty();
-                        ngModelCtrl.$setTouched();
-                      } else {
-                        // Fallback direct string key path setting
-                        const ngModelAttr = fieldElement.getAttribute('ng-model');
-                        if (ngModelAttr) {
-                          const modelKeys = ngModelAttr.split('.');
-                          let currentObj = scope;
-                          for (let i = 0; i < modelKeys.length - 1; i++) {
-                            if (!currentObj[modelKeys[i]]) {
-                              currentObj[modelKeys[i]] = {};
-                            }
-                            currentObj = currentObj[modelKeys[i]];
-                          }
-                          currentObj[modelKeys[modelKeys.length - 1]] = rawTextValue;
-                        }
-                      }
-                    });
-                  }
-                }
-              } catch (angularErr) {
-                console.error("[Efilingg Bridge] AngularJS scope digest error:", angularErr);
-              }
-            }
-            
-            syncAngularModel();
-            
-            // Lock value against browser autofill/password manager overrides for 5 seconds
-            let lockCounter = 0;
-            const lockInterval = setInterval(() => {
-              if (fieldElement.value !== rawTextValue) {
-                console.log("[Efilingg Bridge] Locking active: Blocked external attempt to change field. Instantly restoring CRM client value.");
-                fieldElement.value = rawTextValue;
-                syncAngularModel();
-              }
-              lockCounter++;
-              if (lockCounter > 50) { // 50 * 100ms = 5 seconds
-                clearInterval(lockInterval);
-              }
-            }, 100);
           }
           
-          secureAutofillField(['#username', 'input[name="username"]', 'input[formcontrolname="username"]', 'input[id*="username" i]'], rawUser);
-          secureAutofillField(['#user_pass', '#password', 'input[type="password"]', 'input[name="password"]', 'input[id*="password" i]'], rawPass);
+          function syncAngularModel(fieldElement, rawTextValue) {
+            try {
+              if (window.angular && window.angular.element) {
+                const ngEl = window.angular.element(fieldElement);
+                const scope = ngEl.scope();
+                const ngModelCtrl = ngEl.controller('ngModel');
+                if (scope) {
+                  scope.$apply(function() {
+                    if (ngModelCtrl) {
+                      ngModelCtrl.$setViewValue(rawTextValue);
+                      ngModelCtrl.$render();
+                      ngModelCtrl.$setDirty();
+                      ngModelCtrl.$setTouched();
+                    } else {
+                      // Fallback direct string key path setting
+                      const ngModelAttr = fieldElement.getAttribute('ng-model');
+                      if (ngModelAttr) {
+                        const modelKeys = ngModelAttr.split('.');
+                        let currentObj = scope;
+                        for (let i = 0; i < modelKeys.length - 1; i++) {
+                          if (!currentObj[modelKeys[i]]) {
+                            currentObj[modelKeys[i]] = {};
+                          }
+                          currentObj = currentObj[modelKeys[i]];
+                        }
+                        currentObj[modelKeys[modelKeys.length - 1]] = rawTextValue;
+                      }
+                    }
+                  });
+                }
+              }
+            } catch (angularErr) {
+              console.error("[Efilingg Bridge] AngularJS scope digest error:", angularErr);
+            }
+          }
+
+          function getFieldElement(selectors) {
+            for (const selector of selectors) {
+              try {
+                const el = document.querySelector(selector);
+                if (el) return el;
+              } catch (e) {}
+            }
+            return null;
+          }
+
+          const usernameSelectors = ['#username', 'input[name="username"]', 'input[formcontrolname="username"]', 'input[id*="username" i]'];
+          const passwordSelectors = ['#user_pass', '#password', 'input[type="password"]', 'input[name="password"]', 'input[id*="password" i]'];
+
+          let usernameField = getFieldElement(usernameSelectors);
+          let passwordField = getFieldElement(passwordSelectors);
+
+          if (!usernameField || !passwordField) {
+            console.error("[Efilingg Bridge] Crucial form fields are missing from DOM!");
+            return;
+          }
+
+          // 1. Detect browser autofill
+          const detectedAutofill = (usernameField.value && usernameField.value !== rawUser) || (passwordField.value && passwordField.value !== rawPass);
+          if (detectedAutofill) {
+            console.log("Autofill detected");
+            console.log("[Efilingg Bridge] Autofill detected pre-existing/saved values in form. Removing and clearing...");
+            usernameField.value = '';
+            passwordField.value = '';
+            dispatchEventSequence(usernameField);
+            dispatchEventSequence(passwordField);
+          }
+
+          // 2. Insert CRM credentials
+          console.log("[Efilingg Bridge] Inserting CRM credentials into inputs...");
           
-          console.log("[Efilingg Bridge] AngularJS state syncing & secure lock finished.");
+          usernameField.value = rawUser;
+          console.log("Username injected");
+          syncAngularModel(usernameField, rawUser);
+          dispatchEventSequence(usernameField);
+
+          passwordField.value = rawPass;
+          console.log("Password injected");
+          syncAngularModel(passwordField, rawPass);
+          dispatchEventSequence(passwordField);
+
+          // Force autocomplete attributes to off to block native Chrome autofill hooks
+          usernameField.setAttribute('autocomplete', 'new-password');
+          passwordField.setAttribute('autocomplete', 'new-password');
+
+          // 3. Define getter/setter properties to intercept Chrome Password Manager overwrites dynamically
+          const originalValueDesc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+
+          function applyValueLock(fieldElement, targetValue, fieldName) {
+            try {
+              Object.defineProperty(fieldElement, 'value', {
+                get: function() {
+                  return originalValueDesc.get.call(this);
+                },
+                set: function(newValue) {
+                  if (newValue !== targetValue) {
+                    console.log("Credentials replaced");
+                    console.log("[Efilingg Bridge] Overwrite attempt detected on " + fieldName + " to: '" + newValue + "'. Restoring CRM credentials immediately.");
+                    originalValueDesc.set.call(this, targetValue);
+                    syncAngularModel(this, targetValue);
+                    dispatchEventSequence(this);
+                  } else {
+                    originalValueDesc.set.call(this, newValue);
+                  }
+                },
+                configurable: true
+              });
+            } catch (err) {
+              console.warn("[Efilingg Bridge] Could not apply value lock on " + fieldName + ":", err);
+            }
+          }
+
+          applyValueLock(usernameField, rawUser, 'username');
+          applyValueLock(passwordField, rawPass, 'password');
+
+          // 4. Observe the login form using MutationObserver for attributes/class changes
+          const observer = new MutationObserver((mutations) => {
+            console.log("Mutation detected");
+            
+            // Handle element recreation or DOM replacement gracefully
+            const currentU = getFieldElement(usernameSelectors);
+            const currentP = getFieldElement(passwordSelectors);
+
+            if (currentU && currentU !== usernameField) {
+              console.log("[Efilingg Bridge] Username element recreated. Re-applying security locks...");
+              usernameField = currentU;
+              applyValueLock(usernameField, rawUser, 'username');
+            }
+            if (currentP && currentP !== passwordField) {
+              console.log("[Efilingg Bridge] Password element recreated. Re-applying security locks...");
+              passwordField = currentP;
+              applyValueLock(passwordField, rawPass, 'password');
+            }
+
+            // Restore if changed
+            if (usernameField && usernameField.value !== rawUser) {
+              console.log("Credentials replaced");
+              originalValueDesc.set.call(usernameField, rawUser);
+              syncAngularModel(usernameField, rawUser);
+              dispatchEventSequence(usernameField);
+            }
+            if (passwordField && passwordField.value !== rawPass) {
+              console.log("Credentials replaced");
+              originalValueDesc.set.call(passwordField, rawPass);
+              syncAngularModel(passwordField, rawPass);
+              dispatchEventSequence(passwordField);
+            }
+          });
+
+          const form = usernameField.closest('form') || document.querySelector('form');
+          if (form) {
+            observer.observe(form, { childList: true, subtree: true, attributes: true });
+          }
+          observer.observe(usernameField, { attributes: true, attributeFilter: ['value', 'class', 'style', 'autocomplete'] });
+          observer.observe(passwordField, { attributes: true, attributeFilter: ['value', 'class', 'style', 'autocomplete'] });
+
+          // 5. Intercept the Login button click / submit event
+          function verifyAndRestoreBeforeLogin(event) {
+            console.log("[Efilingg Bridge] Login submit/click action intercepted. Verifying final credentials state...");
+            
+            let changed = false;
+            if (usernameField && usernameField.value !== rawUser) {
+              console.log("Credentials replaced");
+              console.log("[Efilingg Bridge] Username was incorrect on login click. Re-injecting CRM credentials.");
+              originalValueDesc.set.call(usernameField, rawUser);
+              syncAngularModel(usernameField, rawUser);
+              dispatchEventSequence(usernameField);
+              changed = true;
+            }
+            
+            if (passwordField && passwordField.value !== rawPass) {
+              console.log("Credentials replaced");
+              console.log("[Efilingg Bridge] Password was incorrect on login click. Re-injecting CRM credentials.");
+              originalValueDesc.set.call(passwordField, rawPass);
+              syncAngularModel(passwordField, rawPass);
+              dispatchEventSequence(passwordField);
+              changed = true;
+            }
+
+            console.log("Final credentials verified");
+            console.log("Login allowed");
+          }
+
+          if (form) {
+            form.addEventListener('submit', verifyAndRestoreBeforeLogin, true);
+          }
+
+          document.addEventListener('click', function(e) {
+            const target = e.target;
+            if (target) {
+              const isSubmitBtn = target.matches('button[type="submit"]') || 
+                                  target.matches('input[type="submit"]') ||
+                                  target.closest('button[type="submit"]') ||
+                                  target.id === 'login' ||
+                                  (target.innerText && target.innerText.toUpperCase().includes('LOGIN'));
+              if (isSubmitBtn) {
+                verifyAndRestoreBeforeLogin(e);
+              }
+            }
+          }, true);
+
+          console.log("[Efilingg Bridge] Main world lockdown complete. Ready for secure submission.");
         })();
       `;
       (document.head || document.documentElement).appendChild(bridgeScript);

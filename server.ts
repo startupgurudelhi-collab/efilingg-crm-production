@@ -11,6 +11,7 @@ import pg from 'pg';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
+import AdmZip from 'adm-zip';
 
 dotenv.config();
 
@@ -549,6 +550,27 @@ app.post('/api/admin/backup-import', async (req, res) => {
     res.json({ success: true, restoredCount });
   } catch (err: any) {
     console.error('[Import Backup] Crashing:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- CHROME EXTENSION DYNAMIC ZIP DOWNLOAD ---
+app.get('/api/extension/download-zip', (req, res) => {
+  try {
+    const extensionDir = path.join(process.cwd(), 'public', 'chrome-extension');
+    if (!fs.existsSync(extensionDir)) {
+      return res.status(404).json({ error: 'Chrome extension source folder not found' });
+    }
+
+    const zip = new AdmZip();
+    zip.addLocalFolder(extensionDir);
+    const zipBuffer = zip.toBuffer();
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename=efilingg-chrome-extension.zip');
+    res.send(zipBuffer);
+  } catch (err: any) {
+    console.error('[Extension Download] Error zipping files:', err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -16,7 +16,8 @@ import {
   parseCSVData, 
   exportToCSVFile,
   getV1Employees,
-  deleteV2McaClient
+  deleteV2McaClient,
+  deleteV2McaClients
 } from '../../lib/v2_db';
 import { getCurrentSession } from '../../lib/db';
 import ConfirmModal from './ConfirmModal';
@@ -503,7 +504,7 @@ export default function V2MCA({
                        title: 'Confirm Bulk Deletion',
                        message: `Are you sure you want to bulk-delete ${selectedMcaClients.length} selected corporate accounts? This action is permanent.`,
                        onConfirm: () => {
-                         selectedMcaClients.forEach(id => deleteV2McaClient(id));
+                         deleteV2McaClients(selectedMcaClients);
                          setClients(getV2McaClients());
                          setSelectedMcaClients([]);
                          setConfirmModal(prev => ({ ...prev, isOpen: false }));

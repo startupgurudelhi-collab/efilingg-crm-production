@@ -940,9 +940,21 @@ export function deleteV2GstClient(id: string): void {
   saveV2Items(KEY_V2_GST_CLIENTS, filtered);
 }
 
+export function deleteV2GstClients(ids: string[]): void {
+  const list = getV2GstClients();
+  const filtered = list.filter(item => !ids.includes(item.id));
+  saveV2Items(KEY_V2_GST_CLIENTS, filtered);
+}
+
 export function deleteV2McaClient(id: string): void {
   const list = getV2McaClients();
   const filtered = list.filter(item => item.id !== id);
+  saveV2Items(KEY_V2_MCA_CLIENTS, filtered);
+}
+
+export function deleteV2McaClients(ids: string[]): void {
+  const list = getV2McaClients();
+  const filtered = list.filter(item => !ids.includes(item.id));
   saveV2Items(KEY_V2_MCA_CLIENTS, filtered);
 }
 

@@ -16,6 +16,7 @@ import {
   parseCSVData, 
   exportToCSVFile,
   deleteV2GstClient,
+  deleteV2GstClients,
   addV2ItrClient
 } from '../../lib/v2_db';
 import { getCurrentSession } from '../../lib/db'; // Correct reference
@@ -774,7 +775,7 @@ export default function V2GST({
                     title: 'Confirm Bulk Deletion',
                     message: `Are you sure you want to bulk-delete ${selectedGstClients.length} selected GST clients? This action is permanent.`,
                     onConfirm: () => {
-                      selectedGstClients.forEach(id => deleteV2GstClient(id));
+                      deleteV2GstClients(selectedGstClients);
                       setClients(getV2GstClients());
                       setSelectedGstClients([]);
                       setConfirmModal(prev => ({ ...prev, isOpen: false }));

@@ -198,11 +198,50 @@ export default function TeamConnectWidget({ currentUser, triggerRefreshParent }:
   const seenMessageIdsRef = useRef<Set<string>>(new Set());
   const initialLoadCompletedRef = useRef<boolean>(false);
 
+  // Persistent reference to reuse the same AudioContext for the lifetime of this applet
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  // Auto-resume and initialize AudioContext on any user gesture (click, keydown)
+  useEffect(() => {
+    const resumeAudioContext = () => {
+      try {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContextClass) return;
+        if (!audioContextRef.current) {
+          audioContextRef.current = new AudioContextClass();
+        }
+        if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+          audioContextRef.current.resume().catch(e => console.warn('Failed to resume AudioContext:', e));
+        }
+      } catch (err) {
+        console.warn('AudioContext initialization gesture hook failed:', err);
+      }
+    };
+
+    // Proactively request browser notification permission on mount if still default
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      requestNotificationPermission();
+    }
+
+    window.addEventListener('click', resumeAudioContext);
+    window.addEventListener('keydown', resumeAudioContext);
+    return () => {
+      window.removeEventListener('click', resumeAudioContext);
+      window.removeEventListener('keydown', resumeAudioContext);
+    };
+  }, []);
+
   const playNotificationSound = () => {
     try {
-      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioContext) return;
-      const ctx = new AudioContext();
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContextClass();
+      }
+      const ctx = audioContextRef.current;
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(e => console.warn('Could not resume inside playNotificationSound:', e));
+      }
       const now = ctx.currentTime;
       
       // Dual-tone high-quality notification sound (like a chime/ding)

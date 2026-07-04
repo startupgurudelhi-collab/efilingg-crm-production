@@ -195,8 +195,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             gstin: result.activeCredentials.gstin || ""
           });
 
-          // Enforce 100% strict data-confidentiality: wipe raw credentials in storage 3 seconds after being injected
-          console.log("[Efilingg Background] Securing session: Arming instant 3-second self-destruct wipe timer on credentials cache.");
+          // Enforce 100% strict data-confidentiality: wipe raw credentials in storage 10 minutes after being injected
+          console.log("[Efilingg Background] Securing session: Arming robust 10-minute self-destruct wipe timer on credentials cache.");
           setTimeout(() => {
             chrome.storage.local.remove(['activeCredentials'], () => {
               if (chrome.runtime.lastError) {
@@ -207,7 +207,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 updateBadge("idle");
               }
             });
-          }, 3000);
+          }, 600000);
 
         } else {
           console.warn("[Efilingg Background] Content script requested credentials, but cache was empty or already wiped.");

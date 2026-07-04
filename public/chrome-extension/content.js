@@ -146,8 +146,7 @@ if (window.location.hostname.includes("gst.gov.in") && window.location.pathname.
 }
 
 
-// 4. FUNCTION TO INJECT A PREMIUM USER-ACTION BAR AT THE VIEWPORT TOP
-// This ensures Username/Password are filled ONLY after explicit user consent/action to comply with phase constraints
+// 4. FUNCTION TO INJECT A PREMIUM INFORMATION BAR AND AUTOMATICALLY INJECT CREDENTIALS
 function injectAutofillBanner(username, password, usernameField, passwordField) {
   // Prevent double injection
   if (document.getElementById('efilingg-action-bar')) return;
@@ -163,11 +162,10 @@ function injectAutofillBanner(username, password, usernameField, passwordField) 
   bar.style.right = '0';
   bar.style.height = '50px';
   bar.style.background = 'linear-gradient(90deg, #1e1b4b 0%, #0f172a 100%)';
-  bar.style.borderBottom = '3px solid #6366f1';
+  bar.style.borderBottom = '3px solid #10b981';
   bar.style.color = '#ffffff';
   bar.style.display = 'flex';
   bar.style.alignItems = 'center';
-  bar.style.justify = 'space-between';
   bar.style.justifyContent = 'space-between';
   bar.style.padding = '0 24px';
   bar.style.zIndex = '2147483647';
@@ -182,7 +180,7 @@ function injectAutofillBanner(username, password, usernameField, passwordField) 
   leftLabel.style.gap = '10px';
   
   const logoCircle = document.createElement('div');
-  logoCircle.style.background = '#6366f1';
+  logoCircle.style.background = '#10b981';
   logoCircle.style.width = '24px';
   logoCircle.style.height = '24px';
   logoCircle.style.borderRadius = '50%';
@@ -198,7 +196,7 @@ function injectAutofillBanner(username, password, usernameField, passwordField) 
   labelText.style.fontSize = '12.5px';
   labelText.style.fontWeight = 'bold';
   labelText.style.letterSpacing = '0.3px';
-  labelText.innerHTML = `Efilingg CRM <span style="color:#a5b4fc">✔</span> Secured login ready for <span style="color:#34d399; font-weight:800; font-family: monospace;">${username}</span>`;
+  labelText.innerHTML = `Efilingg CRM <span style="color:#34d399">✔</span> Secured login active for <span style="color:#34d399; font-weight:800; font-family: monospace;">${username}</span>. Credentials automatically filled & protected.`;
   
   leftLabel.appendChild(logoCircle);
   leftLabel.appendChild(labelText);
@@ -209,11 +207,11 @@ function injectAutofillBanner(username, password, usernameField, passwordField) 
   actions.style.alignItems = 'center';
   actions.style.gap = '12px';
   
-  // Autofill Action Button
+  // Re-inject Action Button
   const fillBtn = document.createElement('button');
   fillBtn.type = 'button';
-  fillBtn.innerText = '⚡ Auto-Fill Credentials';
-  fillBtn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+  fillBtn.innerText = '⚡ Re-Inject';
+  fillBtn.style.background = 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)';
   fillBtn.style.color = '#ffffff';
   fillBtn.style.border = 'none';
   fillBtn.style.padding = '7px 16px';
@@ -224,14 +222,12 @@ function injectAutofillBanner(username, password, usernameField, passwordField) 
   fillBtn.style.letterSpacing = '0.5px';
   fillBtn.style.cursor = 'pointer';
   fillBtn.style.transition = 'all 0.2s ease';
-  fillBtn.style.boxShadow = '0 2px 4px rgba(16, 185, 129, 0.2)';
+  fillBtn.style.boxShadow = '0 2px 4px rgba(99, 102, 241, 0.2)';
   
   fillBtn.onmouseenter = () => {
-    fillBtn.style.backgroundColor = '#10b981';
     fillBtn.style.transform = 'scale(1.02)';
   };
   fillBtn.onmouseleave = () => {
-    fillBtn.style.backgroundColor = '';
     fillBtn.style.transform = 'none';
   };
   
@@ -259,10 +255,10 @@ function injectAutofillBanner(username, password, usernameField, passwordField) 
   document.body.style.paddingTop = '50px';
   document.body.appendChild(bar);
   
-  // CLICK BEHAVIOR: Execute autofill ONLY on clicking 'Auto-Fill Credentials'
-  fillBtn.addEventListener('click', () => {
+  // Core Autofill Execution Function
+  const executeAutofill = () => {
     try {
-      console.log("[Efilingg Content] Autofill execution: User clicked autofill banner. Securing Main World AngularJS update...");
+      console.log("[Efilingg Content] Autofill execution: Securing Main World AngularJS update...");
       
       // Phase 1: Local Context fallback (just in case)
       if (usernameField) {
@@ -534,19 +530,22 @@ function injectAutofillBanner(username, password, usernameField, passwordField) 
         captchaField.style.border = "2px solid #3b82f6";
       }
       
-      console.log("[Efilingg Content] Autofill process completed successfully. Banner sliding up.");
-      
-      // Slide-up transition
-      bar.style.transform = 'translateY(-100%)';
-      bar.style.opacity = '0';
-      setTimeout(() => {
-        bar.remove();
-        document.body.style.paddingTop = '0px';
-      }, 400);
-
+      console.log("[Efilingg Content] Autofill process completed successfully.");
     } catch (err) {
       console.error("[Efilingg Content] Autofill execution caught an unexpected error:", err);
     }
+  };
+
+  // Run automatically on load!
+  executeAutofill();
+
+  // Button Click allows manually re-injecting if needed
+  fillBtn.addEventListener('click', () => {
+    executeAutofill();
+    fillBtn.innerText = '✔ Re-Injected';
+    setTimeout(() => {
+      fillBtn.innerText = '⚡ Re-Inject';
+    }, 1500);
   });
   
   // Close Button behavior

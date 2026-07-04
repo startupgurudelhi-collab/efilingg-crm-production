@@ -309,6 +309,8 @@ export default function V2GST({
   const [showAddForm, setShowAddForm] = useState(initialShowAddForm);
   const [showImport, setShowImport] = useState(initialShowImport);
   const [importText, setImportText] = useState('');
+  const [excelClients, setExcelClients] = useState<V2GstClient[] | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState('');
 
   // Form Fields
   const [name, setName] = useState('');
@@ -639,11 +641,11 @@ export default function V2GST({
         </form>
       )}
 
-      {/* Copy Paste Excel Import Blocks */}
+      {/* Direct Excel / CSV Client Importer */}
       {showImport && (
-        <form onSubmit={handlePasteImport} className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl space-y-4">
+        <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl space-y-4">
           <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-850">
-            <h3 className="font-extrabold text-xs text-indigo-700 uppercase">Excel Copy-Paste Bulk client Parser</h3>
+            <h3 className="font-extrabold text-xs text-indigo-700 uppercase">Direct Excel / CSV Client Importer</h3>
             <button 
               type="button" 
               onClick={() => {
@@ -657,70 +659,191 @@ export default function V2GST({
                 a.setAttribute('download', 'gst_clients_import_sample.csv');
                 a.click();
               }}
-              className="text-[10px] text-indigo-600 hover:underline font-bold font-mono"
+              className="text-[10px] text-indigo-600 hover:underline font-bold font-mono flex items-center gap-1 cursor-pointer"
             >
-              ⬇️ Download Sample CSV Excel File
+              <Download className="h-3.5 w-3.5" /> Download Sample CSV Excel File
             </button>
           </div>
-          <p className="text-[10px] text-slate-400">Copy data columns from your worksheet (inclusive of columns) and paste below inside the text area:</p>
-          <textarea
-            rows={5}
-            placeholder="Client Name&#9;Firm Name&#9;Type&#9;Reg Date&#9;Email&#9;Mobile&#9;Address&#9;State&#9;GSTIN&#9;Username&#9;Password&#9;Filing Mode&#10;Aditya Gupta&#9;Apex Retails Corp&#9;PROPRIETOR&#9;22/05/2026&#9;compliance@apexretails.com&#9;9812492102&#9;Plot 4 Sector 62 Noida&#9;Uttar Pradesh&#9;09AAACA4192G1ZX&#9;apex_retail&#9;GstPassword@2026&#9;MONTHLY"
-            value={importText}
-            onChange={e => setImportText(e.target.value)}
-            className="w-full p-3 bg-slate-50 dark:bg-slate-950 border border-slate-205 dark:border-slate-800 rounded-2xl text-xs font-mono"
-          />
 
-          <div className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-150 dark:border-slate-800 space-y-2">
-            <label className="text-[10px] uppercase font-bold text-slate-500 block">Or upload Excel / CSV File (.xlsx, .xls, .csv)</label>
-            <div className="flex items-center justify-center w-full">
-              <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-250 dark:border-slate-800 rounded-2xl cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-900/30 transition">
-                <div className="flex flex-col items-center justify-center pt-3 pb-3">
-                  <UploadCloud className="h-6 w-6 text-indigo-500 mb-1" />
-                  <p className="text-[10px] text-slate-500 font-semibold">Click to upload spreadsheet or drag & drop</p>
-                  <p className="text-[9px] text-slate-400 font-mono">Supports XLSX, XLS, or CSV formats</p>
-                </div>
-                <input 
-                  type="file" 
-                  accept=".xlsx,.xls,.csv" 
-                  className="hidden" 
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                      try {
-                        const data = new Uint8Array(event.target?.result as ArrayBuffer);
-                        const workbook = XLSX.read(data, { type: 'array' });
-                        const sheetName = workbook.SheetNames[0];
-                        const worksheet = workbook.Sheets[sheetName];
-                        const json = XLSX.utils.sheet_to_json<string[]>(worksheet, { header: 1 });
-                        
-                        if (json.length < 2) {
-                          alert('Spreadsheet has insufficient rows. Must contain a header row and at least one data row.');
-                          return;
-                        }
-                        
-                        // Convert sheet 2D array to CSV text format for text field representation
-                        const csvText = json.map(r => r.join(',')).join('\n');
-                        setImportText(csvText);
-                        alert(`Successfully imported ${json.length - 1} records from spreadsheet. Please verify below and click "Verify & Launch Accounts"!`);
-                      } catch (err) {
-                        console.error(err);
-                        alert('Failed to parse Excel file. Please make sure it is a valid Excel or CSV document.');
-                      }
-                    };
-                    reader.readAsArrayBuffer(file);
+          {excelClients && excelClients.length > 0 ? (
+            <div className="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-2xl flex flex-col items-center text-center space-y-3">
+              <div className="bg-emerald-500/10 p-2.5 rounded-full">
+                <CheckCircle className="h-8 w-8 text-emerald-500" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-xs text-emerald-800 dark:text-emerald-300 uppercase">Spreadsheet Parsed Successfully!</h4>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                  Found <strong className="text-emerald-750 dark:text-emerald-350">{excelClients.length} clients</strong> ready for import from <span className="font-mono bg-white dark:bg-slate-950 px-1.5 py-0.5 rounded border border-slate-100 dark:border-slate-800 font-bold">{uploadedFileName}</span>.
+                </p>
+              </div>
+
+              {/* Mini Preview Table */}
+              <div className="w-full overflow-x-auto max-h-48 border border-slate-100 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-950 text-[10px] text-left">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-900 text-[9px] uppercase tracking-wider font-extrabold text-slate-500 border-b border-slate-100 dark:border-slate-800">
+                      <th className="p-2">Client Name</th>
+                      <th className="p-2">Firm Name</th>
+                      <th className="p-2">GSTIN</th>
+                      <th className="p-2">Username</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
+                    {excelClients.slice(0, 5).map((ec, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30">
+                        <td className="p-2 font-bold text-slate-700 dark:text-slate-300">{ec.clientName}</td>
+                        <td className="p-2 text-slate-500">{ec.firmName}</td>
+                        <td className="p-2 font-mono uppercase text-slate-500">{ec.gstin}</td>
+                        <td className="p-2 font-mono text-slate-500">{ec.userId}</td>
+                      </tr>
+                    ))}
+                    {excelClients.length > 5 && (
+                      <tr>
+                        <td colSpan={4} className="p-2 text-center text-[9px] text-slate-400 font-bold bg-slate-50/30 dark:bg-slate-900/10">
+                          + {excelClients.length - 5} more clients
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex gap-2 w-full pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => { setExcelClients(null); setUploadedFileName(''); }}
+                  className="flex-1 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-bold text-[10px] uppercase tracking-wide cursor-pointer transition"
+                >
+                  Choose Different File
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    const addedList: V2GstClient[] = [];
+                    for (const ec of excelClients) {
+                      const added = addV2GstClient(ec);
+                      addedList.push(added);
+                    }
+                    setClients([...clients, ...addedList]);
+                    setShowImport(false);
+                    setExcelClients(null);
+                    setUploadedFileName('');
+                    alert(`Successfully imported ${addedList.length} clients directly from Excel!`);
                   }}
-                />
-              </label>
+                  className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-[10px] uppercase tracking-wide cursor-pointer transition shadow-sm"
+                >
+                  Import All ({excelClients.length}) Clients
+                </button>
+              </div>
             </div>
-          </div>
-          <div className="flex justify-end gap-2 text-xs">
-            <button type="button" onClick={() => setShowImport(false)} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-550 rounded-xl cursor-pointer">Close</button>
-            <button type="submit" className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold cursor-pointer">Verify & Launch Accounts</button>
-          </div>
-        </form>
+          ) : (
+            <div className="space-y-4">
+              <div className="p-6 bg-slate-50 dark:bg-slate-950 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="flex flex-col items-center justify-center text-center">
+                  <div className="bg-indigo-50 dark:bg-indigo-950/30 p-3 rounded-2xl mb-2">
+                    <UploadCloud className="h-8 w-8 text-indigo-500" />
+                  </div>
+                  <h4 className="font-bold text-xs text-slate-800 dark:text-slate-100 uppercase tracking-wide">Upload Excel or CSV spreadsheet</h4>
+                  <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                    Select any file formatted as <span className="font-mono bg-white dark:bg-slate-900 px-1 rounded border border-slate-100 dark:border-slate-800">.xlsx</span>, <span className="font-mono bg-white dark:bg-slate-900 px-1 rounded border border-slate-100 dark:border-slate-800">.xls</span>, or <span className="font-mono bg-white dark:bg-slate-900 px-1 rounded border border-slate-100 dark:border-slate-800">.csv</span> containing taxpayer rosters.
+                  </p>
+                </div>
+                
+                <div className="flex items-center justify-center w-full">
+                  <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-200 hover:border-indigo-550 dark:border-slate-800 dark:hover:border-indigo-500 rounded-2xl cursor-pointer bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-950 transition">
+                    <div className="flex flex-col items-center justify-center pt-3 pb-3 text-center">
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Click to Select Spreadsheet File</p>
+                      <p className="text-[9px] text-slate-400 mt-1 font-medium">Or drag and drop your file here</p>
+                    </div>
+                    <input 
+                      type="file" 
+                      accept=".xlsx,.xls,.csv" 
+                      className="hidden" 
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        setUploadedFileName(file.name);
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                          try {
+                            const data = new Uint8Array(event.target?.result as ArrayBuffer);
+                            const workbook = XLSX.read(data, { type: 'array' });
+                            const sheetName = workbook.SheetNames[0];
+                            const worksheet = workbook.Sheets[sheetName];
+                            const json = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
+                            
+                            if (json.length < 2) {
+                              alert('Spreadsheet is empty or lacks data. Must contain a header row and at least one taxpayer row.');
+                              return;
+                            }
+                            
+                            const tempClients: V2GstClient[] = [];
+                            for (let i = 1; i < json.length; i++) {
+                              const r = json[i];
+                              if (!r || r.length === 0) continue;
+                              
+                              const clientName = r[0] ? r[0].toString().trim() : '';
+                              if (!clientName) continue;
+                              
+                              const firmName = r[1] ? r[1].toString().trim() : clientName + " (Firm)";
+                              const clientType = (r[2] ? r[2].toString().trim().toUpperCase() : 'PROPRIETOR') as V2GstClient['clientType'];
+                              const dateOfRegistration = r[3] ? r[3].toString().trim() : '2026-05-01';
+                              const clientEmail = r[4] ? r[4].toString().trim() : 'N/A';
+                              const clientMobile = r[5] ? r[5].toString().trim() : 'N/A';
+                              const clientAddress = r[6] ? r[6].toString().trim() : 'N/A';
+                              const clientState = r[7] ? r[7].toString().trim() : 'Delhi';
+                              const gstin = r[8] ? r[8].toString().trim().toUpperCase() : `GSTIN-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+                              const userId = r[9] ? r[9].toString().trim() : `user_${Math.random().toString(36).substr(2, 5).toLowerCase()}`;
+                              const password = r[10] ? r[10].toString() : 'GstPassword@2026';
+                              const returnsMode = (r[11] && r[11].toString().trim().toUpperCase() === 'QUARTERLY') ? 'QUARTERLY' : 'MONTHLY';
+
+                              tempClients.push({
+                                id: '',
+                                clientName,
+                                firmName,
+                                clientType,
+                                dateOfRegistration,
+                                clientEmail,
+                                clientMobile,
+                                clientAddress,
+                                clientState,
+                                gstin,
+                                userId,
+                                password,
+                                returnsMode
+                              });
+                            }
+                            
+                            if (tempClients.length === 0) {
+                              alert('No valid client records identified in the uploaded spreadsheet. Please check headers and data columns.');
+                              return;
+                            }
+                            
+                            setExcelClients(tempClients);
+                          } catch (err) {
+                            console.error(err);
+                            alert('Failed to parse Excel file. Please check that it is a valid spreadsheet file.');
+                          }
+                        };
+                        reader.readAsArrayBuffer(file);
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+              
+              <div className="flex justify-end gap-2 text-xs">
+                <button 
+                  type="button" 
+                  onClick={() => setShowImport(false)} 
+                  className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-850 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-bold cursor-pointer transition"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Main GST grid & Filing list */}
@@ -1241,6 +1364,8 @@ export default function V2GST({
                     <div className="flex flex-wrap items-center gap-3">
                       <a
                         href="/api/extension/download-zip"
+                        target="_blank"
+                        download="efilingg-chrome-extension.zip"
                         className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-750 text-white font-black text-[10px] uppercase tracking-wider px-4 py-2.5 rounded-xl cursor-pointer transition shadow-md hover:shadow-indigo-500/20"
                       >
                         <Download className="h-4 w-4 text-indigo-200" /> Download Chrome Extension (.ZIP)

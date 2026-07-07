@@ -26,6 +26,7 @@ type ServiceType = 'GST' | 'MCA' | 'ITR' | 'TRUST' | 'DSC' | 'TRADEMARK' | 'OTHE
 interface MappedClient {
   id: string;
   name: string;
+  secondaryName?: string;
   registrationNumber: string; // GSTIN, CIN, PAN, etc.
   serviceType: ServiceType;
   entityType?: string;
@@ -63,7 +64,8 @@ export default function V2ClientMapper() {
       case 'GST':
         return getV2GstClients().map(c => ({
           id: c.id,
-          name: c.clientName || c.firmName || 'GST Client',
+          name: c.firmName || c.clientName || 'GST Client',
+          secondaryName: c.firmName && c.clientName && c.firmName !== c.clientName ? `Auth: ${c.clientName}` : undefined,
           registrationNumber: c.gstin || 'N/A',
           serviceType: 'GST',
           entityType: c.clientType,
@@ -436,6 +438,11 @@ export default function V2ClientMapper() {
                           <div className="font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
                             {client.name}
                           </div>
+                          {client.secondaryName && (
+                            <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold font-sans">
+                              {client.secondaryName}
+                            </div>
+                          )}
                           <div className="text-[9.5px] text-slate-400 uppercase font-sans tracking-wide">
                             {client.id} • V2 Database Record
                           </div>

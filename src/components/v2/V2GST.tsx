@@ -454,6 +454,9 @@ export default function V2GST({
   };
 
   const filteredClients = clients.filter(c => {
+    if (currentUser && currentUser.role !== 'admin') {
+      if (c.assignedEmployeeId !== currentUser.id) return false;
+    }
     const matchesSearch = 
       c.clientName.toLowerCase().includes(search.toLowerCase()) || 
       (c.firmName || '').toLowerCase().includes(search.toLowerCase()) || 
@@ -940,6 +943,130 @@ export default function V2GST({
         </div>
 
         {/* Dynamic Return filing compliance table */}
+        {selectedGstClients.length > 0 && (
+          <div className="mx-6 mt-4 p-3 bg-indigo-50/60 dark:bg-indigo-950/20 border border-indigo-150 dark:border-indigo-900 rounded-2xl flex flex-wrap items-center gap-4 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="font-extrabold text-indigo-800 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-950/60 px-2.5 py-1 rounded-xl">
+                ⚡ {selectedGstClients.length} Selected
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedGstClients([])}
+                className="text-[10px] text-slate-500 hover:underline font-bold"
+              >
+                Clear Selection
+              </button>
+            </div>
+
+            {/* Divider */}
+            <div className="h-4 w-[1px] bg-indigo-200 dark:bg-indigo-900 hidden md:block" />
+
+            {/* Bulk Allocation / Mapping */}
+            {currentUser?.role !== 'employee' && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-extrabold text-slate-500 uppercase">Map Hand:</span>
+                <select
+                  onChange={(e) => {
+                    const empId = e.target.value;
+                    if (!empId) return;
+                    const employee = allEmployees.find(emp => emp.id === empId);
+                    if (!employee) return;
+                    selectedGstClients.forEach(id => {
+                      const cl = clients.find(c => c.id === id);
+                      if (cl) {
+                        cl.assignedEmployeeId = employee.id;
+                        cl.assignedEmployeeName = employee.name;
+                        updateV2GstClient(cl);
+                      }
+                    });
+                    setClients(getV2GstClients()); // refresh state
+                    setSelectedGstClients([]);
+                    alert(`Successfully mapped ${selectedGstClients.length} clients to ${employee.name}`);
+                  }}
+                  className="p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-[10px] font-bold focus:ring-0 max-w-[150px]"
+                  defaultValue=""
+                >
+                  <option value="">-- Choose Hand --</option>
+                  {allEmployees.map(emp => (
+                    <option key={emp.id} value={emp.id}>{emp.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Bulk GSTR-1 Status */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-extrabold text-slate-500 uppercase">Bulk GSTR-1:</span>
+              <select
+                onChange={(e) => {
+                  const status = e.target.value;
+                  if (!status) return;
+                  selectedGstClients.forEach(id => {
+                    handleUpdateStatus(id, 'gstr1', status as any);
+                  });
+                  setSelectedGstClients([]);
+                  alert(`Successfully updated GSTR-1 status to "${status}" for ${selectedGstClients.length} clients`);
+                }}
+                className="p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-[10px] font-bold focus:ring-0"
+                defaultValue=""
+              >
+                <option value="">-- Select Status --</option>
+                <option value="NOT FILED">Not Filed</option>
+                <option value="FILED">Filed (Cleared)</option>
+                <option value="PENDING WITH CLIENT">Pending Client</option>
+                <option value="TAX DUE">Tax Due</option>
+              </select>
+            </div>
+
+            {/* Bulk GSTR-3B Status */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-extrabold text-slate-500 uppercase">Bulk GSTR-3B:</span>
+              <select
+                onChange={(e) => {
+                  const status = e.target.value;
+                  if (!status) return;
+                  selectedGstClients.forEach(id => {
+                    handleUpdateStatus(id, 'gstr3b', status as any);
+                  });
+                  setSelectedGstClients([]);
+                  alert(`Successfully updated GSTR-3B status to "${status}" for ${selectedGstClients.length} clients`);
+                }}
+                className="p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-[10px] font-bold focus:ring-0"
+                defaultValue=""
+              >
+                <option value="">-- Select Status --</option>
+                <option value="NOT FILED">Not Filed</option>
+                <option value="FILED">Filed (Cleared)</option>
+                <option value="PENDING WITH CLIENT">Pending Client</option>
+                <option value="TAX DUE">Tax Due</option>
+              </select>
+            </div>
+
+            {/* Bulk Delete */}
+            {currentUser?.role === 'admin' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmModal({
+                    isOpen: true,
+                    title: 'Confirm Bulk Deletion',
+                    message: `Are you sure you want to bulk-delete ${selectedGstClients.length} selected GST clients? This action is permanent.`,
+                    onConfirm: () => {
+                      deleteV2GstClients(selectedGstClients);
+                      setClients(getV2GstClients());
+                      setSelectedGstClients([]);
+                      setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                    }
+                  });
+                }}
+                className="ml-auto flex items-center gap-1 bg-rose-600 hover:bg-rose-700 text-white font-extrabold px-2.5 py-1 rounded-lg cursor-pointer shadow-3xs text-[10px]"
+              >
+                <Trash2 className="h-3 w-3" /> Bulk Delete
+              </button>
+            )}
+          </div>
+        )}
+
         {returnsSubTab === 'CLIENTS' ? (
           <div className="p-6 bg-slate-50 dark:bg-slate-950/40 border-t border-slate-100 dark:border-slate-850">
             {filteredClients.length === 0 ? (
@@ -1446,7 +1573,6 @@ export default function V2GST({
                     </div>
                   </div>
                 </div>
-
               </div>
             </div>
           </div>
@@ -1455,7 +1581,27 @@ export default function V2GST({
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-950/40 text-slate-400 border-b border-slate-100 dark:border-slate-850 font-bold select-none text-[10px] uppercase">
-                  <th className="p-3 pl-5">Corporate / Entity Account</th>
+                  <th className="p-3 pl-5 w-12 text-center">
+                    <input 
+                      type="checkbox"
+                      checked={filteredClients.length > 0 && filteredClients.every(cl => selectedGstClients.includes(cl.id))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedGstClients(prev => {
+                            const combined = [...prev];
+                            filteredClients.forEach(cl => {
+                              if (!combined.includes(cl.id)) combined.push(cl.id);
+                            });
+                            return combined;
+                          });
+                        } else {
+                          setSelectedGstClients(prev => prev.filter(id => !filteredClients.some(cl => cl.id === id)));
+                        }
+                      }}
+                      className="h-4 w-4 rounded border-slate-300 text-indigo-650 focus:ring-indigo-500 cursor-pointer"
+                    />
+                  </th>
+                  <th className="p-3">Corporate / Entity Account</th>
                   <th className="p-3">GSTIN & Username</th>
                   <th className="p-3">GSTR-1 File (Due date: {returnsSubTab === 'MONTHLY' ? '11th' : '13th'})</th>
                   <th className="p-3">GSTR-3B File (Due date: {returnsSubTab === 'MONTHLY' ? '20nd' : '22nd'})</th>
@@ -1465,7 +1611,7 @@ export default function V2GST({
               <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
                 {filteredClients.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="p-8 text-center text-slate-400">
+                    <td colSpan={6} className="p-8 text-center text-slate-400">
                       No active GST returns registered under the selected search/returns mode filters.
                     </td>
                   </tr>
@@ -1474,7 +1620,19 @@ export default function V2GST({
                     const ret = getReturnRow(cl.id);
                     return (
                       <tr key={cl.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-850/20 transition-all">
-                         <td className="p-3 pl-5">
+                        <td className="p-3 text-center">
+                          <input 
+                            type="checkbox"
+                            checked={selectedGstClients.includes(cl.id)}
+                            onChange={() => {
+                              setSelectedGstClients(prev => 
+                                prev.includes(cl.id) ? prev.filter(id => id !== cl.id) : [...prev, cl.id]
+                              );
+                            }}
+                            className="h-4 w-4 rounded border-slate-300 text-indigo-650 focus:ring-indigo-500 cursor-pointer"
+                          />
+                        </td>
+                        <td className="p-3">
                           <div className="font-extrabold text-slate-800 dark:text-slate-150">{cl.firmName || cl.clientName}</div>
                           <div className="text-[10px] text-slate-450 uppercase font-mono font-bold">{cl.clientType} • Contact: {cl.clientName}</div>
                           <button
@@ -2095,7 +2253,7 @@ export default function V2GST({
                     : 'BBMXJ1928D';
 
                   addV2ItrClient({
-                    taxpayerName: transferToItrClient.clientName,
+                    taxpayerName: transferToItrClient.firmName || transferToItrClient.clientName,
                     taxpayerType: taxpayerType,
                     panNumber: derivedPan,
                     typeOfItr: typeOfItr,
@@ -2104,10 +2262,12 @@ export default function V2GST({
                     isAuditApplicable: isAuditApplicableForItr,
                     itrStatus: isAuditApplicableForItr ? 'PENDING FOR TAX AUDIT' : 'NOT FILED',
                     assignedEmployeeId: transferToItrClient.assignedEmployeeId,
-                    assignedEmployeeName: transferToItrClient.assignedEmployeeName
+                    assignedEmployeeName: transferToItrClient.assignedEmployeeName,
+                    emailId: transferToItrClient.clientEmail || '',
+                    mobileNumber: transferToItrClient.clientMobile || ''
                   });
 
-                  alert(`Successfully registered "${transferToItrClient.clientName}" in ITR Ledger.\n\nAssigned Form: ${typeOfItr}\nTax Audit Status: ${isAuditApplicableForItr ? 'REQUIRED' : 'NO'}`);
+                  alert(`Successfully registered "${transferToItrClient.firmName || transferToItrClient.clientName}" in ITR Ledger.\n\nAssigned Form: ${typeOfItr}\nTax Audit Status: ${isAuditApplicableForItr ? 'REQUIRED' : 'NO'}`);
                   setTransferToItrClient(null);
                 }}
                 className="px-4.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold cursor-pointer shadow-3xs transition"

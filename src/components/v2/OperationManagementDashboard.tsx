@@ -60,16 +60,39 @@ export default function OperationManagementDashboard() {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
   // Load real storage stats dynamically
-  const gstClients = getV2GstClients();
-  const gstReturns = getV2GstReturnStatuses();
-  const mcaClients = getV2McaClients();
-  const mcaReturns = getV2McaRocReturns();
-  const itrClients = getV2ItrClients();
-  const taxAuditClients = getV2TaxAuditClients();
-  const trustClients = getV2TrustClients();
-  const dscClients = getV2DscClients();
-  const trademarks = getV2Trademarks();
-  const tasks = getV2Tasks();
+  let gstClients = getV2GstClients();
+  let gstReturns = getV2GstReturnStatuses();
+  let mcaClients = getV2McaClients();
+  let mcaReturns = getV2McaRocReturns();
+  let itrClients = getV2ItrClients();
+  let taxAuditClients = getV2TaxAuditClients();
+  let trustClients = getV2TrustClients();
+  let dscClients = getV2DscClients();
+  let trademarks = getV2Trademarks();
+  let tasks = getV2Tasks();
+
+  if (sessionUser && sessionUser.role !== 'admin') {
+    const empId = sessionUser.id;
+    gstClients = gstClients.filter(c => c.assignedEmployeeId === empId);
+    gstReturns = gstReturns.filter(r => gstClients.some(c => c.id === r.gstClientId));
+    
+    mcaClients = mcaClients.filter(c => c.assignedEmployeeId === empId);
+    mcaReturns = mcaReturns.filter(r => mcaClients.some(c => c.id === r.mcaClientId));
+
+    itrClients = itrClients.filter(c => c.assignedEmployeeId === empId);
+    trustClients = trustClients.filter(c => c.assignedEmployeeId === empId);
+    dscClients = dscClients.filter(c => c.assignedEmployeeId === empId);
+    trademarks = trademarks.filter(c => c.assignedEmployeeId === empId);
+    tasks = tasks.filter(t => t.assignedTo === empId);
+
+    taxAuditClients = taxAuditClients.filter(tac => {
+      const matchedItr = itrClients.find(i => i.id === tac.id);
+      if (matchedItr) return true;
+      const matchedTrust = trustClients.find(t => t.id === tac.id || `TRUST-AUD-${t.id}` === tac.id);
+      if (matchedTrust) return true;
+      return false;
+    });
+  }
 
   // Statistics Computations
   const pendingGstReturnsCount = gstReturns.filter(r => r.gstr1 !== 'FILED' || r.gstr3b !== 'FILED').length;

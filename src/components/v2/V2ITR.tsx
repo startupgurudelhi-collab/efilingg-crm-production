@@ -87,6 +87,7 @@ export default function V2ITR({
   
   // Header filter states
   const [itrStatusFilter, setItrStatusFilter] = useState<string>('ALL');
+  const [itrTypeFilter, setItrTypeFilter] = useState<string>('ALL');
   const [taxAuditFilter, setTaxAuditFilter] = useState<string>('ALL');
   const [dscFilterDropdown, setDscFilterDropdown] = useState<string>('ALL');
 
@@ -287,7 +288,26 @@ export default function V2ITR({
     exportToCSVFile('tax_audit_registry.csv', headers, rows);
   };
 
+  const handleExportItr = () => {
+    const headers = ['Taxpayer Name', 'Category Type', 'PAN Number', 'ITR Form', 'Filing Status', 'Assigned Handler', 'Address', 'Email ID', 'Mobile Number'];
+    const rows = filteredItr.map(c => [
+      c.taxpayerName,
+      c.taxpayerType,
+      c.panNumber,
+      c.typeOfItr,
+      c.itrStatus,
+      c.assignedEmployeeName || 'Unassigned',
+      c.address || '',
+      c.emailId || '',
+      c.mobileNumber || ''
+    ]);
+    exportToCSVFile('itr_taxpayer_registry.csv', headers, rows);
+  };
+
   const filteredItr = itrClients.filter(c => {
+    if (currentUser && currentUser.role !== 'admin') {
+      if (c.assignedEmployeeId !== currentUser.id) return false;
+    }
     const searchMatch = c.taxpayerName.toLowerCase().includes(itrSearch.toLowerCase()) ||
       c.panNumber.toLowerCase().includes(itrSearch.toLowerCase()) ||
       c.typeOfItr.toLowerCase().includes(itrSearch.toLowerCase());
@@ -298,6 +318,10 @@ export default function V2ITR({
       if (itrStatusFilter === 'Filed' && c.itrStatus !== 'FILED') return false;
       if (itrStatusFilter === 'E-V Pending' && c.itrStatus !== 'PENDING FOR E-VERIFY') return false;
       if (itrStatusFilter === 'Tax Audit Pending' && c.itrStatus !== 'PENDING FOR TAX AUDIT') return false;
+    }
+
+    if (itrTypeFilter !== 'ALL') {
+      if (c.typeOfItr !== itrTypeFilter) return false;
     }
     return true;
   });
@@ -313,26 +337,25 @@ export default function V2ITR({
       let email = '';
 
       const matchedItr = itrClients.find(i => i.id === b.id);
+      const matchedTrust = trustClients.find(t => `TRUST-AUD-${t.id}` === b.id || t.id === b.id);
+      
       if (matchedItr) {
         username = matchedItr.panNumber;
         password = matchedItr.itPortalPassword || '';
         phone = (matchedItr as any).mobile || '';
         email = (matchedItr as any).email || '';
-      } else {
-        const matchedTrust = trustClients.find(t => `TRUST-AUD-${t.id}` === b.id || t.id === b.id);
-        if (matchedTrust) {
-          username = matchedTrust.itPortalUsername || '';
-          password = matchedTrust.itPortalPassword || '';
-          phone = matchedTrust.mobileNumber || '';
-          email = matchedTrust.emailId || '';
-        }
+      } else if (matchedTrust) {
+        username = matchedTrust.itPortalUsername || '';
+        password = matchedTrust.itPortalPassword || '';
+        phone = matchedTrust.mobileNumber || '';
+        email = matchedTrust.emailId || '';
       }
 
       return {
         ...b,
         status: override ? override.status : b.status,
-        assignedEmployeeId: override ? override.assignedEmployeeId : undefined,
-        assignedEmployeeName: override ? override.assignedEmployeeName : undefined,
+        assignedEmployeeId: override?.assignedEmployeeId || matchedItr?.assignedEmployeeId || matchedTrust?.assignedEmployeeId,
+        assignedEmployeeName: override?.assignedEmployeeName || matchedItr?.assignedEmployeeName || matchedTrust?.assignedEmployeeName,
         username,
         password,
         phone,
@@ -342,6 +365,9 @@ export default function V2ITR({
   };
 
   const filteredTaxAudits = getMergedTaxAudits().filter(aud => {
+    if (currentUser && currentUser.role !== 'admin') {
+      if (aud.assignedEmployeeId !== currentUser.id) return false;
+    }
     if (taxAuditFilter === 'ALL') return true;
     if (taxAuditFilter === 'PENDING') return aud.status === 'NOT FILED' || aud.status === 'PENDING';
     if (taxAuditFilter === 'COMPLETED') return aud.status === 'FILED' || aud.status === 'COMPLETED';
@@ -376,7 +402,9 @@ export default function V2ITR({
       issuerName: 'N/A' as any,
       tokenName: 'N/A' as any,
       isWarning: true,
-      warningMessage: 'No DSC Associates'
+      warningMessage: 'No DSC Associates',
+      assignedEmployeeId: client.assignedEmployeeId,
+      assignedEmployeeName: client.assignedEmployeeName
     }));
 
   const allDscItems = [
@@ -395,6 +423,9 @@ export default function V2ITR({
   };
 
   const filteredDsc = allDscItems.filter(c => {
+    if (currentUser && currentUser.role !== 'admin') {
+      if (c.assignedEmployeeId !== currentUser.id) return false;
+    }
     const searchMatch = c.clientName.toLowerCase().includes(dscFilter.toLowerCase()) ||
       c.issueDate.toLowerCase().includes(dscFilter.toLowerCase()) ||
       c.issuerName.toLowerCase().includes(dscFilter.toLowerCase()) ||
@@ -407,6 +438,20 @@ export default function V2ITR({
       if (dscFilterDropdown === 'RENEWAL_PENDING' && dscStatus !== 'RENEWAL_PENDING') return false;
       if (dscFilterDropdown === 'ACTIVE' && dscStatus !== 'ACTIVE') return false;
       if (dscFilterDropdown === 'UPCOMING_RENEWAL' && dscStatus !== 'UPCOMING_RENEWAL') return false;
+    }
+    return true;
+  });
+
+  const filteredTrustClients = trustClients.filter(c => {
+    if (currentUser && currentUser.role !== 'admin') {
+      return c.assignedEmployeeId === currentUser.id;
+    }
+    return true;
+  });
+
+  const filteredOtherClients = otherClients.filter(c => {
+    if (currentUser && currentUser.role !== 'admin') {
+      return c.assignedEmployeeId === currentUser.id;
     }
     return true;
   });
@@ -532,6 +577,32 @@ export default function V2ITR({
                 <option value="Tax Audit Pending">Tax Audit Pending</option>
               </select>
             </div>
+
+            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-850 px-3 py-1.5 rounded-2xl text-xs select-none">
+              <span className="text-slate-400 uppercase font-extrabold text-[9px]">ITR Type:</span>
+              <select 
+                value={itrTypeFilter} 
+                onChange={e => setItrTypeFilter(e.target.value)} 
+                className="bg-transparent border-0 focus:ring-0 p-0 font-bold text-slate-700 dark:text-slate-200"
+              >
+                <option value="ALL">All Types</option>
+                <option value="ITR-1">ITR-1</option>
+                <option value="ITR-2">ITR-2</option>
+                <option value="ITR-3">ITR-3</option>
+                <option value="ITR-4">ITR-4</option>
+                <option value="ITR-5">ITR-5</option>
+                <option value="ITR-6">ITR-6</option>
+                <option value="ITR-7">ITR-7</option>
+              </select>
+            </div>
+
+            <button 
+              type="button"
+              onClick={handleExportItr}
+              className="ml-auto flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-2xl transition shadow-3xs cursor-pointer"
+            >
+              <Download className="h-3.5 w-3.5" /> Export ITR Register
+            </button>
           </div>
 
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-3xl overflow-hidden shadow-3xs">
@@ -870,8 +941,8 @@ export default function V2ITR({
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {trustClients.map(tr => (
-              <div key={tr.id} className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-3xl flex flex-col justify-between space-y-4">
+            {filteredTrustClients.map(tr => (
+              <div key={tr.id} className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-3xl flex flex-col justify-between space-y-4 font-sans font-medium text-slate-800">
                 <div className="flex justify-between items-start gap-4">
                   <div className="space-y-1">
                     <h4 className="font-black text-slate-805 dark:text-slate-100 text-sm leading-tight">{tr.entityName}</h4>
@@ -1282,7 +1353,7 @@ export default function V2ITR({
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {otherClients.map(ot => (
+            {filteredOtherClients.map(ot => (
               <div key={ot.id} className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-2xl flex items-start gap-3 shadow-3xs">
                 <div className="p-2.5 bg-purple-50 dark:bg-purple-955/15 text-purple-600 rounded-xl shrink-0">
                   <Award className="h-5 w-5" />

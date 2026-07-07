@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   V2TrademarkClient, 
   V2Task, 
@@ -14,6 +14,7 @@ import {
   getV2TrademarkAttorneys, 
   getV1Employees 
 } from '../../lib/v2_db';
+import { getCurrentSession } from '../../lib/db';
 import { 
   Calendar, CheckSquare, Shield, FileSymlink, Plus, User, FileText, Search, Clock, AlertTriangle, BadgeAlert 
 } from 'lucide-react';
@@ -27,6 +28,25 @@ export default function V2Tasks() {
   
   const attorneys = getV2TrademarkAttorneys();
   const rawEmployees = getV1Employees();
+
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  useEffect(() => {
+    setCurrentUser(getCurrentSession());
+  }, []);
+
+  const filteredTrademarks = trademarks.filter(tm => {
+    if (currentUser && currentUser.role !== 'admin') {
+      return tm.assignedEmployeeId === currentUser.id;
+    }
+    return true;
+  });
+
+  const filteredTasks = tasks.filter(t => {
+    if (currentUser && currentUser.role !== 'admin') {
+      return t.assignedTo === currentUser.id || t.assignedTo === currentUser.name;
+    }
+    return true;
+  });
 
   // Form states - Trademark
   const [showAddTm, setShowAddTm] = useState(false);
@@ -238,7 +258,7 @@ export default function V2Tasks() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-150">
-                {trademarks.map(tm => {
+                {filteredTrademarks.map(tm => {
                   const counsel = attorneys.find(a => a.id === tm.attorneyId);
                   return (
                     <tr key={tm.id} className="hover:bg-slate-50/50">
@@ -324,7 +344,7 @@ export default function V2Tasks() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-150">
-                {tasks.map(tsk => (
+                {filteredTasks.map(tsk => (
                   <tr key={tsk.id} className="hover:bg-slate-50/50">
                     <td className="p-3 pl-5">
                       <div className="font-extrabold text-slate-850 dark:text-slate-100">{tsk.title}</div>

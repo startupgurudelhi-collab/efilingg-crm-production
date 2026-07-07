@@ -424,11 +424,14 @@ export default function V2MCA({
   };
 
   // Searching clients
-  const filteredMcaClients = clients.filter(c => 
-    c.clientName.toLowerCase().includes(search.toLowerCase()) || 
-    c.clientType.toLowerCase().includes(search.toLowerCase()) ||
-    c.incomeTaxId.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredMcaClients = clients.filter(c => {
+    if (currentUser && currentUser.role !== 'admin') {
+      if (c.assignedEmployeeId !== currentUser.id) return false;
+    }
+    return c.clientName.toLowerCase().includes(search.toLowerCase()) || 
+      c.clientType.toLowerCase().includes(search.toLowerCase()) ||
+      c.incomeTaxId.toLowerCase().includes(search.toLowerCase());
+  });
 
   const getRocRow = (mcaClientId: string) => {
     const rId = `${mcaClientId}_2025-26`;

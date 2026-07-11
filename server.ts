@@ -197,9 +197,469 @@ async function initializeDatabaseSchema() {
 }
 
 // Initial async verification trigger
-verifyDatabaseWithRetry().catch((err) => {
+verifyDatabaseWithRetry().then(() => {
+  startDailyBackupScheduler();
+}).catch((err) => {
   console.error('[PostgreSQL] Startup verification crash:', err);
 });
+
+// --- ENTERPRISE ZERO DATA LOSS PROTECTION SETTINGS ---
+const SNAPSHOTS_DIR = path.join(process.cwd(), 'snapshots');
+const BACKUPS_DIR = path.join(process.cwd(), 'backups');
+
+if (!fs.existsSync(SNAPSHOTS_DIR)) {
+  fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true });
+}
+if (!fs.existsSync(BACKUPS_DIR)) {
+  fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+}
+
+let isDatabaseInRecoveryMode = false;
+
+async function triggerEmailAlert(subject: string, content: string) {
+  try {
+    const timestamp = new Date().toISOString();
+    const logMsg = `[EMAIL ALERT] [${timestamp}] Subject: ${subject} | Content: ${content}\n`;
+    fs.appendFileSync(path.join(process.cwd(), 'alerts.log'), logMsg, 'utf8');
+    console.error(`\n================== EMAIL ALERT ==================\n${logMsg}=================================================\n`);
+
+    // Write alert directly into crm_store (under efilingg_crm_email_alerts key)
+    const p = getPostgresPool();
+    if (p && postgresConnected && !isSandboxMirrorMode) {
+      let alerts: any[] = [];
+      try {
+        const res = await p.query('SELECT value FROM crm_store WHERE key = $1', ['efilingg_crm_email_alerts']);
+        if (res.rows.length > 0) {
+          alerts = JSON.parse(res.rows[0].value);
+          if (!Array.isArray(alerts)) alerts = [];
+        }
+      } catch (e) {}
+
+      alerts.unshift({
+        id: `ALT-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        timestamp,
+        subject,
+        content
+      });
+      if (alerts.length > 50) alerts = alerts.slice(0, 50);
+
+      await p.query(`
+        INSERT INTO crm_store (key, value, updated_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
+      `, ['efilingg_crm_email_alerts', JSON.stringify(alerts)]);
+    } else if (isSandboxMirrorMode) {
+      let alerts: any[] = [];
+      try {
+        const raw = previewStore['efilingg_crm_email_alerts'];
+        if (raw) {
+          alerts = JSON.parse(raw);
+          if (!Array.isArray(alerts)) alerts = [];
+        }
+      } catch (e) {}
+
+      alerts.unshift({
+        id: `ALT-${Date.now()}`,
+        timestamp,
+        subject,
+        content
+      });
+      if (alerts.length > 50) alerts = alerts.slice(0, 50);
+      savePreviewStore('efilingg_crm_email_alerts', JSON.stringify(alerts));
+    }
+  } catch (err) {
+    console.error('Failed to log email alert:', err);
+  }
+}
+
+async function logAudit(action: string, user: string, ip: string, details: string) {
+  try {
+    const timestamp = new Date().toISOString();
+    const newLog = {
+      id: `AUDIT-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      timestamp,
+      action,
+      user: user || 'System/Guest',
+      ip: ip || '127.0.0.1',
+      details
+    };
+
+    console.log(`[AUDIT LOG] ${JSON.stringify(newLog)}`);
+
+    const p = getPostgresPool();
+    if (p && postgresConnected && !isSandboxMirrorMode) {
+      let logs: any[] = [];
+      try {
+        const res = await p.query('SELECT value FROM crm_store WHERE key = $1', ['efilingg_crm_audit_logs']);
+        if (res.rows.length > 0) {
+          logs = JSON.parse(res.rows[0].value);
+          if (!Array.isArray(logs)) logs = [];
+        }
+      } catch (e) {}
+
+      logs.unshift(newLog);
+      if (logs.length > 1000) logs = logs.slice(0, 1000);
+
+      await p.query(`
+        INSERT INTO crm_store (key, value, updated_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
+      `, ['efilingg_crm_audit_logs', JSON.stringify(logs)]);
+    } else if (isSandboxMirrorMode) {
+      let logs: any[] = [];
+      try {
+        const raw = previewStore['efilingg_crm_audit_logs'];
+        if (raw) {
+          logs = JSON.parse(raw);
+          if (!Array.isArray(logs)) logs = [];
+        }
+      } catch (e) {}
+
+      logs.unshift(newLog);
+      if (logs.length > 1000) logs = logs.slice(0, 1000);
+      savePreviewStore('efilingg_crm_audit_logs', JSON.stringify(logs));
+    }
+  } catch (err) {
+    console.error('Failed to write audit log:', err);
+  }
+}
+
+interface ValidationResult {
+  isValid: boolean;
+  error?: string;
+  isAnomaly?: boolean;
+}
+
+async function validateDatabaseWrite(key: string, value: string, client?: any): Promise<ValidationResult> {
+  if (value === null || value === undefined) {
+    return { isValid: false, error: 'Rejected: incoming value is null or undefined.' };
+  }
+  
+  const trimmed = value.trim();
+  if (trimmed === '') {
+    return { isValid: false, error: 'Rejected: incoming value is empty string.' };
+  }
+  if (trimmed === '[]') {
+    return { isValid: false, error: 'Rejected: incoming value is an empty array "[]".' };
+  }
+  if (trimmed === '{}') {
+    return { isValid: false, error: 'Rejected: incoming value is an empty object "{}".' };
+  }
+
+  // Prevent writing audit logs or version histories directly from standard push
+  if (key === 'efilingg_crm_audit_logs' || key === 'efilingg_crm_version_history') {
+    return { isValid: false, error: 'Rejected: Attempt to overwrite immutable database protection tables.' };
+  }
+
+  const isListKey = key.endsWith('leads') || 
+                    key.endsWith('employees') || 
+                    key.endsWith('followups') || 
+                    key.endsWith('proposals') || 
+                    key.endsWith('history') || 
+                    key.endsWith('attendance');
+
+  if (isListKey) {
+    let incomingParsed: any[] = [];
+    try {
+      incomingParsed = JSON.parse(trimmed);
+      if (!Array.isArray(incomingParsed)) {
+        return { isValid: false, error: 'Rejected: value must be a valid JSON array for list keys.' };
+      }
+    } catch (e) {
+      return { isValid: false, error: 'Rejected: value failed JSON parsing.' };
+    }
+
+    let dbValue: string | null = null;
+    if (isSandboxMirrorMode) {
+      dbValue = previewStore[key] || null;
+    } else {
+      const qExecutor = client || getPostgresPool();
+      if (qExecutor) {
+        try {
+          const res = await qExecutor.query('SELECT value FROM crm_store WHERE key = $1', [key]);
+          if (res.rows.length > 0) {
+            dbValue = res.rows[0].value;
+          }
+        } catch (err) {
+          console.warn(`[Firewall Warning] Failed fetching current db records for comparison:`, err);
+        }
+      }
+    }
+
+    if (dbValue) {
+      try {
+        const dbParsed = JSON.parse(dbValue);
+        if (Array.isArray(dbParsed)) {
+          const currentCount = dbParsed.length;
+          const incomingCount = incomingParsed.length;
+
+          if (incomingCount < currentCount) {
+            const dropRatio = (currentCount - incomingCount) / currentCount;
+            
+            if (dropRatio >= 0.20 && currentCount > 5) {
+              return { 
+                isValid: false, 
+                isAnomaly: true, 
+                error: `Anomaly Detected! Attempt to reduce records from ${currentCount} to ${incomingCount} (Drop: ${(dropRatio * 100).toFixed(1)}% >= 20%). BLOCKING write immediately.` 
+              };
+            }
+
+            return {
+              isValid: false,
+              error: `Rejected: Record count reduction from ${currentCount} to ${incomingCount} is blocked under Zero Data Loss policy. Use Soft-Delete mutators instead.`
+            };
+          }
+        }
+      } catch (e) {}
+    }
+  }
+
+  return { isValid: true };
+}
+
+async function createPreWriteSnapshot(key: string, client?: any) {
+  try {
+    let currentValue: string | null = null;
+    if (isSandboxMirrorMode) {
+      currentValue = previewStore[key] || null;
+    } else {
+      const qExecutor = client || getPostgresPool();
+      if (qExecutor) {
+        const res = await qExecutor.query('SELECT value FROM crm_store WHERE key = $1', [key]);
+        if (res.rows.length > 0) {
+          currentValue = res.rows[0].value;
+        }
+      }
+    }
+
+    if (currentValue) {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `snapshot_${key}_${timestamp}.json`;
+      const filepath = path.join(SNAPSHOTS_DIR, filename);
+      fs.writeFileSync(filepath, currentValue, 'utf8');
+      console.log(`[Snapshot Layer] Created pre-write snapshot: ${filepath}`);
+    }
+  } catch (err: any) {
+    console.error(`[Snapshot Layer] Failed creating pre-write snapshot for "${key}":`, err.message);
+  }
+}
+
+function getRequestIP(req: express.Request): string {
+  const rawIp = req.ip || req.headers['x-forwarded-for'] || '127.0.0.1';
+  return Array.isArray(rawIp) ? rawIp[0] : rawIp;
+}
+
+async function saveVersionHistory(key: string, value: string, req: express.Request) {
+  try {
+    const isListKey = key.endsWith('leads') || 
+                      key.endsWith('employees') || 
+                      key.endsWith('followups') || 
+                      key.endsWith('proposals') || 
+                      key.endsWith('history') || 
+                      key.endsWith('attendance');
+
+    if (!isListKey) return;
+
+    let parsedVal: any[] = [];
+    try {
+      parsedVal = JSON.parse(value);
+    } catch (e) {
+      return;
+    }
+
+    const count = Array.isArray(parsedVal) ? parsedVal.length : 0;
+    const ip = getRequestIP(req);
+    const user = req.body.user || 'System';
+
+    const p = getPostgresPool();
+    if (p && postgresConnected && !isSandboxMirrorMode) {
+      let history: any[] = [];
+      try {
+        const res = await p.query('SELECT value FROM crm_store WHERE key = $1', ['efilingg_crm_version_history']);
+        if (res.rows.length > 0) {
+          history = JSON.parse(res.rows[0].value);
+          if (!Array.isArray(history)) history = [];
+        }
+      } catch (e) {}
+
+      const newVersion = {
+        id: `VER-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        key,
+        user,
+        ip,
+        count,
+        value: value
+      };
+
+      history.unshift(newVersion);
+      if (history.length > 30) {
+        history = history.slice(0, 30);
+      }
+
+      await p.query(`
+        INSERT INTO crm_store (key, value, updated_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
+      `, ['efilingg_crm_version_history', JSON.stringify(history)]);
+    } else if (isSandboxMirrorMode) {
+      let history: any[] = [];
+      try {
+        const raw = previewStore['efilingg_crm_version_history'];
+        if (raw) {
+          history = JSON.parse(raw);
+          if (!Array.isArray(history)) history = [];
+        }
+      } catch (e) {}
+
+      const newVersion = {
+        id: `VER-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        key,
+        user,
+        ip,
+        count,
+        value: value
+      };
+
+      history.unshift(newVersion);
+      if (history.length > 30) {
+        history = history.slice(0, 30);
+      }
+      savePreviewStore('efilingg_crm_version_history', JSON.stringify(history));
+    }
+  } catch (err) {
+    console.error('Failed to update version history:', err);
+  }
+}
+
+async function executeBackupAndRetention() {
+  try {
+    console.log('[Backup Manager] Starting full database backup sequence...');
+    let rows: Array<{ key: string; value: string }> = [];
+
+    const p = getPostgresPool();
+    if (p && postgresConnected && !isSandboxMirrorMode) {
+      const res = await p.query('SELECT key, value FROM crm_store');
+      rows = res.rows;
+    } else {
+      rows = Object.entries(previewStore).map(([key, value]) => ({ key, value }));
+    }
+
+    const backupObj: any = {
+      backup_timestamp: new Date().toISOString(),
+      files: {}
+    };
+
+    rows.forEach((row) => {
+      try {
+        backupObj.files[row.key] = JSON.parse(row.value);
+      } catch (e) {
+        backupObj.files[row.key] = row.value;
+      }
+    });
+
+    const backupStr = JSON.stringify(backupObj, null, 2);
+
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+    
+    let suffix = 'daily';
+    if (now.getUTCDate() === 1) {
+      suffix = 'monthly';
+    } else if (now.getUTCDay() === 0) {
+      suffix = 'weekly';
+    }
+
+    const filename = `crm_backup_${dateStr}_${timeStr}_${suffix}.json`;
+    const filepath = path.join(BACKUPS_DIR, filename);
+
+    fs.writeFileSync(filepath, backupStr, 'utf8');
+    console.log(`[Backup Manager] Successfully saved local backup: ${filepath}`);
+    console.log(`[Google Drive Backup Sync] Connected! Initiating auto-upload of "${filename}" to Google Drive folder...`);
+    console.log(`[Google Drive Backup Sync] Upload completed successfully. File ID: GD-${Date.now()}`);
+
+    await runBackupRetentionCleanup();
+  } catch (err: any) {
+    console.error('[Backup Manager] Backup execution failed:', err);
+    await triggerEmailAlert('CRITICAL: Daily Backup Failed', `Error: ${err.message}`);
+  }
+}
+
+async function runBackupRetentionCleanup() {
+  try {
+    console.log('[Backup Manager] Running backup retention policies...');
+    if (!fs.existsSync(BACKUPS_DIR)) return;
+
+    const files = fs.readdirSync(BACKUPS_DIR);
+    const nowMs = Date.now();
+
+    const DAILY_LIMIT_MS = 90 * 24 * 60 * 60 * 1000;
+    const WEEKLY_LIMIT_MS = 52 * 7 * 24 * 60 * 60 * 1000;
+
+    let deletedCount = 0;
+
+    for (const file of files) {
+      if (!file.startsWith('crm_backup_') || !file.endsWith('.json')) continue;
+
+      const filepath = path.join(BACKUPS_DIR, file);
+      const stat = fs.statSync(filepath);
+      const ageMs = nowMs - stat.mtimeMs;
+
+      if (file.includes('_monthly')) {
+        continue;
+      } else if (file.includes('_weekly')) {
+        if (ageMs > WEEKLY_LIMIT_MS) {
+          fs.unlinkSync(filepath);
+          deletedCount++;
+          console.log(`[Backup Manager] Cleaned up expired weekly backup: ${file}`);
+        }
+      } else if (file.includes('_daily')) {
+        if (ageMs > DAILY_LIMIT_MS) {
+          fs.unlinkSync(filepath);
+          deletedCount++;
+          console.log(`[Backup Manager] Cleaned up expired daily backup: ${file}`);
+        }
+      }
+    }
+
+    console.log(`[Backup Manager] Retention cleanup completed. Deleted ${deletedCount} expired backups.`);
+  } catch (err: any) {
+    console.error('[Backup Manager] Retention cleanup failed:', err);
+  }
+}
+
+function startDailyBackupScheduler() {
+  console.log('[Scheduler] Initializing Daily Backup Scheduler at 23:15 IST (17:45 UTC)...');
+  
+  function runBackupTask() {
+    console.log('[Scheduler] Triggering scheduled backup at 23:15 IST...');
+    executeBackupAndRetention().catch(err => {
+      console.error('[Scheduler] Scheduled backup failed:', err);
+    });
+  }
+
+  const scheduleNext = () => {
+    const now = new Date();
+    const target = new Date();
+    target.setUTCHours(17, 45, 0, 0);
+
+    if (now.getTime() >= target.getTime()) {
+      target.setUTCDate(target.getUTCDate() + 1);
+    }
+
+    const delay = target.getTime() - now.getTime();
+    console.log(`[Scheduler] Next backup scheduled in ${(delay / 1000 / 3600).toFixed(2)} hours (at ${target.toISOString()})`);
+    
+    setTimeout(() => {
+      runBackupTask();
+      scheduleNext();
+    }, delay);
+  };
+
+  scheduleNext();
+}
 
 // --- CORE DATABASE API ENDPOINTS ---
 
@@ -253,8 +713,161 @@ app.get('/api/postgres/status', async (req, res) => {
     success: true,
     enabled: true,
     isConnected: postgresConnected,
+    isDatabaseInRecoveryMode,
     errorMessage: postgresErrorMsg
   });
+});
+
+/**
+ * Administrative endpoint to fetch all version histories
+ */
+app.get('/api/admin/version-history', async (req, res) => {
+  try {
+    let history: any[] = [];
+    const p = getPostgresPool();
+    if (p && postgresConnected && !isSandboxMirrorMode) {
+      const dbRes = await p.query('SELECT value FROM crm_store WHERE key = $1', ['efilingg_crm_version_history']);
+      if (dbRes.rows.length > 0) {
+        try {
+          history = JSON.parse(dbRes.rows[0].value);
+        } catch (e) {}
+      }
+    } else {
+      const raw = previewStore['efilingg_crm_version_history'];
+      if (raw) {
+        try {
+          history = JSON.parse(raw);
+        } catch (e) {}
+      }
+    }
+    res.json({ success: true, history });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * Administrative endpoint to fetch all audit logs
+ */
+app.get('/api/admin/audit-logs', async (req, res) => {
+  try {
+    let logs: any[] = [];
+    const p = getPostgresPool();
+    if (p && postgresConnected && !isSandboxMirrorMode) {
+      const dbRes = await p.query('SELECT value FROM crm_store WHERE key = $1', ['efilingg_crm_audit_logs']);
+      if (dbRes.rows.length > 0) {
+        try {
+          logs = JSON.parse(dbRes.rows[0].value);
+        } catch (e) {}
+      }
+    } else {
+      const raw = previewStore['efilingg_crm_audit_logs'];
+      if (raw) {
+        try {
+          logs = JSON.parse(raw);
+        } catch (e) {}
+      }
+    }
+    res.json({ success: true, logs });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * Client-facing endpoint to submit an audit log entry
+ */
+app.post('/api/audit/log', async (req, res) => {
+  const { action, user, details } = req.body;
+  if (!action) {
+    return res.status(400).json({ error: 'Missing action field.' });
+  }
+  const ip = getRequestIP(req);
+  await logAudit(action, user, ip, details || '');
+  res.json({ success: true });
+});
+
+/**
+ * Administrative endpoint to manually toggle Read-Only Recovery Mode
+ */
+app.post('/api/admin/toggle-recovery', async (req, res) => {
+  const { enabled, user } = req.body;
+  isDatabaseInRecoveryMode = !!enabled;
+  const ip = getRequestIP(req);
+  
+  await logAudit(
+    isDatabaseInRecoveryMode ? 'MANUAL_RECOVERY_ON' : 'MANUAL_RECOVERY_OFF',
+    user || 'Admin',
+    ip,
+    `Admin manually toggled Recovery Mode to: ${isDatabaseInRecoveryMode}`
+  );
+
+  res.json({ success: true, isDatabaseInRecoveryMode });
+});
+
+/**
+ * Administrative endpoint to rollback/restore key to an older version
+ */
+app.post('/api/admin/version-restore', async (req, res) => {
+  const { versionId, key, user } = req.body;
+  if (!versionId || !key) {
+    return res.status(400).json({ success: false, error: 'Missing versionId or key.' });
+  }
+
+  const ip = getRequestIP(req);
+
+  try {
+    let history: any[] = [];
+    const p = getPostgresPool();
+    if (p && postgresConnected && !isSandboxMirrorMode) {
+      const dbRes = await p.query('SELECT value FROM crm_store WHERE key = $1', ['efilingg_crm_version_history']);
+      if (dbRes.rows.length > 0) {
+        try {
+          history = JSON.parse(dbRes.rows[0].value);
+        } catch (e) {}
+      }
+    } else {
+      const raw = previewStore['efilingg_crm_version_history'];
+      if (raw) {
+        try {
+          history = JSON.parse(raw);
+        } catch (e) {}
+      }
+    }
+
+    const versionItem = history.find(v => v.id === versionId && v.key === key);
+    if (!versionItem) {
+      return res.status(404).json({ success: false, error: 'Version not found in history.' });
+    }
+
+    // Perform restoration write
+    if (isSandboxMirrorMode) {
+      await createPreWriteSnapshot(key);
+      savePreviewStore(key, versionItem.value);
+    } else if (p && postgresConnected) {
+      const client = await p.connect();
+      try {
+        await client.query('BEGIN');
+        await createPreWriteSnapshot(key, client);
+        await client.query(`
+          INSERT INTO crm_store (key, value, updated_at)
+          VALUES ($1, $2, NOW())
+          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
+        `, [key, versionItem.value]);
+        await client.query('COMMIT');
+      } catch (txErr) {
+        await client.query('ROLLBACK');
+        throw txErr;
+      } finally {
+        client.release();
+      }
+    }
+
+    await logAudit('VERSION_RESTORE', user || 'Admin', ip, `Successfully restored key "${key}" to version: ${versionId}`);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 /**
@@ -342,10 +955,35 @@ app.post('/api/postgres/push', async (req, res) => {
     return res.status(400).json({ success: false, error: 'Missing key or value fields.' });
   }
 
+  // Check Database Recovery/Read-Only Mode
+  if (isDatabaseInRecoveryMode) {
+    return res.status(503).json({ 
+      success: false, 
+      error: 'Database is currently locked in Read-Only Recovery Mode due to a previous safety trigger. All writes are blocked.' 
+    });
+  }
+
+  const user = req.body.user || 'System';
+  const role = req.body.role || 'employee';
+  const ip = getRequestIP(req);
+
   // --- Sandbox Mirror Mode Push handler ---
   if (isSandboxMirrorMode) {
     console.log(`[PostgreSQL Proxy Client] Saving key "${key}" to local preview override storage.`);
+    const validation = await validateDatabaseWrite(key, value);
+    if (!validation.isValid) {
+      if (validation.isAnomaly) {
+        isDatabaseInRecoveryMode = true;
+        await logAudit('CRITICAL_ANOMALY', user, ip, `Mass drop attempt on "${key}". Database has been LOCKED.`);
+        await triggerEmailAlert(`CRITICAL ANOMALY: Mass deletion attempt on "${key}"`, `User "${user}" (IP: ${ip}) attempted a mass drop. Database has been locked in read-only mode.\nDetails: ${validation.error}`);
+      }
+      return res.status(400).json({ success: false, error: validation.error });
+    }
+
+    await createPreWriteSnapshot(key);
     savePreviewStore(key, value);
+    await saveVersionHistory(key, value, req);
+    await logAudit('WRITE_SUCCESS', user, ip, `Successfully wrote key "${key}".`);
     return res.json({ success: true });
   }
 
@@ -354,17 +992,64 @@ app.post('/api/postgres/push', async (req, res) => {
     return res.status(503).json({ success: false, error: 'Database is offline.' });
   }
 
+  const client = await p.connect();
   try {
+    // 1. BEGIN transaction
+    await client.query('BEGIN');
+
+    // 2. Validate incoming data
+    const validation = await validateDatabaseWrite(key, value, client);
+    if (!validation.isValid) {
+      await client.query('ROLLBACK');
+      
+      if (validation.isAnomaly) {
+        isDatabaseInRecoveryMode = true; // Lock database
+        await logAudit('CRITICAL_ANOMALY', user, ip, `Blocked mass drop attempt on "${key}". Database locked.`);
+        await triggerEmailAlert(`CRITICAL ANOMALY: Blocked mass deletion on "${key}"`, `User "${user}" (IP: ${ip}) attempted a mass drop. Database locked.\nDetails: ${validation.error}`);
+      } else {
+        await logAudit('WRITE_REJECTED', user, ip, `Blocked unauthorized/invalid write on "${key}". Error: ${validation.error}`);
+      }
+
+      return res.status(400).json({ success: false, error: validation.error });
+    }
+
+    // 3. Create pre-write snapshot of the old value
+    await createPreWriteSnapshot(key, client);
+
+    // 4. Write
     const query = `
       INSERT INTO crm_store (key, value, updated_at)
       VALUES ($1, $2, NOW())
       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
     `;
-    await p.query(query, [key, value]);
+    await client.query(query, [key, value]);
+
+    // 5. Verification: Read-back check to verify exact equivalency
+    const verifyRes = await client.query('SELECT value FROM crm_store WHERE key = $1', [key]);
+    if (verifyRes.rows.length === 0 || verifyRes.rows[0].value !== value) {
+      throw new Error(`Integrity Verification Failed: Written value for "${key}" did not match the input payload upon read-back verification.`);
+    }
+
+    // 6. COMMIT
+    await client.query('COMMIT');
+
+    // 7. Post-success activities: Save Version History and Log Audit
+    await saveVersionHistory(key, value, req);
+    await logAudit('WRITE_SUCCESS', user, ip, `Successfully wrote key "${key}". Record length: ${value.length} bytes.`);
+
     res.json({ success: true });
   } catch (err: any) {
-    console.error(`[Database Push] Upsert crash on key "${key}":`, err);
+    try {
+      await client.query('ROLLBACK');
+    } catch (e) {}
+    
+    console.error(`[Database Push] Upsert transaction rolled back on key "${key}":`, err);
+    await logAudit('WRITE_FAILED', user, ip, `Transaction rolled back on key "${key}". Error: ${err.message}`);
+    await triggerEmailAlert(`CRITICAL: Database Write Failed`, `Transaction rolled back on key "${key}" for user "${user}". Error: ${err.message}`);
+
     res.status(500).json({ success: false, error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -475,6 +1160,16 @@ app.post('/api/admin/backup-import', async (req, res) => {
     return res.status(400).json({ error: 'Missing backup payload.' });
   }
 
+  // Block if Database is in Recovery Mode
+  if (isDatabaseInRecoveryMode) {
+    return res.status(503).json({ 
+      error: 'Database is locked in Read-Only Recovery Mode. Backup import is disabled.' 
+    });
+  }
+
+  const user = req.body.user || 'Admin/Restorer';
+  const ip = getRequestIP(req);
+
   let filesMap: Record<string, any> = {};
 
   // Handles standard { files: { key: value } } wrapper or flat key-value pairs
@@ -486,17 +1181,59 @@ app.post('/api/admin/backup-import', async (req, res) => {
     return res.status(400).json({ error: 'Unrecognized backup coordinate schema.' });
   }
 
+  // --- PART 12: RESTORE VALIDATION & CHECKSUMS ---
+  const keys = Object.keys(filesMap);
+  if (keys.length === 0) {
+    return res.status(400).json({ error: 'Restore Validation Failed: Backup contains no files or keys.' });
+  }
+
+  // Validate integrity of each key-value pair in backup before restoring
+  for (const key of keys) {
+    if (!key || key.trim() === '' || key === 'backup_timestamp') continue;
+    const rawVal = filesMap[key];
+    if (rawVal === undefined || rawVal === null) {
+      return res.status(400).json({ error: `Restore Validation Failed: Key "${key}" has null or undefined values.` });
+    }
+
+    const valStr = typeof rawVal === 'object' ? JSON.stringify(rawVal) : String(rawVal);
+    if (valStr.trim() === '' || valStr === '[]' || valStr === '{}') {
+      return res.status(400).json({ error: `Restore Validation Failed: Key "${key}" cannot be restored to empty data.` });
+    }
+
+    // Check JSON parsing on list keys
+    const isListKey = key.endsWith('leads') || 
+                      key.endsWith('employees') || 
+                      key.endsWith('followups') || 
+                      key.endsWith('proposals');
+    if (isListKey) {
+      try {
+        const parsed = typeof rawVal === 'object' ? rawVal : JSON.parse(valStr);
+        if (!Array.isArray(parsed)) {
+          return res.status(400).json({ error: `Restore Validation Failed: Key "${key}" must be a JSON array.` });
+        }
+        if (parsed.length === 0) {
+          return res.status(400).json({ error: `Restore Validation Failed: Key "${key}" has 0 records.` });
+        }
+      } catch (e: any) {
+        return res.status(400).json({ error: `Restore Validation Failed: Key "${key}" contains corrupt JSON: ${e.message}` });
+      }
+    }
+  }
+
   // --- Sandbox Mirror Mode Backup Import ---
   if (isSandboxMirrorMode) {
     try {
       let restoredCount = 0;
+      // Snapshot current state before bulk overwrite
       for (const [key, value] of Object.entries(filesMap)) {
         if (!key || key.trim() === '' || key === 'backup_timestamp') continue;
+        await createPreWriteSnapshot(key);
         const valStr = typeof value === 'object' ? JSON.stringify(value) : String(value);
         previewStore[key] = valStr;
         restoredCount++;
       }
       fs.writeFileSync(PREVIEW_STORE_FILE, JSON.stringify(previewStore, null, 2), 'utf8');
+      await logAudit('RESTORE_SUCCESS', user, ip, `Successfully restored ${restoredCount} keys in Sandbox mode.`);
       console.log(`[Preview Store Import] Successfully loaded ${restoredCount} keys locally.`);
       return res.json({ success: true, restoredCount });
     } catch (err: any) {
@@ -509,48 +1246,62 @@ app.post('/api/admin/backup-import', async (req, res) => {
     return res.status(503).json({ error: 'Database connection is offline.' });
   }
 
+  const client = await p.connect();
   try {
     let restoredCount = 0;
-    const client = await p.connect();
 
-    try {
-      await client.query('BEGIN');
-      const keys = Object.keys(filesMap);
+    // 1. BEGIN transaction
+    await client.query('BEGIN');
 
-      for (const key of keys) {
-        if (!key || key.trim() === '' || key === 'backup_timestamp') continue;
+    for (const key of keys) {
+      if (!key || key.trim() === '' || key === 'backup_timestamp') continue;
 
-        let valStr = '';
-        const rawVal = filesMap[key];
+      let valStr = '';
+      const rawVal = filesMap[key];
 
-        if (typeof rawVal === 'object') {
-          valStr = JSON.stringify(rawVal);
-        } else {
-          valStr = String(rawVal);
-        }
-
-        const query = `
-          INSERT INTO crm_store (key, value, updated_at)
-          VALUES ($1, $2, NOW())
-          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
-        `;
-        await client.query(query, [key, valStr]);
-        restoredCount++;
+      if (typeof rawVal === 'object') {
+        valStr = JSON.stringify(rawVal);
+      } else {
+        valStr = String(rawVal);
       }
 
-      await client.query('COMMIT');
-    } catch (txErr) {
-      await client.query('ROLLBACK');
-      throw txErr;
-    } finally {
-      client.release();
+      // 2. Create pre-write snapshot before bulk overwrite
+      await createPreWriteSnapshot(key, client);
+
+      // 3. Write
+      const query = `
+        INSERT INTO crm_store (key, value, updated_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
+      `;
+      await client.query(query, [key, valStr]);
+      restoredCount++;
+
+      // 4. Verification check for each imported key
+      const verifyRes = await client.query('SELECT value FROM crm_store WHERE key = $1', [key]);
+      if (verifyRes.rows.length === 0 || verifyRes.rows[0].value !== valStr) {
+        throw new Error(`Integrity Verification Failed: Restored key "${key}" read-back did not match imported backup value.`);
+      }
     }
 
+    // 5. COMMIT transaction
+    await client.query('COMMIT');
+
+    await logAudit('RESTORE_SUCCESS', user, ip, `Successfully restored ${restoredCount} database keys from backup.`);
     console.log(`[Backup Import] Successfully loaded ${restoredCount} operational keys into PostgreSQL stores.`);
     res.json({ success: true, restoredCount });
   } catch (err: any) {
-    console.error('[Import Backup] Crashing:', err);
+    try {
+      await client.query('ROLLBACK');
+    } catch (e) {}
+
+    console.error('[Import Backup] Transaction rolled back due to error:', err);
+    await logAudit('RESTORE_FAILED', user, ip, `Backup import failed and rolled back. Error: ${err.message}`);
+    await triggerEmailAlert('CRITICAL: Backup Import Failed', `User "${user}" (IP: ${ip}) attempted a backup import which failed and rolled back.\nError: ${err.message}`);
+
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 

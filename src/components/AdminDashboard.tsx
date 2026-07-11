@@ -79,7 +79,11 @@ import {
   Printer,
   X,
   ArrowRightLeft,
-  Sparkles
+  Sparkles,
+  Lock,
+  Unlock,
+  History,
+  RotateCcw
 } from 'lucide-react';
 import ImportExportWizard from './ImportExportWizard';
 import OfferLetterTemplateEditor from './OfferLetterTemplateEditor';
@@ -158,6 +162,50 @@ export default function AdminDashboard({
   const [transferToEmpId, setTransferToEmpId] = useState('');
   const [transferReason, setTransferReason] = useState('');
   const [transferStatusMsg, setTransferStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // --- Enterprise Zero Data Loss Architecture States ---
+  const [dbAuditLogs, setDbAuditLogs] = useState<any[]>([]);
+  const [dbVersionHistory, setDbVersionHistory] = useState<any[]>([]);
+  const [isRecoveryModeLocked, setIsRecoveryModeLocked] = useState(false);
+  const [loadingSafetyDetails, setLoadingSafetyDetails] = useState(false);
+  const [restoringKeyVersionId, setRestoringKeyVersionId] = useState<string | null>(null);
+
+  const fetchDBSafetyDetails = async () => {
+    setLoadingSafetyDetails(true);
+    try {
+      const statusRes = await fetch('/api/postgres/status');
+      if (statusRes.ok) {
+        const s = await statusRes.json();
+        setIsRecoveryModeLocked(!!s.isDatabaseInRecoveryMode);
+      }
+      
+      const logsRes = await fetch('/api/admin/audit-logs');
+      if (logsRes.ok) {
+        const l = await logsRes.json();
+        if (l.success) {
+          setDbAuditLogs(l.logs || []);
+        }
+      }
+
+      const histRes = await fetch('/api/admin/version-history');
+      if (histRes.ok) {
+        const h = await histRes.json();
+        if (h.success) {
+          setDbVersionHistory(h.history || []);
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching Zero Data Loss details:', e);
+    } finally {
+      setLoadingSafetyDetails(false);
+    }
+  };
+
+  useEffect(() => {
+    if (viewTab === 'logs' || viewTab === 'backup') {
+      fetchDBSafetyDetails();
+    }
+  }, [viewTab, triggerRefresh]);
   const [overrideStatus, setOverrideStatus] = useState<'Present' | 'Absent' | 'Week Off' | 'Paid Leave'>('Present');
   const [selectedCalendarEmployee, setSelectedCalendarEmployee] = useState<Employee | null>(null);
 
@@ -3090,37 +3138,264 @@ export default function AdminDashboard({
           TAB: SYSTEM Logs
           ============================================================== */}
       {viewTab === 'logs' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between pb-2">
-            <div>
-              <h3 className="font-bold text-slate-900 dark:text-slate-100">Live Infrastructure Activity Trail</h3>
-              <p className="text-xs text-slate-500">Security monitoring audit feeds</p>
+        <div className="space-y-6">
+          {/* DATABASE WRITE LOCK / RECOVERY MODE STATUS BAR */}
+          <div className={`p-5 rounded-2xl border ${
+            isRecoveryModeLocked 
+              ? 'bg-rose-50 border-rose-200 dark:bg-rose-950/20 dark:border-rose-900/30 text-rose-900 dark:text-rose-200' 
+              : 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-900/30 text-emerald-900 dark:text-emerald-200'
+          }`}>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-start space-x-3">
+                <div className={`p-2.5 rounded-xl ${
+                  isRecoveryModeLocked ? 'bg-rose-100 dark:bg-rose-900/50 text-rose-600' : 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600'
+                }`}>
+                  {isRecoveryModeLocked ? <Lock className="h-5 w-5" /> : <Unlock className="h-5 w-5" />}
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm">
+                    {isRecoveryModeLocked 
+                      ? 'Database Status: LOCKED (Read-Only Recovery Mode)' 
+                      : 'Database Status: SECURED & ACTIVE'}
+                  </h4>
+                  <p className="text-xs opacity-85 leading-relaxed mt-0.5">
+                    {isRecoveryModeLocked 
+                      ? 'All write-operations to the CRM database are temporarily blocked to prevent accidental data loss or unauthorized modifications. Leads and payroll features are in read-only mode.' 
+                      : 'The Real-Time Database Write Firewall is active and monitoring all incoming updates. High-fidelity snapshots and transaction integrity guardrails are operational.'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={loadingSafetyDetails}
+                onClick={async () => {
+                  const confirmToggle = window.confirm(
+                    isRecoveryModeLocked 
+                      ? "Are you sure you want to Unlock the Database and re-enable write permissions?" 
+                      : "WARNING: Locking the database puts the CRM in Read-Only mode. All employees will be blocked from saving changes. Proceed?"
+                  );
+                  if (!confirmToggle) return;
+                  
+                  try {
+                    const res = await fetch('/api/admin/toggle-recovery', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ 
+                        enabled: !isRecoveryModeLocked,
+                        user: 'Master Admin'
+                      })
+                    });
+                    if (res.ok) {
+                      const data = await res.json();
+                      setIsRecoveryModeLocked(!!data.isDatabaseInRecoveryMode);
+                      onRefreshData();
+                      fetchDBSafetyDetails();
+                    }
+                  } catch (e) {
+                    alert('Failed to toggle recovery status.');
+                  }
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 shrink-0 cursor-pointer ${
+                  isRecoveryModeLocked 
+                    ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-sm' 
+                    : 'bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-slate-200 dark:text-slate-900'
+                }`}
+              >
+                {isRecoveryModeLocked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                <span>{isRecoveryModeLocked ? 'Unlock Database' : 'Lock Database'}</span>
+              </button>
             </div>
-            <button
-              onClick={onRefreshData}
-              className="text-xs text-slate-505 hover:underline flex items-center space-x-1"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              <span>Refresh feed</span>
-            </button>
           </div>
 
-          <div className="p-4 bg-slate-950 text-emerald-400 font-mono text-xs rounded-2xl border border-slate-850 max-h-96 overflow-y-auto space-y-3.5 select-text shadow-inner">
-            {logs.length === 0 ? (
-              <div className="text-center text-slate-600 py-12">No activity audit trail recordings today.</div>
-            ) : (
-              logs.map((log) => (
-                <div key={log.id} className="space-y-1.5 border-b border-slate-800/20 pb-3">
-                  <div className="text-[10px] text-slate-500 flex items-center justify-between">
-                    <span>{log.id} • {new Date(log.timestamp).toLocaleString()}</span>
-                    <span className="text-emerald-500/50 uppercase">[{log.userRole}]</span>
-                  </div>
-                  <p className="text-amber-300 font-bold">{log.action}</p>
-                  <p className="text-xs text-slate-300 leading-relaxed font-sans">{log.details}</p>
-                  <p className="text-[10px] text-slate-500 text-right">Signed: {log.userName}</p>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* COLUMN 1: ENTERPRISE DATABASE AUDIT TRAIL */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100 flex items-center space-x-1.5">
+                    <Database className="h-4 w-4 text-slate-500" />
+                    <span>Database Activity Logs</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500">Immutable, low-level database operations and API writes</p>
                 </div>
-              ))
-            )}
+                <button
+                  onClick={fetchDBSafetyDetails}
+                  disabled={loadingSafetyDetails}
+                  className="text-xs text-slate-505 hover:underline flex items-center space-x-1"
+                >
+                  <RefreshCw className={`h-3 w-3 ${loadingSafetyDetails ? 'animate-spin' : ''}`} />
+                  <span>Refresh logs</span>
+                </button>
+              </div>
+
+              <div className="p-4 bg-slate-950 text-slate-300 font-mono text-xs rounded-2xl border border-slate-850 h-[380px] overflow-y-auto space-y-3 shadow-inner select-text">
+                {dbAuditLogs.length === 0 ? (
+                  <div className="text-center text-slate-600 py-24 font-sans">No secure database activity recordings in current log table.</div>
+                ) : (
+                  dbAuditLogs.map((log: any, i: number) => {
+                    let badgeColor = 'bg-slate-800 text-slate-400';
+                    if (log.action === 'WRITE_SUCCESS') badgeColor = 'bg-emerald-950/50 text-emerald-400 border border-emerald-900/40';
+                    else if (log.action.includes('CRITICAL') || log.action === 'CRITICAL_ANOMALY') badgeColor = 'bg-rose-950/50 text-rose-400 border border-rose-900/40';
+                    else if (log.action.includes('RECOVERY') || log.action === 'RESTORE_SUCCESS') badgeColor = 'bg-amber-950/50 text-amber-400 border border-amber-900/40';
+                    
+                    return (
+                      <div key={log.id || i} className="space-y-1.5 border-b border-slate-900 pb-3 last:border-0 last:pb-0">
+                        <div className="flex items-center justify-between text-[10px] text-slate-500">
+                          <span>{log.id || `LOG-${1000 + i}`} • {new Date(log.timestamp).toLocaleString()}</span>
+                          <span className="font-sans text-slate-400 flex items-center space-x-1">
+                            <span className="h-1.5 w-1.5 rounded-full bg-slate-500"></span>
+                            <span>{log.ip}</span>
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold tracking-tight uppercase ${badgeColor}`}>
+                            {log.action}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-sans">By: <span className="font-bold text-slate-300">{log.user}</span></span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-relaxed font-sans">{log.details}</p>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* COLUMN 2: INFRASTRUCTURE ACTIVITY TRAIL */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100 flex items-center space-x-1.5">
+                    <Shield className="h-4 w-4 text-slate-500" />
+                    <span>Portal Audit Trail</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500">Global application-level event logs and employee actions</p>
+                </div>
+                <button
+                  onClick={onRefreshData}
+                  className="text-xs text-slate-505 hover:underline flex items-center space-x-1"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  <span>Refresh feed</span>
+                </button>
+              </div>
+
+              <div className="p-4 bg-slate-950 text-emerald-400 font-mono text-xs rounded-2xl border border-slate-850 h-[380px] overflow-y-auto space-y-3 shadow-inner select-text">
+                {logs.length === 0 ? (
+                  <div className="text-center text-slate-600 py-24 font-sans">No portal activity trail recordings today.</div>
+                ) : (
+                  logs.map((log) => (
+                    <div key={log.id} className="space-y-1.5 border-b border-slate-900 pb-3 last:border-0 last:pb-0">
+                      <div className="text-[10px] text-slate-500 flex items-center justify-between">
+                        <span>{log.id} • {new Date(log.timestamp).toLocaleString()}</span>
+                        <span className="text-emerald-500/50 uppercase">[{log.userRole}]</span>
+                      </div>
+                      <p className="text-amber-300 font-bold">{log.action}</p>
+                      <p className="text-xs text-slate-300 leading-relaxed font-sans">{log.details}</p>
+                      <p className="text-[10px] text-slate-500 text-right">Signed: {log.userName}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION: DATABASE VERSIONING & AUTOMATIC ROLLBACK CENTER */}
+          <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-4">
+            <div>
+              <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100 flex items-center space-x-1.5">
+                <History className="h-4 w-4 text-slate-500" />
+                <span>Automated Version History & Recovery</span>
+              </h3>
+              <p className="text-xs text-slate-500">List of high-fidelity database states. Rollback any section instantly in case of an accidental edit.</p>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      <th className="py-3 px-4">Version Timestamp</th>
+                      <th className="py-3 px-4">Database Key</th>
+                      <th className="py-3 px-4">Payload Size</th>
+                      <th className="py-3 px-4">Modified By</th>
+                      <th className="py-3 px-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                    {dbVersionHistory.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-slate-400">
+                          No automatic version history records captured yet. Updates to the database will automatically generate safe version items.
+                        </td>
+                      </tr>
+                    ) : (
+                      dbVersionHistory.map((v: any) => (
+                        <tr key={v.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20">
+                          <td className="py-3 px-4 text-slate-600 dark:text-slate-300 font-mono">
+                            {new Date(v.timestamp).toLocaleString()}
+                          </td>
+                          <td className="py-3 px-4 font-bold text-slate-700 dark:text-slate-200">
+                            {v.key.replace('efilingg_crm_', '')}
+                          </td>
+                          <td className="py-3 px-4 text-slate-500">
+                            {v.value ? (v.value.length / 1024).toFixed(2) : 0} KB
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-slate-700 dark:text-slate-300 font-medium">{v.user}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">IP: {v.ip}</div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              type="button"
+                              disabled={!!restoringKeyVersionId || isRecoveryModeLocked}
+                              onClick={async () => {
+                                const confirmRestore = window.confirm(
+                                  `Are you sure you want to rollback "${v.key.replace('efilingg_crm_', '')}" to version from ${new Date(v.timestamp).toLocaleString()}?\n\nThis will safely snapshot the current state and overwrite with this historical version.`
+                                );
+                                if (!confirmRestore) return;
+
+                                setRestoringKeyVersionId(v.id);
+                                try {
+                                  const res = await fetch('/api/admin/version-restore', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      versionId: v.id,
+                                      key: v.key,
+                                      user: 'Master Admin'
+                                    })
+                                  });
+                                  if (res.ok) {
+                                    alert(`Successfully rolled back "${v.key.replace('efilingg_crm_', '')}" to historical state.`);
+                                    onRefreshData();
+                                    fetchDBSafetyDetails();
+                                  } else {
+                                    const errData = await res.json();
+                                    alert(`Restoration failed: ${errData.error || 'Server rejected request'}`);
+                                  }
+                                } catch (e: any) {
+                                  alert(`Restore error: ${e.message}`);
+                                } finally {
+                                  setRestoringKeyVersionId(null);
+                                }
+                              }}
+                              className={`py-1 px-2.5 rounded-lg font-bold text-[10px] border transition-all cursor-pointer ${
+                                isRecoveryModeLocked
+                                  ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                                  : 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-800'
+                              }`}
+                            >
+                              {restoringKeyVersionId === v.id ? 'Restoring...' : 'Rollback to this Version'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       )}

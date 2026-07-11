@@ -181,10 +181,28 @@ export async function pushToPostgres(key: string, value: string): Promise<boolea
 
   activePushesCount++;
   try {
+    let user = 'System';
+    let role = 'employee';
+    try {
+      const sessionUserIdRaw = localStorage.getItem('efilingg_crm_session');
+      if (sessionUserIdRaw) {
+        const sessionUserId = JSON.parse(sessionUserIdRaw);
+        const employeesRaw = crmMemoryStore['efilingg_crm_employees'];
+        if (employeesRaw) {
+          const employees = JSON.parse(employeesRaw);
+          const emp = employees.find((e: any) => e.id === sessionUserId);
+          if (emp) {
+            user = emp.name;
+            role = emp.role;
+          }
+        }
+      }
+    } catch (e) {}
+
     const data = await safeFetchJson<{ success: boolean; error?: string }>('/api/postgres/push', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, value })
+      body: JSON.stringify({ key, value, user, role })
     });
     if (data && data.success) {
       updateSyncMeta({ status: 'connected', errorMessage: null, lastSyncedAt: new Date().toLocaleTimeString() });

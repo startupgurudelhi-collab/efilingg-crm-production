@@ -497,40 +497,42 @@ export default function EmployeeDashboard({
                   </div>
                   
                   {/* Excel Lead Export button */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const headers = ['Client Name', 'Mobile Number', 'Email', 'Company', 'Service Required', 'Lead Source', 'Stage', 'Creation Date'];
-                      const rows = filteredMyLeads.map(l => [
-                        l.customerName.replace(/"/g, '""'),
-                        formatLeadMobileNumberForExport(l.mobile).replace(/"/g, '""'),
-                        l.email.replace(/"/g, '""'),
-                        (l.businessName || '').replace(/"/g, '""'),
-                        l.serviceRequired.replace(/"/g, '""'),
-                        l.leadSource.replace(/"/g, '""'),
-                        l.stage.replace(/"/g, '""'),
-                        l.creationDate
-                      ]);
+                  {employeeSelf?.role !== 'employee' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const headers = ['Client Name', 'Mobile Number', 'Email', 'Company', 'Service Required', 'Lead Source', 'Stage', 'Creation Date'];
+                        const rows = filteredMyLeads.map(l => [
+                          l.customerName.replace(/"/g, '""'),
+                          formatLeadMobileNumberForExport(l.mobile).replace(/"/g, '""'),
+                          l.email.replace(/"/g, '""'),
+                          (l.businessName || '').replace(/"/g, '""'),
+                          l.serviceRequired.replace(/"/g, '""'),
+                          l.leadSource.replace(/"/g, '""'),
+                          l.stage.replace(/"/g, '""'),
+                          l.creationDate
+                        ]);
 
-                      const csvLineContent = [
-                        headers.join(','),
-                        ...rows.map(row => row.map(val => `"${val}"`).join(','))
-                      ].join('\n');
-                      
-                      const blob = new Blob([csvLineContent], { type: 'text/csv;charset=utf-8;' });
-                      const url = URL.createObjectURL(blob);
-                      const link = document.createElement("a");
-                      link.setAttribute("href", url);
-                      link.setAttribute("download", `efilingg_leads_employee_${new Date().toISOString().split('T')[0]}.csv`);
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                    }}
-                    className="flex items-center space-x-1 py-1 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] shrink-0 cursor-pointer"
-                  >
-                    <FileSpreadsheet className="h-3 w-3" />
-                    <span>Export ({filteredMyLeads.length})</span>
-                  </button>
+                        const csvLineContent = [
+                          headers.join(','),
+                          ...rows.map(row => row.map(val => `"${val}"`).join(','))
+                        ].join('\n');
+                        
+                        const blob = new Blob([csvLineContent], { type: 'text/csv;charset=utf-8;' });
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement("a");
+                        link.setAttribute("href", url);
+                        link.setAttribute("download", `efilingg_leads_employee_${new Date().toISOString().split('T')[0]}.csv`);
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                      }}
+                      className="flex items-center space-x-1 py-1 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] shrink-0 cursor-pointer"
+                    >
+                      <FileSpreadsheet className="h-3 w-3" />
+                      <span>Export ({filteredMyLeads.length})</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Filters Row */}

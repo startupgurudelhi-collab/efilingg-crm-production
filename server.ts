@@ -752,13 +752,13 @@ app.get('/api/v2/whatsapp/webhook', (req, res) => {
 
   const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN || 'efilingg_whatsapp_verify_token_2026';
 
-  if (mode === 'subscribe' && token === expectedToken) {
+  if (mode === 'subscribe' && token && (token === expectedToken || token === process.env.WHATSAPP_VERIFY_TOKEN)) {
     console.log('[WhatsApp Webhook V2] Verification SUCCESSFUL');
-    return res.status(200).send(challenge);
+    return res.status(200).type('text/plain').send(challenge || '');
   }
 
   console.warn('[WhatsApp Webhook V2] Verification FAILED: Invalid token or mode.');
-  return res.status(403).json({ success: false, error: 'Verification failed.' });
+  return res.sendStatus(403);
 });
 
 /**

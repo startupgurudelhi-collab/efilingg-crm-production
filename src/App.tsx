@@ -23,6 +23,7 @@ import ProposalPdf from './components/ProposalPdf';
 import NotificationBar from './components/NotificationBar';
 import TeamConnectWidget from './components/TeamConnectWidget';
 import { ThemeProvider, useTheme } from './components/ThemeContext';
+import { FeatureFlagProvider } from './lib/featureFlags';
 import { LogOut, User, Sun, Moon, Sparkles, Building2, Shield, Eye, Database, ListTodo, FileText, Lightbulb, CalendarDays, CheckCircle2, X } from 'lucide-react';
 import EFilinggLogo from './components/EFilinggLogo';
 
@@ -184,7 +185,8 @@ function AppContent() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
+    <FeatureFlagProvider user={sessionUser}>
+      <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
       
       {/* Premium Navigation Header */}
       <header className="sticky top-0 z-40 w-full bg-white dark:bg-slate-900 border-b border-slate-150 dark:border-slate-850 shadow-xs px-6 py-2 flex items-center justify-between">
@@ -467,7 +469,8 @@ function AppContent() {
         <span>Standard Indian GST (18%) taxation calculations verified</span>
       </footer>
 
-    </div>
+      </div>
+    </FeatureFlagProvider>
   );
 }
 

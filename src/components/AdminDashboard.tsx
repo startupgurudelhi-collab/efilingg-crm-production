@@ -90,6 +90,8 @@ import OfferLetterTemplateEditor from './OfferLetterTemplateEditor';
 import OfferLetterModal from './OfferLetterModal';
 import EditEmployeeModal from './EditEmployeeModal';
 import ExitLetterModal from './ExitLetterModal';
+import AISalesWorkspace from './AISalesWorkspace';
+import { FeatureFlagGuard } from '../lib/featureFlags';
 
 interface AdminDashboardProps {
   currentUserId: string;
@@ -116,7 +118,7 @@ export default function AdminDashboard({
   const [logs, setLogs] = useState<ActivityLog[]>([]);
 
   // Local Views Tab
-  const [viewTab, setViewTab] = useState<'analytics' | 'employees' | 'leads' | 'proposals' | 'logs' | 'backup' | 'services' | 'templates' | 'payroll'>('analytics');
+  const [viewTab, setViewTab] = useState<'analytics' | 'employees' | 'leads' | 'proposals' | 'logs' | 'backup' | 'services' | 'templates' | 'payroll' | 'ai_sales_inbox'>('ai_sales_inbox');
 
   // Search & Filter leads state
   const [searchQuery, setSearchQuery] = useState('');
@@ -975,6 +977,16 @@ export default function AdminDashboard({
           >
             All Leads ({totalLeads})
           </button>
+          <FeatureFlagGuard flagKey="ENABLE_AI_SALES_WORKSPACE">
+            <button
+              onClick={() => setViewTab('ai_sales_inbox')}
+              className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-indigo-500/30 font-bold ${
+                viewTab === 'ai_sales_inbox' ? 'bg-indigo-600 text-white' : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50'
+              }`}
+            >
+              🤖 AI Sales Inbox
+            </button>
+          </FeatureFlagGuard>
           <button
             onClick={() => setViewTab('proposals')}
             className={`px-4 py-2 text-xs font-semibold rounded-xl ${
@@ -1041,6 +1053,18 @@ export default function AdminDashboard({
           )}
         </div>
       </div>
+
+      {/* ==============================================================
+          TAB: AI SALES INBOX (Sprint 1.3 - Block 2)
+          ============================================================== */}
+      {viewTab === 'ai_sales_inbox' && (
+        <FeatureFlagGuard flagKey="ENABLE_AI_SALES_WORKSPACE">
+          <AISalesWorkspace
+            currentUserId={currentUserId}
+            currentUserName={loggedInUser?.name || 'Administrator'}
+          />
+        </FeatureFlagGuard>
+      )}
 
       {/* ==============================================================
           TAB: ANALYTICS DASHBOARD

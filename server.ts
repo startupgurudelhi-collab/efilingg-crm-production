@@ -12,6 +12,16 @@ import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import AdmZip from 'adm-zip';
+import { serverFeatureFlagManager } from './src/server/featureFlags';
+import { eventBus, deadLetterQueue, eventRegistry } from './src/lib/eventBus';
+import { block1Router } from './src/lib/block1/router';
+import { block2Router } from './src/lib/block2/router';
+import { block3Router } from './src/lib/block3/router';
+
+// Enable Block 1, Block 2 & Block 3 feature flags by default on server start
+serverFeatureFlagManager.setOverride('ENABLE_WHATSAPP_INGESTION', true);
+serverFeatureFlagManager.setOverride('ENABLE_CUSTOMER360', true);
+serverFeatureFlagManager.setOverride('ENABLE_AI_SALES_WORKSPACE', true);
 
 dotenv.config();
 
@@ -22,6 +32,15 @@ app.use(cors());
 // Boost parsing limit to support high payload backups easily (up to 150MB)
 app.use(express.json({ limit: '150mb' }));
 app.use(express.urlencoded({ limit: '150mb', extended: true }));
+
+// Mount Block 1 Enterprise Router (WhatsApp Cloud API, Customer Identity, Lead Engine, Conversations)
+app.use('/api', block1Router);
+
+// Mount Block 2 Enterprise Router (AI Sales Workspace, Gemini Integrations, Collaboration, Diagnostics)
+app.use('/api', block2Router);
+
+// Mount Block 3 Enterprise Router (Meta Click-to-WhatsApp Tracking, State Machine, Prompts, Notifications, Hardening, Observability)
+app.use('/api/v2/block3', block3Router);
 
 // --- POSTGRESQL INITIALIZATION & POOL ---
 let pool: pg.Pool | null = null;
@@ -188,9 +207,22 @@ async function initializeDatabaseSchema() {
         value TEXT NOT NULL,
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS whatsapp_webhook_logs (
+        id VARCHAR(255) PRIMARY KEY,
+        timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        sender_number VARCHAR(100),
+        message_id VARCHAR(255),
+        payload JSONB NOT NULL,
+        provider_name VARCHAR(100) DEFAULT 'WhatsApp Cloud API',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_webhook_logs_timestamp ON whatsapp_webhook_logs(timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_webhook_logs_sender ON whatsapp_webhook_logs(sender_number);
     `;
     await p.query(query);
-    console.log('[PostgreSQL] Database schema bootstrapped successfully!');
+    console.log('[PostgreSQL] Database schema & whatsapp_webhook_logs table bootstrapped successfully!');
   } catch (err: any) {
     console.error('[PostgreSQL] Failed bootstrapping database tables:', err);
   }
@@ -690,6 +722,174 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
+// Helper function to dynamically ensure the whatsapp_webhook_logs table exists
+async function ensureWhatsAppWebhookLogsTableExists(p: pg.Pool) {
+  try {
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_webhook_logs (
+        id VARCHAR(255) PRIMARY KEY,
+        timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        sender_number VARCHAR(100),
+        message_id VARCHAR(255),
+        payload JSONB NOT NULL,
+        provider_name VARCHAR(100) DEFAULT 'WhatsApp Cloud API',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+  } catch (err) {
+    console.error('[WhatsApp Webhook V2] Error ensuring whatsapp_webhook_logs table exists:', err);
+  }
+}
+
+/**
+ * Webhook Verification Endpoint (GET /api/v2/whatsapp/webhook)
+ * Verifies webhook setup for Meta WhatsApp Cloud API / Webhook Providers
+ */
+app.get('/api/v2/whatsapp/webhook', (req, res) => {
+  const mode = req.query['hub.mode'] as string | undefined;
+  const token = req.query['hub.verify_token'] as string | undefined;
+  const challenge = req.query['hub.challenge'] as string | undefined;
+
+  const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN || 'efilingg_whatsapp_verify_token_2026';
+
+  if (mode === 'subscribe' && token === expectedToken) {
+    console.log('[WhatsApp Webhook V2] Verification SUCCESSFUL');
+    return res.status(200).send(challenge);
+  }
+
+  console.warn('[WhatsApp Webhook V2] Verification FAILED: Invalid token or mode.');
+  return res.status(403).json({ success: false, error: 'Verification failed.' });
+});
+
+/**
+ * Production-Ready WhatsApp Webhook Ingestion Endpoint (POST /api/v2/whatsapp/webhook)
+ * Receives and logs incoming WhatsApp webhook payloads directly into PostgreSQL table whatsapp_webhook_logs.
+ */
+app.post('/api/v2/whatsapp/webhook', async (req, res) => {
+  const receivedTimestamp = new Date();
+
+  // 1. Return HTTP 200 immediately to prevent provider timeout
+  res.status(200).json({
+    success: true,
+    message: 'Webhook payload received successfully',
+    timestamp: receivedTimestamp.toISOString(),
+  });
+
+  // 2. Log complete incoming JSON payload
+  const payload = req.body || {};
+  console.log(`[WhatsApp Webhook V2] [${receivedTimestamp.toISOString()}] Received incoming webhook payload:`);
+  console.log(JSON.stringify(payload, null, 2));
+
+  // 3. Extract metadata fields safely from incoming payload
+  let senderNumber = '';
+  let messageId = '';
+  let providerName = payload.provider || payload.provider_name || 'WhatsApp Cloud API';
+  let messageTimestamp = receivedTimestamp;
+
+  try {
+    const entry = payload?.entry?.[0];
+    const change = entry?.changes?.[0]?.value;
+    const firstMsg = change?.messages?.[0];
+
+    if (firstMsg) {
+      senderNumber = firstMsg.from || '';
+      messageId = firstMsg.id || '';
+      if (firstMsg.timestamp) {
+        const tsNum = Number(firstMsg.timestamp);
+        if (!isNaN(tsNum)) {
+          messageTimestamp = new Date(tsNum * 1000);
+        } else {
+          messageTimestamp = new Date(firstMsg.timestamp);
+        }
+      }
+    } else if (change?.statuses?.[0]) {
+      const statusObj = change.statuses[0];
+      senderNumber = statusObj.recipient_id || '';
+      messageId = statusObj.id || '';
+      if (statusObj.timestamp) {
+        const tsNum = Number(statusObj.timestamp);
+        if (!isNaN(tsNum)) {
+          messageTimestamp = new Date(tsNum * 1000);
+        }
+      }
+    }
+
+    // Generic fallbacks for non-standard payloads
+    if (!senderNumber) {
+      senderNumber = payload.sender_number || payload.senderNumber || payload.from || payload.sender || payload.contactNumber || '';
+    }
+    if (!messageId) {
+      messageId = payload.message_id || payload.messageId || payload.id || payload.msgId || '';
+    }
+  } catch (extractErr) {
+    console.warn('[WhatsApp Webhook V2] Non-fatal metadata extraction warning:', extractErr);
+  }
+
+  // 4. Save payload to PostgreSQL table whatsapp_webhook_logs
+  try {
+    const logId = `WH-LOG-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const p = getPostgresPool();
+
+    if (p && postgresConnected && !isSandboxMirrorMode) {
+      await ensureWhatsAppWebhookLogsTableExists(p);
+      await p.query(
+        `INSERT INTO whatsapp_webhook_logs (id, timestamp, sender_number, message_id, payload, provider_name, created_at)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6, NOW())`,
+        [logId, messageTimestamp, senderNumber, messageId, JSON.stringify(payload), providerName]
+      );
+      console.log(`[WhatsApp Webhook V2] Logged record ${logId} to PostgreSQL whatsapp_webhook_logs.`);
+    } else {
+      // In-memory preview store fallback when local/sandbox mirror mode active
+      let existingLogs: any[] = [];
+      try {
+        const raw = previewStore['efilingg_crm_whatsapp_webhook_logs'];
+        if (raw) existingLogs = JSON.parse(raw);
+      } catch (e) {}
+
+      existingLogs.unshift({
+        id: logId,
+        timestamp: messageTimestamp.toISOString(),
+        sender_number: senderNumber,
+        message_id: messageId,
+        payload,
+        provider_name: providerName,
+        created_at: new Date().toISOString(),
+      });
+
+      if (existingLogs.length > 200) existingLogs = existingLogs.slice(0, 200);
+      savePreviewStore('efilingg_crm_whatsapp_webhook_logs', JSON.stringify(existingLogs));
+      console.log(`[WhatsApp Webhook V2] Saved record ${logId} to local store.`);
+    }
+  } catch (dbErr: any) {
+    console.error('[WhatsApp Webhook V2] Error saving payload to PostgreSQL database:', dbErr);
+  }
+});
+
+/**
+ * Diagnostic Endpoint to fetch stored whatsapp_webhook_logs
+ * GET /api/v2/whatsapp/webhook/logs
+ */
+app.get('/api/v2/whatsapp/webhook/logs', async (req, res) => {
+  try {
+    const p = getPostgresPool();
+    if (p && postgresConnected && !isSandboxMirrorMode) {
+      await ensureWhatsAppWebhookLogsTableExists(p);
+      const result = await p.query('SELECT * FROM whatsapp_webhook_logs ORDER BY created_at DESC LIMIT 100');
+      return res.json({ success: true, count: result.rows.length, logs: result.rows });
+    } else {
+      let logs: any[] = [];
+      try {
+        const raw = previewStore['efilingg_crm_whatsapp_webhook_logs'];
+        if (raw) logs = JSON.parse(raw);
+      } catch (e) {}
+      return res.json({ success: true, count: logs.length, logs });
+    }
+  } catch (err: any) {
+    console.error('[WhatsApp Webhook Logs V2] Query error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 /**
  * Endpoint to determine database connector details and status
  */
@@ -868,6 +1068,60 @@ app.post('/api/admin/version-restore', async (req, res) => {
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+/**
+ * Enterprise Feature Flag Admin Endpoints (Sprint 1.1)
+ */
+app.get('/api/admin/feature-flags', (req, res) => {
+  const flags = serverFeatureFlagManager.getAllStatus();
+  res.json({ success: true, flags });
+});
+
+app.post('/api/admin/feature-flags/toggle', async (req, res) => {
+  const { flag, enabled, user } = req.body;
+  if (!flag || typeof enabled !== 'boolean') {
+    return res.status(400).json({ success: false, error: 'Missing flag name or boolean enabled state.' });
+  }
+
+  serverFeatureFlagManager.setOverride(flag, enabled);
+  const ip = getRequestIP(req);
+  await logAudit('FEATURE_FLAG_TOGGLE', user || 'Admin', ip, `Toggled feature flag "${flag}" to ${enabled}`);
+
+  res.json({
+    success: true,
+    flag,
+    enabled,
+    message: `Feature flag '${flag}' updated to ${enabled} at runtime without restart.`,
+  });
+});
+
+/**
+ * Enterprise Event Bus Diagnostic & Metrics Endpoints (Sprint 1.2)
+ */
+app.get('/api/admin/event-bus/metrics', (req, res) => {
+  const metrics = eventBus.getMetrics();
+  const registeredEvents = eventRegistry.getAll();
+  res.json({
+    success: true,
+    metrics,
+    registeredEventsCount: registeredEvents.length,
+    registeredEvents,
+  });
+});
+
+app.get('/api/admin/event-bus/dlq', (req, res) => {
+  const items = deadLetterQueue.getAll();
+  res.json({
+    success: true,
+    count: items.length,
+    items,
+  });
+});
+
+app.post('/api/admin/event-bus/dlq/clear', (req, res) => {
+  deadLetterQueue.clear();
+  res.json({ success: true, message: 'Dead Letter Queue cleared.' });
 });
 
 /**

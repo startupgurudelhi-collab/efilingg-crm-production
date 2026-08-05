@@ -63,6 +63,8 @@ import ProposalBuilder from './ProposalBuilder';
 import ServicesManager from './ServicesManager';
 import OfferLetterModal from './OfferLetterModal';
 import ExitLetterModal from './ExitLetterModal';
+import AISalesWorkspace from './AISalesWorkspace';
+import { FeatureFlagGuard } from '../lib/featureFlags';
 
 interface EmployeeDashboardProps {
   currentUserId: string;
@@ -100,7 +102,7 @@ export default function EmployeeDashboard({
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [showServicesCatalog, setShowServicesCatalog] = useState(false);
-  const [activeTab, setActiveTab] = useState<'leads' | 'followups' | 'hr'>('leads');
+  const [activeTab, setActiveTab] = useState<'leads' | 'followups' | 'hr' | 'ai_sales'>('leads');
   const [employeeSelf, setEmployeeSelf] = useState<Employee | null>(null);
   const [attendanceDaysInput, setAttendanceDaysInput] = useState(30);
 
@@ -314,6 +316,19 @@ export default function EmployeeDashboard({
             >
               💼 My Pipeline Leads
             </button>
+            <FeatureFlagGuard flagKey="ENABLE_AI_SALES_WORKSPACE">
+              <button
+                type="button"
+                onClick={() => setActiveTab('ai_sales')}
+                className={`px-3.5 py-1.5 text-xs rounded-lg font-bold transition-all cursor-pointer ${
+                  activeTab === 'ai_sales'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-650 dark:bg-slate-900 dark:text-slate-350 dark:hover:bg-slate-805'
+                }`}
+              >
+                🤖 AI Sales Inbox
+              </button>
+            </FeatureFlagGuard>
             <button
               type="button"
               onClick={() => setActiveTab('followups')}
@@ -366,7 +381,14 @@ export default function EmployeeDashboard({
         </div>
       </div>
 
-      {activeTab === 'leads' ? (
+      {activeTab === 'ai_sales' ? (
+        <FeatureFlagGuard flagKey="ENABLE_AI_SALES_WORKSPACE">
+          <AISalesWorkspace
+            currentUserId={currentUserId}
+            currentUserName={employeeSelf?.name || 'Compliance Associate'}
+          />
+        </FeatureFlagGuard>
+      ) : activeTab === 'leads' ? (
         <>
           {/* Stats Cards Section */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

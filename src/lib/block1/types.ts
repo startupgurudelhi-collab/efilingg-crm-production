@@ -138,6 +138,11 @@ export interface ConversationV2 {
   lastMessageText?: string;
   lastMessageTimestamp?: string;
   unreadCount: number;
+  srno?: string;
+  wabaSrno?: string;
+  wabaNumber?: string;
+  mobile?: string;
+  contactName?: string;
   createdAt: string;
   updatedAt: string;
 }

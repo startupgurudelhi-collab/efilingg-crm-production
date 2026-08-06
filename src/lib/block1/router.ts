@@ -7,6 +7,8 @@
  */
 
 import { Router, Request, Response } from 'express';
+import fs from 'fs';
+import path from 'path';
 import { CustomerIdentityService } from './CustomerIdentityService';
 import { ExecutiveAssignmentService } from './ExecutiveAssignmentService';
 import { LeadEngineService } from './LeadEngineService';
@@ -146,13 +148,24 @@ block1Router.post('/v2/whatsapp/media/download', async (req: Request, res: Respo
 block1Router.get('/v2/whatsapp/media/:mediaId', async (req: Request, res: Response) => {
   try {
     const mediaId = req.params.mediaId;
-    const cached = WhatsAppMediaService.getCachedMedia(mediaId);
-    if (cached) {
-      return res.status(200).json({ success: true, record: cached });
+    const isJson = req.query.json === 'true' || (req.headers.accept && req.headers.accept.includes('application/json'));
+
+    let record = WhatsAppMediaService.getCachedMedia(mediaId);
+    if (!record) {
+      record = await WhatsAppMediaService.downloadAndCacheMedia({ mediaId });
     }
 
-    const record = await WhatsAppMediaService.downloadAndCacheMedia({ mediaId });
-    return res.status(200).json({ success: true, record });
+    if (isJson) {
+      return res.status(200).json({ success: true, record });
+    }
+
+    if (record && record.storage_path && fs.existsSync(record.storage_path)) {
+      const mime = record.mime_type || 'image/jpeg';
+      res.setHeader('Content-Type', mime);
+      return res.sendFile(path.resolve(record.storage_path));
+    }
+
+    return res.status(404).send('Media file not found');
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     return res.status(500).json({ success: false, error: error.message });

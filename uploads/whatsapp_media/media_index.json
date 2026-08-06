@@ -1,0 +1,14 @@
+{
+  "MEDIA-TEST-101": {
+    "media_id": "MEDIA-TEST-101",
+    "mime_type": "application/octet-stream",
+    "filename": "whatsapp_media_MEDIA-TEST-101.bin",
+    "size": 122,
+    "public_url": "/uploads/whatsapp_media/MEDIA-TEST-101_whatsapp_media_MEDIA-TEST-101.bin",
+    "thumbnail_url": "/uploads/whatsapp_media/MEDIA-TEST-101_whatsapp_media_MEDIA-TEST-101.bin",
+    "storage_path": "/app/applet/uploads/whatsapp_media/MEDIA-TEST-101_whatsapp_media_MEDIA-TEST-101.bin",
+    "download_url": "https://graph.facebook.com/v18.0/MEDIA-TEST-101/download_url",
+    "http_status": 200,
+    "downloaded_at": "2026-08-06T13:50:04.993Z"
+  }
+}

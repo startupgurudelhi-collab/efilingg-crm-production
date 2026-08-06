@@ -58,6 +58,7 @@ import {
   Maximize2,
   Volume2,
   Download,
+  AlertCircle,
 } from 'lucide-react';
 import { eventBus } from '../lib/eventBus';
 
@@ -344,30 +345,101 @@ const Customer360Panel = React.memo(
 
         {/* Activity Timeline Stream */}
         <div className="p-3.5 space-y-2">
-          <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
-            Activity Timeline Stream
-          </span>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
+              Activity Timeline Stream
+            </span>
+            <span className="text-[9px] text-slate-500 font-mono">CPaaS Diagnostics</span>
+          </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
             {timeline.length === 0 ? (
               <span className="text-[10px] text-slate-500">No activity logged yet.</span>
             ) : (
-              timeline.slice(-4).map((entry) => (
-                <div key={entry.id} className="text-[10.5px] border-l-2 border-emerald-500/60 pl-2 space-y-0.5">
-                  <div className="flex items-center justify-between text-slate-400 font-mono text-[9px]">
-                    <span>{entry.activityType}</span>
-                    <span>
-                      {entry.timestamp
-                        ? new Date(entry.timestamp).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })
-                        : ''}
-                    </span>
+              timeline.slice().reverse().map((entry) => {
+                const isFailed = entry.activityType === 'MESSAGE_FAILED' || entry.metadata?.success === false;
+                const isSent = entry.activityType === 'MESSAGE_SENT' || entry.metadata?.success === true;
+                const meta = entry.metadata as Record<string, any> | undefined;
+
+                return (
+                  <div
+                    key={entry.id}
+                    className={`text-[10.5px] border-l-2 pl-2.5 py-1.5 space-y-1 rounded-r-lg transition-colors ${
+                      isFailed
+                        ? 'border-rose-500 bg-rose-950/20 text-rose-200'
+                        : isSent
+                        ? 'border-emerald-500/80 bg-emerald-950/10 text-slate-200'
+                        : 'border-slate-700 bg-slate-900/40 text-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-slate-400 font-mono text-[9px]">
+                      <span className={`font-bold ${isFailed ? 'text-rose-400' : isSent ? 'text-emerald-400' : 'text-slate-400'}`}>
+                        {entry.activityType}
+                      </span>
+                      <span>
+                        {entry.timestamp
+                          ? new Date(entry.timestamp).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              second: '2-digit',
+                            })
+                          : ''}
+                      </span>
+                    </div>
+
+                    <p className={`leading-tight font-medium ${isFailed ? 'text-rose-300' : 'text-slate-200'}`}>
+                      {entry.summary}
+                    </p>
+
+                    {/* Expose complete provider response in Activity Timeline for diagnostics */}
+                    {meta && (meta.rawProviderResponse || meta.errorMessage || meta.errorCode !== undefined || meta.httpStatus !== undefined) && (
+                      <div className="mt-1 pt-1 border-t border-slate-800/80 space-y-1 text-[9.5px]">
+                        <div className="flex flex-wrap items-center gap-1 font-mono text-[9px]">
+                          {meta.httpStatus !== undefined && (
+                            <span className={`px-1.5 py-0.5 rounded ${meta.httpStatus >= 200 && meta.httpStatus < 300 && meta.success !== false ? 'bg-emerald-900/60 text-emerald-300' : 'bg-rose-900/60 text-rose-300'}`}>
+                              HTTP {meta.httpStatus}
+                            </span>
+                          )}
+                          {meta.success !== undefined && (
+                            <span className={`px-1.5 py-0.5 rounded ${meta.success ? 'bg-emerald-900/60 text-emerald-300' : 'bg-rose-900/60 text-rose-300'}`}>
+                              success={String(meta.success)}
+                            </span>
+                          )}
+                          {meta.providerMessageId && (
+                            <span className="bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded truncate max-w-[140px]" title={String(meta.providerMessageId)}>
+                              ID: {String(meta.providerMessageId)}
+                            </span>
+                          )}
+                          {meta.errorCode !== null && meta.errorCode !== undefined && (
+                            <span className="bg-rose-900/80 text-rose-200 px-1.5 py-0.5 rounded font-bold">
+                              Code: {String(meta.errorCode)}
+                            </span>
+                          )}
+                        </div>
+
+                        {meta.errorMessage && (
+                          <div className="text-rose-300 font-mono text-[9px] bg-rose-950/50 p-1.5 rounded border border-rose-900/60">
+                            <strong>Provider Error:</strong> {String(meta.errorMessage)}
+                          </div>
+                        )}
+
+                        {meta.rawProviderResponse && (
+                          <details className="mt-1 group">
+                            <summary className="text-[9px] font-mono text-emerald-400 hover:text-emerald-300 cursor-pointer underline flex items-center space-x-1">
+                              <span>View Complete Provider Response JSON</span>
+                            </summary>
+                            <pre className="mt-1 p-2 bg-slate-950 text-emerald-400 font-mono text-[8.5px] rounded border border-slate-800 overflow-x-auto max-h-40 whitespace-pre-wrap">
+                              {typeof meta.rawProviderResponse === 'string'
+                                ? meta.rawProviderResponse
+                                : JSON.stringify(meta.rawProviderResponse, null, 2)}
+                            </pre>
+                          </details>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <p className="text-slate-300 leading-tight">{entry.summary}</p>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -1416,11 +1488,51 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
                                   <Clock className="h-2.5 w-2.5 animate-spin" />
                                   <span>Sending...</span>
                                 </span>
+                              ) : msg.deliveryStatus === 'FAILED' ? (
+                                <span className="flex items-center space-x-1 text-rose-600 font-bold text-[9.5px]">
+                                  <AlertCircle className="h-3 w-3 text-rose-600" />
+                                  <span>Delivery Failed</span>
+                                </span>
                               ) : (
                                 <CheckCheck className="h-3.5 w-3.5 text-emerald-600" />
                               )
                             )}
                           </div>
+
+                          {/* Provider Error Banner inside message bubble if FAILED */}
+                          {msg.deliveryStatus === 'FAILED' && (
+                            <div className="mt-2 p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-[10px] space-y-1">
+                              <div className="flex items-center space-x-1 font-bold text-rose-700">
+                                <AlertCircle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+                                <span>CPaaS Delivery Error</span>
+                                {msg.httpStatus !== undefined && (
+                                  <span className="font-mono text-[8.5px] bg-rose-200 text-rose-900 px-1 py-0.2 rounded">
+                                    HTTP {msg.httpStatus}
+                                  </span>
+                                )}
+                                {msg.providerErrorCode !== undefined && (
+                                  <span className="font-mono text-[8.5px] bg-rose-200 text-rose-900 px-1 py-0.2 rounded">
+                                    Code: {msg.providerErrorCode}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="font-medium text-rose-800 leading-tight">
+                                {msg.providerErrorMessage || 'Provider returned error or unconfirmed delivery status.'}
+                              </p>
+                              {msg.rawProviderResponse && (
+                                <details className="mt-1">
+                                  <summary className="text-[9px] font-mono text-rose-700 cursor-pointer underline">
+                                    View Raw Provider JSON
+                                  </summary>
+                                  <pre className="mt-1 p-1.5 bg-slate-900 text-emerald-400 font-mono text-[8.5px] rounded overflow-x-auto max-h-28 whitespace-pre-wrap">
+                                    {typeof msg.rawProviderResponse === 'string'
+                                      ? msg.rawProviderResponse
+                                      : JSON.stringify(msg.rawProviderResponse, null, 2)}
+                                  </pre>
+                                </details>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );

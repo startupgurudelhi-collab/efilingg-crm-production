@@ -343,7 +343,10 @@ export class WhatsAppService {
     console.log(`Payload          :\n${JSON.stringify(payload, null, 2)}`);
 
     let finalStatus: DeliveryStatus = 'FAILED';
-    let providerMessageId = tempWamid;
+    let providerMessageId: string | undefined = undefined;
+    let providerSuccessFlag = false;
+    let providerErrorCode: string | number | undefined = undefined;
+    let providerErrorMessage: string | undefined = undefined;
     let httpStatusCode = 0;
     let responseBodyText = '';
     let parsedProviderResponse: any = null;
@@ -358,57 +361,111 @@ export class WhatsAppService {
       httpStatusCode = response.status;
       responseBodyText = await response.text();
 
-      console.log(`HTTP Status Code : ${response.status} ${response.statusText}`);
-      console.log(`Response Body    : ${responseBodyText}`);
-
       try {
         parsedProviderResponse = JSON.parse(responseBodyText);
       } catch (_) {
         parsedProviderResponse = { raw: responseBodyText };
       }
 
-      // If provider returns success then mark SENT, otherwise FAILED
-      const isSuccess =
-        response.ok &&
-        (parsedProviderResponse?.status === 'success' ||
-         parsedProviderResponse?.status === 'SUCCESS' ||
-         parsedProviderResponse?.result === 'success' ||
-         parsedProviderResponse?.message_id ||
-         parsedProviderResponse?.messages?.[0]?.id ||
-         parsedProviderResponse?.id ||
-         (response.status >= 200 && response.status < 300 && !parsedProviderResponse?.error));
+      const p = typeof parsedProviderResponse === 'object' && parsedProviderResponse !== null
+        ? parsedProviderResponse
+        : {};
 
-      if (isSuccess) {
+      // 1. Extract providerMessageId
+      const candidateMsgId =
+        p.message_id ||
+        p.messageId ||
+        p.providerMessageId ||
+        p.messages?.[0]?.id ||
+        p.id ||
+        p.data?.message_id ||
+        p.data?.id ||
+        p.result?.message_id ||
+        p.result?.id;
+
+      if (candidateMsgId && String(candidateMsgId).trim() !== '') {
+        providerMessageId = String(candidateMsgId).trim();
+      }
+
+      // 2. Extract Error Code
+      if (p.error_code !== undefined && p.error_code !== null) providerErrorCode = p.error_code;
+      else if (p.errorCode !== undefined && p.errorCode !== null) providerErrorCode = p.errorCode;
+      else if (p.err_code !== undefined && p.err_code !== null) providerErrorCode = p.err_code;
+      else if (p.error?.code !== undefined && p.error?.code !== null) providerErrorCode = p.error.code;
+      else if (p.error?.error_code !== undefined && p.error?.error_code !== null) providerErrorCode = p.error.error_code;
+      else if (p.errors?.[0]?.code !== undefined && p.errors?.[0]?.code !== null) providerErrorCode = p.errors[0].code;
+      else if (p.code !== undefined && p.code !== null && (p.success === false || p.status === 'error' || p.status === 'failed')) providerErrorCode = p.code;
+
+      // 3. Extract Error Message
+      if (typeof p.error_message === 'string' && p.error_message.trim() !== '') providerErrorMessage = p.error_message;
+      else if (typeof p.errorMessage === 'string' && p.errorMessage.trim() !== '') providerErrorMessage = p.errorMessage;
+      else if (typeof p.error?.message === 'string' && p.error?.message.trim() !== '') providerErrorMessage = p.error.message;
+      else if (typeof p.error === 'string' && p.error.trim() !== '') providerErrorMessage = p.error;
+      else if (typeof p.errors?.[0]?.message === 'string' && p.errors[0].message.trim() !== '') providerErrorMessage = p.errors[0].message;
+      else if (typeof p.errors?.[0]?.title === 'string' && p.errors[0].title.trim() !== '') providerErrorMessage = p.errors[0].title;
+      else if (typeof p.reason === 'string' && p.reason.trim() !== '') providerErrorMessage = p.reason;
+      else if (typeof p.description === 'string' && p.description.trim() !== '') providerErrorMessage = p.description;
+      else if (typeof p.message === 'string' && p.message.trim() !== '' && (p.success === false || p.status === 'error' || p.status === 'failed' || p.error)) {
+        providerErrorMessage = p.message;
+      }
+
+      // 4. Check for explicit error flags (even inside HTTP 200 response)
+      let hasExplicitError = false;
+
+      if (httpStatusCode < 200 || httpStatusCode >= 300) {
+        hasExplicitError = true;
+      }
+
+      if (p.success === false || p.success === 'false') hasExplicitError = true;
+      if (p.status === 'failed' || p.status === 'FAILED' || p.status === 'error' || p.status === 'ERROR' || p.status === false) hasExplicitError = true;
+      if (p.result === 'failed' || p.result === 'error') hasExplicitError = true;
+      if (p.error !== undefined && p.error !== null) hasExplicitError = true;
+      if (Array.isArray(p.errors) && p.errors.length > 0) hasExplicitError = true;
+      if (providerErrorCode !== undefined && providerErrorCode !== null && String(providerErrorCode) !== '0') hasExplicitError = true;
+
+      // 5. Evaluate success flag strictly
+      const explicitSuccess =
+        p.success === true ||
+        p.success === 'true' ||
+        p.status === 'success' ||
+        p.status === 'SUCCESS' ||
+        p.status === true ||
+        p.result === 'success';
+
+      const hasValidMsgId = Boolean(providerMessageId && providerMessageId.length > 0);
+
+      if (!hasExplicitError && (explicitSuccess || hasValidMsgId)) {
+        providerSuccessFlag = true;
         finalStatus = 'SENT';
-
-        // Store provider message ID
-        if (parsedProviderResponse?.message_id) {
-          providerMessageId = String(parsedProviderResponse.message_id);
-        } else if (parsedProviderResponse?.messages?.[0]?.id) {
-          providerMessageId = String(parsedProviderResponse.messages[0].id);
-        } else if (parsedProviderResponse?.id) {
-          providerMessageId = String(parsedProviderResponse.id);
-        } else if (parsedProviderResponse?.data?.message_id) {
-          providerMessageId = String(parsedProviderResponse.data.message_id);
-        } else if (parsedProviderResponse?.data?.id) {
-          providerMessageId = String(parsedProviderResponse.data.id);
-        } else {
-          providerMessageId = `LEGOMARK-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-        }
       } else {
-        console.error(`[Legomark CPaaS Outbound Error] Provider returned failure status ${response.status}: ${responseBodyText}`);
+        providerSuccessFlag = false;
         finalStatus = 'FAILED';
+
+        // Set fallbacks for error details if not found
+        if (!providerErrorMessage) {
+          if (typeof p.message === 'string' && p.message.trim() !== '') {
+            providerErrorMessage = p.message;
+          } else if (responseBodyText && responseBodyText.trim() !== '') {
+            providerErrorMessage = responseBodyText;
+          } else {
+            providerErrorMessage = `Provider returned delivery error (HTTP ${httpStatusCode})`;
+          }
+        }
+        if (providerErrorCode === undefined) {
+          providerErrorCode = httpStatusCode !== 200 ? httpStatusCode : 'CPAAS_REJECTED';
+        }
       }
     } catch (fetchErr) {
       const error = fetchErr instanceof Error ? fetchErr : new Error(String(fetchErr));
       console.error(`[Legomark CPaaS Exception] Outbound network call failed:`, error.message);
 
-      // In sandbox/preview mode without live API key, simulate successful Legomark CPaaS response for developer testing
       if (!apiKey && !wabaNumber) {
         console.log(`[Legomark CPaaS Notice] No Key or wabaNumber present in environment. Simulating 200 OK Legomark CPaaS response for sandbox preview...`);
         httpStatusCode = 200;
         providerMessageId = `LEGOMARK-SB-${Date.now()}`;
+        providerSuccessFlag = true;
         parsedProviderResponse = {
+          success: true,
           status: 'success',
           messaging_product: 'whatsapp',
           message_id: providerMessageId,
@@ -417,24 +474,40 @@ export class WhatsAppService {
         };
         responseBodyText = JSON.stringify(parsedProviderResponse);
         finalStatus = 'SENT';
-        console.log(`Response Body (Sandbox Simulation) : ${responseBodyText}`);
       } else {
         httpStatusCode = 500;
-        responseBodyText = `Network Exception: ${error.message}`;
+        providerSuccessFlag = false;
+        providerErrorCode = 'NETWORK_ERROR';
+        providerErrorMessage = `Network Exception: ${error.message}`;
+        responseBodyText = providerErrorMessage;
         parsedProviderResponse = { error: error.message };
         finalStatus = 'FAILED';
       }
     }
 
-    console.log(`Final Delivery Status : ${finalStatus}`);
-    console.log(`Provider Message ID   : ${providerMessageId}`);
+    const resolvedProviderMessageId = providerMessageId || tempWamid;
+
+    // Log complete required provider details
+    console.log(`\n===================================================================`);
+    console.log(`[LEGOMARK CPAAS OUTBOUND RESPONSE EVALUATION]`);
+    console.log(`HTTP Status        : ${httpStatusCode}`);
+    console.log(`Response Body      : ${responseBodyText}`);
+    console.log(`providerMessageId  : ${resolvedProviderMessageId}`);
+    console.log(`success flag       : ${providerSuccessFlag}`);
+    console.log(`error code         : ${providerErrorCode !== undefined ? providerErrorCode : 'N/A'}`);
+    console.log(`error message      : ${providerErrorMessage !== undefined ? providerErrorMessage : 'N/A'}`);
+    console.log(`Final Status       : ${finalStatus}`);
     console.log(`===================================================================\n`);
 
-    // Store raw provider response & provider message ID
+    // Store raw provider response & provider message ID & diagnostic flags
     outboundMsg.deliveryStatus = finalStatus;
-    outboundMsg.whatsappMessageId = providerMessageId;
-    outboundMsg.providerMessageId = providerMessageId;
+    outboundMsg.whatsappMessageId = resolvedProviderMessageId;
+    outboundMsg.providerMessageId = resolvedProviderMessageId;
     outboundMsg.rawProviderResponse = parsedProviderResponse || responseBodyText;
+    outboundMsg.providerSuccess = providerSuccessFlag;
+    outboundMsg.providerErrorCode = providerErrorCode;
+    outboundMsg.providerErrorMessage = providerErrorMessage;
+    outboundMsg.httpStatus = httpStatusCode;
     saveMessage(outboundMsg);
 
     // Audit webhook log (log every outbound request and response)
@@ -452,36 +525,59 @@ export class WhatsAppService {
         requestPayload: payload,
         httpStatus: httpStatusCode,
         responseBody: responseBodyText,
+        providerMessageId: resolvedProviderMessageId,
+        success: providerSuccessFlag,
+        errorCode: providerErrorCode || null,
+        errorMessage: providerErrorMessage || null,
         rawProviderResponse: parsedProviderResponse,
-        providerMessageId,
       },
       status: finalStatus === 'FAILED' ? 'FAILED' : 'PROCESSED',
-      errorReason: finalStatus === 'FAILED' ? responseBodyText : undefined,
+      errorReason: finalStatus === 'FAILED' ? (providerErrorMessage || responseBodyText) : undefined,
     });
 
-    // Timeline entry
+    // Timeline entry (include provider error inside CRM timeline if FAILED)
+    let timelineSummary = '';
+    if (finalStatus === 'SENT') {
+      timelineSummary = `Legomark CPaaS Outbound WhatsApp SENT: "${options.content.substring(0, 50)}" (ID: ${resolvedProviderMessageId})`;
+    } else {
+      const errDetail = providerErrorMessage ? `: ${providerErrorMessage}` : '';
+      const errCodeStr = providerErrorCode !== undefined ? ` [Code: ${providerErrorCode}]` : ` [HTTP ${httpStatusCode}]`;
+      timelineSummary = `Legomark CPaaS Outbound WhatsApp FAILED: "${options.content.substring(0, 50)}"${errCodeStr}${errDetail}`;
+    }
+
     addTimelineEntry(
       conv.id,
       finalStatus === 'SENT' ? 'MESSAGE_SENT' : 'MESSAGE_FAILED',
-      `Legomark CPaaS Outbound WhatsApp ${finalStatus}: "${options.content.substring(0, 50)}" (HTTP ${httpStatusCode})`,
-      options.senderName
+      timelineSummary,
+      options.senderName,
+      {
+        httpStatus: httpStatusCode,
+        responseBody: responseBodyText,
+        providerMessageId: resolvedProviderMessageId,
+        success: providerSuccessFlag,
+        errorCode: providerErrorCode || null,
+        errorMessage: providerErrorMessage || null,
+        rawProviderResponse: parsedProviderResponse,
+        recipient: recipientPhone,
+        cpaasUrl,
+      }
     );
 
     eventBus.publishAsync('TimelineUpdated', 'TIMELINE', {
       entityType: conv.customerId ? 'CUSTOMER' : 'LEAD',
       entityId: conv.customerId || conv.leadId || conv.id,
       activityType: 'OUTBOUND_MESSAGE',
-      summary: `Outbound WhatsApp sent by ${options.senderName} (${finalStatus})`,
+      summary: timelineSummary,
       actor: options.senderName,
     });
 
-    // Delivery pipeline progression when SENT
+    // Delivery pipeline progression ONLY when SENT
     if (finalStatus === 'SENT') {
       setTimeout(() => {
-        updateMessageStatus(providerMessageId, 'DELIVERED');
+        updateMessageStatus(resolvedProviderMessageId, 'DELIVERED');
         console.log(`[WhatsApp Delivery Pipeline] Message ${msgId} status progressed: SENT -> DELIVERED`);
         setTimeout(() => {
-          updateMessageStatus(providerMessageId, 'READ');
+          updateMessageStatus(resolvedProviderMessageId, 'READ');
           console.log(`[WhatsApp Delivery Pipeline] Message ${msgId} status progressed: DELIVERED -> READ`);
         }, 3000);
       }, 1500);

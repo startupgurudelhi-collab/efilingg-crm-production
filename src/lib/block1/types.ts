@@ -105,6 +105,10 @@ export interface MessageV2 {
   timestamp: string;
   rawPayload?: Record<string, unknown>;
   rawProviderResponse?: Record<string, unknown> | string;
+  providerSuccess?: boolean;
+  providerErrorCode?: string | number;
+  providerErrorMessage?: string;
+  httpStatus?: number;
 }
 
 export interface ConversationTimelineEntry {

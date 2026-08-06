@@ -69,16 +69,17 @@ block1Router.post('/whatsapp/webhook', (req: Request, res: Response) => {
 });
 
 /**
- * Send Outbound WhatsApp Message (POST /api/whatsapp/send)
+ * Send Outbound WhatsApp Message (POST /api/whatsapp/send, POST /api/v2/whatsapp/send, POST /api/v2/messages/send)
  */
-block1Router.post('/whatsapp/send', (req: Request, res: Response) => {
+const handleOutboundSend = async (req: Request, res: Response) => {
   try {
-    const { conversationId, senderId, senderName, content, attachments } = req.body;
+    const conversationId = req.body.conversationId || req.params.id;
+    const { senderId, senderName, content, attachments } = req.body;
     if (!conversationId || !content) {
       return res.status(400).json({ error: 'Missing required parameters: conversationId, content' });
     }
 
-    const message = WhatsAppService.sendOutboundMessage({
+    const message = await WhatsAppService.sendOutboundMessageAsync({
       conversationId,
       senderId: senderId || 'SYSTEM_EXECUTIVE',
       senderName: senderName || 'Efilingg CRM Executive',
@@ -91,7 +92,11 @@ block1Router.post('/whatsapp/send', (req: Request, res: Response) => {
     const error = err instanceof Error ? err : new Error(String(err));
     return res.status(500).json({ success: false, error: error.message });
   }
-});
+};
+
+block1Router.post('/whatsapp/send', handleOutboundSend);
+block1Router.post('/v2/whatsapp/send', handleOutboundSend);
+block1Router.post('/v2/messages/send', handleOutboundSend);
 
 // ==========================================
 // 2. Customer Identity REST Endpoints
@@ -231,52 +236,66 @@ block1Router.post('/v2/leads/ingest', (req: Request, res: Response) => {
  * List Conversations (GET /api/v2/conversations)
  */
 block1Router.get('/v2/conversations', (req: Request, res: Response) => {
-  const state = req.query.state as string | undefined;
-  const executiveId = req.query.executiveId as string | undefined;
+  try {
+    const state = req.query.state as string | undefined;
+    const executiveId = req.query.executiveId as string | undefined;
 
-  let conversations = getConversations();
-  if (state) {
-    conversations = conversations.filter((c) => c.state === state);
+    let conversations = getConversations();
+    if (state) {
+      conversations = conversations.filter((c) => c.state === state);
+    }
+    if (executiveId) {
+      conversations = conversations.filter((c) => c.assignedExecutiveId === executiveId);
+    }
+
+    return res.status(200).json({
+      success: true,
+      count: conversations.length,
+      conversations,
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    console.error('[GET /api/v2/conversations error]:', error);
+    return res.status(500).json({
+      success: false,
+      count: 0,
+      conversations: [],
+      error: error.message,
+    });
   }
-  if (executiveId) {
-    conversations = conversations.filter((c) => c.assignedExecutiveId === executiveId);
-  }
-
-  console.log(`[Diagnostic 9/9] AI Sales Inbox Query | GET /api/v2/conversations | State: ${state || 'ALL'} | Executive: ${executiveId || 'ALL'} | Total Count: ${conversations.length} | Conversations: ${JSON.stringify(conversations.map((c) => ({ id: c.id, customerName: c.customerName, contactNumber: c.contactNumber, lastMessageText: c.lastMessageText })))}`);
-
-  return res.status(200).json({
-    success: true,
-    count: conversations.length,
-    conversations,
-  });
 });
 
 /**
  * Get Conversation Details & Messages (GET /api/v2/conversations/:id)
  */
 block1Router.get('/v2/conversations/:id', (req: Request, res: Response) => {
-  const id = req.params.id;
-  const conversation = getConversationById(id);
-  if (!conversation) {
-    return res.status(404).json({ error: `Conversation ${id} not found.` });
+  try {
+    const id = req.params.id;
+    const conversation = getConversationById(id);
+    if (!conversation) {
+      return res.status(404).json({ error: `Conversation ${id} not found.` });
+    }
+
+    const messages = getMessages(id);
+    const timeline = getTimelineEntries(id);
+
+    return res.status(200).json({
+      success: true,
+      conversation,
+      messagesCount: messages.length,
+      messages,
+      timeline,
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
   }
-
-  const messages = getMessages(id);
-  const timeline = getTimelineEntries(id);
-
-  return res.status(200).json({
-    success: true,
-    conversation,
-    messagesCount: messages.length,
-    messages,
-    timeline,
-  });
 });
 
 /**
  * Post Outbound Message to Conversation (POST /api/v2/conversations/:id/messages)
  */
-block1Router.post('/v2/conversations/:id/messages', (req: Request, res: Response) => {
+block1Router.post('/v2/conversations/:id/messages', async (req: Request, res: Response) => {
   try {
     const conversationId = req.params.id;
     const { senderId, senderName, content, attachments } = req.body;
@@ -285,7 +304,7 @@ block1Router.post('/v2/conversations/:id/messages', (req: Request, res: Response
       return res.status(400).json({ error: 'Message content is required.' });
     }
 
-    const message = WhatsAppService.sendOutboundMessage({
+    const message = await WhatsAppService.sendOutboundMessageAsync({
       conversationId,
       senderId: senderId || 'EMP-ADMIN',
       senderName: senderName || 'Executive',

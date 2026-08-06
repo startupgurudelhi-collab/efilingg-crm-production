@@ -100,6 +100,9 @@ function getPostgresPool(): pg.Pool | null {
     }
 
     pool = new pg.Pool(config);
+    pool.on('error', (err) => {
+      console.error('[PostgreSQL Pool] Idle client connection error:', err.message);
+    });
     return pool;
   } catch (err: any) {
     postgresErrorMsg = `Config failure: ${err.message}`;
@@ -165,6 +168,9 @@ async function verifyDatabaseWithRetry(): Promise<boolean> {
       let testPool: pg.Pool | null = null;
       try {
         testPool = new pg.Pool(config);
+        testPool.on('error', (err) => {
+          console.error('[PostgreSQL Pool] Idle client connection error:', err.message);
+        });
         const client = await testPool.connect();
         await client.query('SELECT NOW()');
         client.release();

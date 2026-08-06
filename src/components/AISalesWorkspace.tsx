@@ -794,10 +794,11 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
       scrollToBottom(true);
 
       try {
-        const res = await fetch(`/api/v2/conversations/${activeConvId}/messages`, {
+        const res = await fetch('/api/v2/whatsapp/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            conversationId: activeConvId,
             senderId: currentUserId,
             senderName: currentUserName,
             content: text,
@@ -805,17 +806,27 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
         });
 
         if (res.ok) {
+          const data = await res.json();
+          if (data.message) {
+            setMessages((prev) => prev.map((m) => (m.id === tempId ? data.message : m)));
+          }
           fetchActiveConversationDetails(activeConvId);
           fetchConversations();
 
           if (activeConv?.assignedType === 'AI_AGENT') {
             triggerAiAutoReply(activeConvId, text);
           }
+        } else {
+          console.error('Outbound WhatsApp delivery failed:', await res.text());
+          setMessages((prev) =>
+            prev.map((m) => (m.id === tempId ? { ...m, deliveryStatus: 'FAILED' as any } : m))
+          );
         }
       } catch (err) {
         console.error('Failed to send outbound message:', err);
-        // Revert optimistic message on error
-        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? { ...m, deliveryStatus: 'FAILED' as any } : m))
+        );
       }
     }
   };

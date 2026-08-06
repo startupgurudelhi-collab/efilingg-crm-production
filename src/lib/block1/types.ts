@@ -15,7 +15,7 @@ export type MessageDirection = 'INBOUND' | 'OUTBOUND';
 
 export type MessageType = 'TEXT' | 'IMAGE' | 'DOCUMENT' | 'AUDIO' | 'LOCATION' | 'TEMPLATE' | 'INTERACTIVE';
 
-export type DeliveryStatus = 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
+export type DeliveryStatus = 'DRAFT' | 'SENDING' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
 
 export interface AttachmentV2 {
   id: string;

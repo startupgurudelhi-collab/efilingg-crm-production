@@ -55,6 +55,9 @@ import {
   Clock,
   Layers,
   ChevronRight,
+  Maximize2,
+  Volume2,
+  Download,
 } from 'lucide-react';
 import { eventBus } from '../lib/eventBus';
 
@@ -385,6 +388,9 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
   const [activeTab, setActiveTab] = useState<InboxTabFilter>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // Media Lightbox State
+  const [lightboxMedia, setLightboxMedia] = useState<{ url: string; name?: string; type?: string } | null>(null);
 
   // Active Thread Data States
   const [messages, setMessages] = useState<MessageV2[]>([]);
@@ -1240,18 +1246,153 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
                             {msg.content}
                           </p>
 
-                          {/* Attachments Preview */}
+                          {/* Attachments Preview (Requirement 7) */}
                           {msg.attachments && msg.attachments.length > 0 && (
-                            <div className="mt-2 space-y-1">
-                              {msg.attachments.map((att) => (
-                                <div
-                                  key={att.id}
-                                  className="p-1.5 rounded-lg bg-slate-100 border border-slate-200 flex items-center space-x-2 text-[10px] text-slate-700"
-                                >
-                                  <Paperclip className="h-3 w-3 text-emerald-600 shrink-0" />
-                                  <span className="truncate">{att.fileName}</span>
-                                </div>
-                              ))}
+                            <div className="mt-2 space-y-2">
+                              {msg.attachments.map((att) => {
+                                const isImg =
+                                  att.fileType === 'IMAGE' ||
+                                  att.mimeType?.startsWith('image/') ||
+                                  /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(att.fileName);
+                                const isAudio =
+                                  att.fileType === 'AUDIO' ||
+                                  att.mimeType?.startsWith('audio/') ||
+                                  /\.(mp3|ogg|wav|m4a)$/i.test(att.fileName);
+                                const isVideo =
+                                  att.fileType === 'VIDEO' ||
+                                  att.mimeType?.startsWith('video/') ||
+                                  /\.(mp4|webm|mov|avi)$/i.test(att.fileName);
+                                const mediaUrl =
+                                  att.url ||
+                                  (att.whatsappMediaId ? `/api/v2/whatsapp/media/${att.whatsappMediaId}` : '');
+
+                                if (isImg) {
+                                  return (
+                                    <div
+                                      key={att.id}
+                                      className="group relative mt-1.5 overflow-hidden rounded-xl border border-slate-200 bg-slate-900/5 max-w-xs shadow-2xs"
+                                    >
+                                      <img
+                                        src={mediaUrl}
+                                        alt={att.fileName || 'WhatsApp Image'}
+                                        className="h-44 w-full object-cover cursor-pointer transition-transform duration-200 group-hover:scale-102"
+                                        onClick={() =>
+                                          setLightboxMedia({
+                                            url: mediaUrl,
+                                            name: att.fileName,
+                                            type: 'IMAGE',
+                                          })
+                                        }
+                                      />
+                                      <div
+                                        className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
+                                        onClick={() =>
+                                          setLightboxMedia({
+                                            url: mediaUrl,
+                                            name: att.fileName,
+                                            type: 'IMAGE',
+                                          })
+                                        }
+                                      >
+                                        <span className="bg-slate-900/80 text-white text-[10px] px-2.5 py-1 rounded-full font-medium flex items-center space-x-1 shadow-xs">
+                                          <Maximize2 className="h-3 w-3" />
+                                          <span>Click to enlarge</span>
+                                        </span>
+                                      </div>
+                                      <div className="p-1.5 bg-slate-900/85 backdrop-blur-xs text-white text-[10px] flex items-center justify-between">
+                                        <span className="truncate max-w-[180px] font-medium">
+                                          {att.fileName}
+                                        </span>
+                                        {att.fileSize && (
+                                          <span className="text-[9px] text-slate-300 font-mono">
+                                            {(att.fileSize / 1024).toFixed(1)} KB
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                } else if (isAudio) {
+                                  return (
+                                    <div
+                                      key={att.id}
+                                      className="mt-1.5 p-2.5 rounded-xl border border-emerald-200/80 bg-emerald-50/70 max-w-xs shadow-2xs"
+                                    >
+                                      <div className="flex items-center space-x-2 mb-1 text-xs font-semibold text-emerald-950">
+                                        <Volume2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                                        <span className="truncate text-[11px]">
+                                          {att.fileName || 'Voice Note / Audio'}
+                                        </span>
+                                      </div>
+                                      <audio
+                                        controls
+                                        src={mediaUrl}
+                                        className="w-full h-8 outline-none rounded-md mt-1"
+                                      />
+                                    </div>
+                                  );
+                                } else if (isVideo) {
+                                  return (
+                                    <div
+                                      key={att.id}
+                                      className="mt-1.5 rounded-xl overflow-hidden border border-slate-300 bg-black max-w-xs shadow-2xs"
+                                    >
+                                      <video
+                                        controls
+                                        src={mediaUrl}
+                                        className="w-full max-h-52 object-contain bg-black"
+                                      />
+                                      <div className="p-1.5 bg-slate-900/90 text-white text-[10px] flex items-center justify-between">
+                                        <span className="truncate max-w-[180px] font-medium">
+                                          {att.fileName || 'WhatsApp Video'}
+                                        </span>
+                                        <a
+                                          href={mediaUrl}
+                                          download={att.fileName}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="text-emerald-400 hover:underline flex items-center space-x-1"
+                                        >
+                                          <Download className="h-3 w-3" />
+                                        </a>
+                                      </div>
+                                    </div>
+                                  );
+                                } else {
+                                  return (
+                                    <div
+                                      key={att.id}
+                                      className="mt-1.5 p-2 rounded-xl border border-slate-200 bg-slate-50/90 hover:bg-slate-100 transition-colors flex items-center justify-between space-x-3 max-w-xs shadow-2xs"
+                                    >
+                                      <div className="flex items-center space-x-2.5 overflow-hidden">
+                                        <div className="p-1.5 rounded-lg bg-emerald-100 text-emerald-700 shrink-0">
+                                          <FileText className="h-4 w-4" />
+                                        </div>
+                                        <div className="overflow-hidden">
+                                          <span className="text-[11px] font-semibold text-slate-800 block truncate">
+                                            {att.fileName}
+                                          </span>
+                                          <span className="text-[9px] font-mono text-slate-500 block">
+                                            {att.fileSize
+                                              ? `${(att.fileSize / 1024).toFixed(1)} KB`
+                                              : 'Document File'}
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <a
+                                        href={mediaUrl}
+                                        download={att.fileName}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-medium flex items-center space-x-1 transition-colors shrink-0 shadow-2xs"
+                                        title="Download document"
+                                      >
+                                        <Download className="h-3.5 w-3.5" />
+                                        <span className="hidden sm:inline">Download</span>
+                                      </a>
+                                    </div>
+                                  );
+                                }
+                              })}
                             </div>
                           )}
 
@@ -1444,6 +1585,50 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
           />
         </div>
       </div>
+
+      {/* Lightbox Modal for Enlarged Image Preview (Requirement 7) */}
+      {lightboxMedia && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setLightboxMedia(null)}
+        >
+          <div
+            className="relative max-w-4xl max-h-[90vh] bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-2xl flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between mb-3 text-white border-b border-slate-800 pb-2">
+              <span className="text-xs font-semibold truncate max-w-md">
+                {lightboxMedia.name || 'WhatsApp Full Image'}
+              </span>
+              <div className="flex items-center space-x-2">
+                <a
+                  href={lightboxMedia.url}
+                  download={lightboxMedia.name || 'image'}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium flex items-center space-x-1 transition-colors"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Download</span>
+                </a>
+                <button
+                  onClick={() => setLightboxMedia(null)}
+                  className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+            <div className="overflow-auto max-h-[75vh] flex items-center justify-center">
+              <img
+                src={lightboxMedia.url}
+                alt={lightboxMedia.name || 'Enlarged WhatsApp Image'}
+                className="max-h-[70vh] max-w-full object-contain rounded-lg"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

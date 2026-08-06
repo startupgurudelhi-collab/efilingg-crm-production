@@ -93,7 +93,7 @@ export class VerificationSuiteService {
       };
 
       // Ingest webhook
-      const webhookRes = WhatsAppService.processWebhook(rawPayload);
+      const webhookRes = await WhatsAppService.processWebhook(rawPayload);
       if (webhookRes.processedMessages.length === 0) {
         throw new Error('Webhook ingestion failed in Scenario 1');
       }
@@ -169,7 +169,7 @@ export class VerificationSuiteService {
         ],
       };
 
-      const webhookRes = WhatsAppService.processWebhook(rawPayload);
+      const webhookRes = await WhatsAppService.processWebhook(rawPayload);
       if (webhookRes.processedMessages.length === 0) throw new Error('Failed to handle existing customer message');
 
       const convId = webhookRes.processedMessages[0].conversation.id;
@@ -254,7 +254,7 @@ export class VerificationSuiteService {
         ],
       };
 
-      const webhookRes = WhatsAppService.processWebhook(rawPayload);
+      const webhookRes = await WhatsAppService.processWebhook(rawPayload);
       if (webhookRes.processedMessages.length === 0) throw new Error('Media upload ingestion failed');
 
       const convId = webhookRes.processedMessages[0].conversation.id;

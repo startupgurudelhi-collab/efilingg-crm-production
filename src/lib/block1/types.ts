@@ -100,9 +100,11 @@ export interface MessageV2 {
   content: string;
   attachments?: AttachmentV2[];
   whatsappMessageId?: string;
+  providerMessageId?: string;
   deliveryStatus: DeliveryStatus;
   timestamp: string;
   rawPayload?: Record<string, unknown>;
+  rawProviderResponse?: Record<string, unknown> | string;
 }
 
 export interface ConversationTimelineEntry {

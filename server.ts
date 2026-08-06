@@ -264,7 +264,7 @@ registerServerPersistHandler(async (key: string, val: string) => {
   }
 });
 
-function syncAllStoredWebhookLogs(): void {
+async function syncAllStoredWebhookLogs(): Promise<void> {
   try {
     let rawLogs = previewStore['efilingg_crm_whatsapp_webhook_logs'];
     if (rawLogs) {
@@ -277,7 +277,7 @@ function syncAllStoredWebhookLogs(): void {
           if (logItem.payload) {
             console.log(`\n===================================================================`);
             console.log(`[Webhook Re-Sync Executing] Webhook ID: ${logItem.id} | Sender: ${logItem.sender_number}`);
-            WhatsAppService.processWebhook(logItem.payload);
+            await WhatsAppService.processWebhook(logItem.payload);
             console.log(`===================================================================\n`);
           }
         }
@@ -946,7 +946,7 @@ app.post('/api/v2/whatsapp/webhook', async (req, res) => {
 
   // 5. Production-Ready CRM Synchronization (Customer, Lead, WhatsApp Conversation, Message Ingestion)
   try {
-    const syncResult = WhatsAppService.processWebhook(payload);
+    const syncResult = await WhatsAppService.processWebhook(payload);
     console.log(`[WhatsApp Webhook V2 CRM Sync] Synchronized ${syncResult.processedMessages.length} messages and updated ${syncResult.updatedStatusesCount} delivery statuses.`);
   } catch (crmErr: any) {
     console.error('[WhatsApp Webhook V2 CRM Sync] Error during CRM sync:', crmErr);

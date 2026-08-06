@@ -11,6 +11,7 @@ import { CustomerIdentityService } from './CustomerIdentityService';
 import { ExecutiveAssignmentService } from './ExecutiveAssignmentService';
 import { LeadEngineService } from './LeadEngineService';
 import { WhatsAppService, DEFAULT_WHATSAPP_VERIFY_TOKEN } from './WhatsAppService';
+import { WhatsAppMediaService } from './WhatsAppMediaService';
 import {
   getCustomers,
   getLeads,
@@ -53,10 +54,10 @@ block1Router.get('/whatsapp/webhook', (req: Request, res: Response) => {
 /**
  * Webhook Receiver Endpoint (POST /api/whatsapp/webhook)
  */
-block1Router.post('/whatsapp/webhook', (req: Request, res: Response) => {
+block1Router.post('/whatsapp/webhook', async (req: Request, res: Response) => {
   try {
     const payload = req.body;
-    const result = WhatsAppService.processWebhook(payload);
+    const result = await WhatsAppService.processWebhook(payload);
     return res.status(200).json({
       success: true,
       processedMessagesCount: result.processedMessages.length,
@@ -97,6 +98,66 @@ const handleOutboundSend = async (req: Request, res: Response) => {
 block1Router.post('/whatsapp/send', handleOutboundSend);
 block1Router.post('/v2/whatsapp/send', handleOutboundSend);
 block1Router.post('/v2/messages/send', handleOutboundSend);
+
+/**
+ * Get Cached WhatsApp Media List (GET /api/v2/whatsapp/media/cache)
+ */
+block1Router.get('/v2/whatsapp/media/cache', (req: Request, res: Response) => {
+  try {
+    const records = WhatsAppMediaService.getAllCachedRecords();
+    return res.status(200).json({
+      success: true,
+      count: records.length,
+      media: records,
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * On-Demand Download / Retrieve WhatsApp Media (POST /api/v2/whatsapp/media/download, GET /api/v2/whatsapp/media/:mediaId)
+ */
+block1Router.post('/v2/whatsapp/media/download', async (req: Request, res: Response) => {
+  try {
+    const { mediaId, mimeType, filename, caption } = req.body;
+    if (!mediaId) {
+      return res.status(400).json({ success: false, error: 'mediaId parameter is required.' });
+    }
+
+    const record = await WhatsAppMediaService.downloadAndCacheMedia({
+      mediaId,
+      mimeType,
+      filename,
+      caption,
+    });
+
+    return res.status(200).json({
+      success: true,
+      record,
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+block1Router.get('/v2/whatsapp/media/:mediaId', async (req: Request, res: Response) => {
+  try {
+    const mediaId = req.params.mediaId;
+    const cached = WhatsAppMediaService.getCachedMedia(mediaId);
+    if (cached) {
+      return res.status(200).json({ success: true, record: cached });
+    }
+
+    const record = await WhatsAppMediaService.downloadAndCacheMedia({ mediaId });
+    return res.status(200).json({ success: true, record });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // ==========================================
 // 2. Customer Identity REST Endpoints

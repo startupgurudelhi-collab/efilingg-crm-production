@@ -135,8 +135,8 @@ export class WhatsAppService {
                   messageText = msgObj.text.body;
                 } else if (typeof msgObj.text === 'string') {
                   messageText = msgObj.text;
-                } else if (msgObj.body) {
-                  messageText = msgObj.body;
+                } else if ((msgObj as any).body) {
+                  messageText = (msgObj as any).body;
                 } else if (msgObj.type === 'image' || msgObj.image) {
                   const img = msgObj.image || {};
                   messageText = img.caption || '[Image Received]';

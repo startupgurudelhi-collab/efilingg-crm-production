@@ -277,7 +277,7 @@ export class LeadEngineService {
       conversation.customerName
     );
 
-    eventBus.publishAsync('NewMessage', 'MESSAGE', {
+    eventBus.publishAsync('NewMessage', 'SYSTEM', {
       conversationId: conversation.id,
       messageId: message.id,
       senderName: message.senderName,

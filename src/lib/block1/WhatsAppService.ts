@@ -101,75 +101,96 @@ export class WhatsAppService {
       });
 
       const entries = payload.entry || [];
-      for (const entry of entries) {
-        const changes = entry.changes || [];
-        for (const change of changes) {
-          const value = change.value;
-          if (!value) continue;
+      if (entries.length > 0) {
+        for (const entry of entries) {
+          const changes = entry.changes || [];
+          for (const change of changes) {
+            const value = change.value;
+            if (!value) continue;
 
-          // 1. Process Status Updates (sent, delivered, read, failed)
-          if (value.statuses && value.statuses.length > 0) {
-            for (const statusObj of value.statuses) {
-              if (statusObj.id && statusObj.status) {
-                const statusUpper = statusObj.status.toUpperCase() as DeliveryStatus;
-                const updated = updateMessageStatus(statusObj.id, statusUpper);
-                if (updated) updatedStatusesCount++;
+            // 1. Process Status Updates (sent, delivered, read, failed)
+            if (value.statuses && value.statuses.length > 0) {
+              for (const statusObj of value.statuses) {
+                if (statusObj.id && statusObj.status) {
+                  const statusUpper = statusObj.status.toUpperCase() as DeliveryStatus;
+                  const updated = updateMessageStatus(statusObj.id, statusUpper);
+                  if (updated) updatedStatusesCount++;
+                }
+              }
+            }
+
+            // 2. Process Incoming Messages
+            if (value.messages && value.messages.length > 0) {
+              const profileName = value.contacts?.[0]?.profile?.name || 'WhatsApp Contact';
+
+              for (const msgObj of value.messages) {
+                const senderPhone = msgObj.from;
+                if (!senderPhone) continue;
+
+                let messageText = '';
+                const attachments: AttachmentV2[] = [];
+
+                // Extract text & media content
+                if (msgObj.type === 'text' && msgObj.text?.body) {
+                  messageText = msgObj.text.body;
+                } else if (msgObj.type === 'image' && msgObj.image) {
+                  messageText = msgObj.image.caption || '[Image Received]';
+                  attachments.push({
+                    id: `ATT-${Date.now()}`,
+                    fileName: `whatsapp_image_${msgObj.image.id}.jpg`,
+                    fileType: 'IMAGE',
+                    mimeType: msgObj.image.mime_type || 'image/jpeg',
+                    url: `https://whatsapp-media-cdn.mock/${msgObj.image.id}`,
+                    whatsappMediaId: msgObj.image.id,
+                  });
+                } else if (msgObj.document) {
+                  messageText = msgObj.document.caption || `[Document: ${msgObj.document.filename || 'File'}]`;
+                  attachments.push({
+                    id: `ATT-${Date.now()}`,
+                    fileName: msgObj.document.filename || `document_${msgObj.document.id}.pdf`,
+                    fileType: 'DOCUMENT',
+                    mimeType: msgObj.document.mime_type || 'application/pdf',
+                    url: `https://whatsapp-media-cdn.mock/${msgObj.document.id}`,
+                    whatsappMediaId: msgObj.document.id,
+                  });
+                } else {
+                  messageText = `[Media/Interactive Message: ${msgObj.type || 'unknown'}]`;
+                }
+
+                // Ingest Inbound Message through Lead Engine
+                const ingestion = LeadEngineService.processInboundMessage({
+                  channel: 'WHATSAPP',
+                  senderPhone,
+                  senderName: profileName,
+                  messageText,
+                  attachments,
+                  whatsappMessageId: msgObj.id,
+                  rawPayload: msgObj as unknown as Record<string, unknown>,
+                });
+
+                processedMessages.push(ingestion);
               }
             }
           }
+        }
+      } else {
+        // Fallback for flat top-level custom webhook JSON payloads
+        const pAny = payload as any;
+        const senderPhone = pAny.from || pAny.sender_number || pAny.senderNumber || pAny.mobile || pAny.phone;
+        const messageText = pAny.text?.body || pAny.text || pAny.body || pAny.message || pAny.content;
+        const msgId = pAny.id || pAny.message_id || pAny.messageId || pAny.msgId;
 
-          // 2. Process Incoming Messages
-          if (value.messages && value.messages.length > 0) {
-            const profileName = value.contacts?.[0]?.profile?.name || 'WhatsApp Contact';
-
-            for (const msgObj of value.messages) {
-              const senderPhone = msgObj.from;
-              if (!senderPhone) continue;
-
-              let messageText = '';
-              const attachments: AttachmentV2[] = [];
-
-              // Extract text & media content
-              if (msgObj.type === 'text' && msgObj.text?.body) {
-                messageText = msgObj.text.body;
-              } else if (msgObj.type === 'image' && msgObj.image) {
-                messageText = msgObj.image.caption || '[Image Received]';
-                attachments.push({
-                  id: `ATT-${Date.now()}`,
-                  fileName: `whatsapp_image_${msgObj.image.id}.jpg`,
-                  fileType: 'IMAGE',
-                  mimeType: msgObj.image.mime_type || 'image/jpeg',
-                  url: `https://whatsapp-media-cdn.mock/${msgObj.image.id}`,
-                  whatsappMediaId: msgObj.image.id,
-                });
-              } else if (msgObj.type === 'document' && msgObj.document) {
-                messageText = msgObj.document.caption || `[Document: ${msgObj.document.filename || 'File'}]`;
-                attachments.push({
-                  id: `ATT-${Date.now()}`,
-                  fileName: msgObj.document.filename || `document_${msgObj.document.id}.pdf`,
-                  fileType: 'DOCUMENT',
-                  mimeType: msgObj.document.mime_type || 'application/pdf',
-                  url: `https://whatsapp-media-cdn.mock/${msgObj.document.id}`,
-                  whatsappMediaId: msgObj.document.id,
-                });
-              } else {
-                messageText = `[Media/Interactive Message: ${msgObj.type}]`;
-              }
-
-              // Ingest Inbound Message through Lead Engine
-              const ingestion = LeadEngineService.processInboundMessage({
-                channel: 'WHATSAPP',
-                senderPhone,
-                senderName: profileName,
-                messageText,
-                attachments,
-                whatsappMessageId: msgObj.id,
-                rawPayload: msgObj as unknown as Record<string, unknown>,
-              });
-
-              processedMessages.push(ingestion);
-            }
-          }
+        if (senderPhone && messageText) {
+          const profileName = pAny.name || pAny.sender_name || pAny.contact_name || pAny.profile_name || 'WhatsApp Contact';
+          const ingestion = LeadEngineService.processInboundMessage({
+            channel: 'WHATSAPP',
+            senderPhone: String(senderPhone),
+            senderName: String(profileName),
+            messageText: String(messageText),
+            whatsappMessageId: msgId ? String(msgId) : undefined,
+            rawPayload: pAny,
+          });
+          processedMessages.push(ingestion);
         }
       }
     } catch (err) {

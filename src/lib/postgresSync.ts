@@ -102,7 +102,15 @@ export const SYNC_KEYS = [
   `${STORAGE_PREFIX}v2_dsc_clients`,
   `${STORAGE_PREFIX}v2_other_services`,
   `${STORAGE_PREFIX}v2_trademarks`,
-  `${STORAGE_PREFIX}v2_tasks`
+  `${STORAGE_PREFIX}v2_tasks`,
+  `${STORAGE_PREFIX}v2_customers`,
+  `${STORAGE_PREFIX}v2_leads`,
+  `${STORAGE_PREFIX}v2_conversations`,
+  `${STORAGE_PREFIX}v2_messages`,
+  `${STORAGE_PREFIX}v2_opportunities`,
+  `${STORAGE_PREFIX}v2_executives`,
+  `${STORAGE_PREFIX}v2_timeline`,
+  `${STORAGE_PREFIX}v2_webhook_logs`
 ];
 
 // Status tracker for live connection

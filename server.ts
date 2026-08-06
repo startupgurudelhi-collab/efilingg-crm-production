@@ -15,6 +15,7 @@ import AdmZip from 'adm-zip';
 import { serverFeatureFlagManager } from './src/server/featureFlags';
 import { eventBus, deadLetterQueue, eventRegistry } from './src/lib/eventBus';
 import { block1Router } from './src/lib/block1/router';
+import { WhatsAppService } from './src/lib/block1/WhatsAppService';
 import { block2Router } from './src/lib/block2/router';
 import { block3Router } from './src/lib/block3/router';
 
@@ -862,6 +863,14 @@ app.post('/api/v2/whatsapp/webhook', async (req, res) => {
     }
   } catch (dbErr: any) {
     console.error('[WhatsApp Webhook V2] Error saving payload to PostgreSQL database:', dbErr);
+  }
+
+  // 5. Production-Ready CRM Synchronization (Customer, Lead, WhatsApp Conversation, Message Ingestion)
+  try {
+    const syncResult = WhatsAppService.processWebhook(payload);
+    console.log(`[WhatsApp Webhook V2 CRM Sync] Synchronized ${syncResult.processedMessages.length} messages and updated ${syncResult.updatedStatusesCount} delivery statuses.`);
+  } catch (crmErr: any) {
+    console.error('[WhatsApp Webhook V2 CRM Sync] Error during CRM sync:', crmErr);
   }
 });
 

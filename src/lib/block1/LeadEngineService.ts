@@ -62,7 +62,7 @@ export class LeadEngineService {
     const normPhone = CustomerIdentityService.normalizePhone(options.senderPhone);
     const now = new Date().toISOString();
 
-    // 1. Perform Customer Identity Resolution
+    // 1. Search Customer using Mobile Number (Create automatically if doesn't exist)
     const lookup = CustomerIdentityService.findCustomer({
       phone: normPhone,
       email: options.senderEmail,
@@ -71,72 +71,70 @@ export class LeadEngineService {
       companyName: options.companyName,
     });
 
-    let customer: CustomerV2 | undefined = undefined;
-    let lead: LeadV2 | undefined = undefined;
-    let opportunity: OpportunityV2 | undefined = undefined;
-
+    let customer: CustomerV2;
     if (lookup.matchFound && lookup.customer) {
-      // ==========================================
-      // EXISTING CUSTOMER FLOW
-      // ==========================================
       customer = lookup.customer;
-
+      if (options.senderName && (customer.name.startsWith('WhatsApp Contact') || customer.name.startsWith('Lead (') || customer.name === normPhone)) {
+        customer.name = options.senderName;
+        saveCustomer(customer);
+      }
       eventBus.publishAsync('CustomerMatched', 'CUSTOMER', {
         leadId: '',
         customerId: customer.id,
         matchType: lookup.matchType || 'PHONE',
         confidenceScore: lookup.confidenceScore || 1.0,
       });
-
-      // Optionally create an Opportunity if requested or service identified
-      if (options.createOpportunityIfCustomerExists || options.serviceRequested) {
-        const oppId = `OPP-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-        opportunity = {
-          id: oppId,
-          title: `${options.serviceRequested || 'General Inquiry'} - ${customer.name}`,
-          customerId: customer.id,
-          serviceCategory: options.serviceRequested || 'General',
-          estimatedValue: 5000,
-          stage: 'DISCOVERY',
-          assignedExecutiveId: customer.assignedExecutiveId,
-          assignedExecutiveName: customer.assignedExecutiveName,
-          createdAt: now,
-          updatedAt: now,
-        };
-        saveOpportunity(opportunity);
-      }
     } else {
-      // ==========================================
-      // NEW CUSTOMER -> CREATE LEAD FLOW
-      // ==========================================
-      const leadId = `LEAD-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-
-      // Assign Executive for the new Lead
-      const assignment = ExecutiveAssignmentService.assignExecutive({
-        strategy: 'ROUND_ROBIN',
-        serviceCategory: options.serviceRequested,
-      });
-
-      lead = {
-        id: leadId,
-        name: options.senderName || `Lead (${normPhone})`,
+      // Create Customer automatically if it doesn't exist
+      customer = CustomerIdentityService.createCustomer({
+        name: options.senderName || `WhatsApp Contact (${normPhone})`,
         phone: normPhone,
         email: options.senderEmail,
         pan: options.senderPan,
         gstin: options.senderGstin,
         companyName: options.companyName,
+        tags: ['WHATSAPP_CLIENT'],
+        assignedExecutiveId: 'EMP-ADMIN',
+        assignedExecutiveName: 'Master Admin',
+      });
+    }
+
+    // 2. Search Open Lead (Create automatically if no open lead exists)
+    const allLeads = getLeads();
+    let openLead = allLeads.find(
+      (l) =>
+        (CustomerIdentityService.isPhoneMatch(l.phone, normPhone) || (customer && l.convertedCustomerId === customer.id)) &&
+        l.status !== 'DISQUALIFIED'
+    );
+
+    let lead: LeadV2 = openLead!;
+    let opportunity: OpportunityV2 | undefined = undefined;
+
+    if (!openLead) {
+      const assignment = ExecutiveAssignmentService.assignExecutive({
+        strategy: 'ROUND_ROBIN',
+        serviceCategory: options.serviceRequested,
+      });
+      const leadId = `LEAD-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+      lead = {
+        id: leadId,
+        name: customer.name,
+        phone: normPhone,
+        email: options.senderEmail || customer.email,
+        pan: options.senderPan || customer.pan,
+        gstin: options.senderGstin || customer.gstin,
+        companyName: options.companyName || customer.companyName,
         source: `${options.channel}_INBOUND`,
-        serviceRequested: options.serviceRequested || 'General Compliance Inquiry',
+        serviceRequested: options.serviceRequested || 'General Inquiry',
         status: 'NEW',
-        assignedExecutiveId: assignment.executiveId,
-        assignedExecutiveName: assignment.executiveName,
+        assignedExecutiveId: customer.assignedExecutiveId || assignment.executiveId,
+        assignedExecutiveName: customer.assignedExecutiveName || assignment.executiveName,
+        convertedCustomerId: customer.id,
         createdAt: now,
         updatedAt: now,
       };
-
       saveLead(lead);
 
-      // Publish LeadCreated Event
       eventBus.publishAsync('LeadCreated', 'LEAD', {
         leadId: lead.id,
         name: lead.name,
@@ -148,16 +146,34 @@ export class LeadEngineService {
       });
     }
 
-    // 2. Open or Retrieve Conversation
+    // Optionally create Opportunity if requested
+    if (options.createOpportunityIfCustomerExists || options.serviceRequested) {
+      const oppId = `OPP-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+      opportunity = {
+        id: oppId,
+        title: `${options.serviceRequested || 'WhatsApp Inquiry'} - ${customer.name}`,
+        customerId: customer.id,
+        leadId: lead?.id,
+        serviceCategory: options.serviceRequested || 'General',
+        estimatedValue: 5000,
+        stage: 'DISCOVERY',
+        assignedExecutiveId: customer.assignedExecutiveId,
+        assignedExecutiveName: customer.assignedExecutiveName,
+        createdAt: now,
+        updatedAt: now,
+      };
+      saveOpportunity(opportunity);
+    }
+
+    // 3. Open or Retrieve WhatsApp Conversation
     let conversation = getConversationByContact(normPhone);
 
     if (!conversation) {
       const convId = `CONV-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
-      // Executive assignment for conversation
       const executiveAssignment = ExecutiveAssignmentService.assignExecutive({
         strategy: 'ROUND_ROBIN',
-        existingExecutiveId: customer?.assignedExecutiveId || lead?.assignedExecutiveId,
+        existingExecutiveId: customer.assignedExecutiveId || lead?.assignedExecutiveId,
         serviceCategory: options.serviceRequested,
       });
 
@@ -165,14 +181,14 @@ export class LeadEngineService {
         id: convId,
         channel: options.channel,
         contactNumber: normPhone,
-        customerId: customer?.id,
+        customerId: customer.id,
         leadId: lead?.id,
-        customerName: customer?.name || lead?.name || options.senderName || normPhone,
+        customerName: customer.name,
         state: 'OPEN',
         assignedExecutiveId: executiveAssignment.executiveId,
         assignedExecutiveName: executiveAssignment.executiveName,
         assignedType: executiveAssignment.assignmentStrategy === 'MANUAL' ? 'HUMAN_EXECUTIVE' : 'ROUND_ROBIN',
-        serviceCategory: options.serviceRequested || 'General',
+        serviceCategory: options.serviceRequested || 'General Inquiry',
         unreadCount: 1,
         createdAt: now,
         updatedAt: now,
@@ -180,7 +196,6 @@ export class LeadEngineService {
 
       saveConversation(conversation);
 
-      // Publish ConversationCreated Event
       eventBus.publishAsync('ConversationCreated', 'CONVERSATION', {
         conversationId: conversation.id,
         channel: conversation.channel,
@@ -191,24 +206,39 @@ export class LeadEngineService {
       addTimelineEntry(
         conversation.id,
         'CONVERSATION_CREATED',
-        `Conversation created via ${options.channel} from ${conversation.customerName}`,
-        'SystemIngestion'
+        `WhatsApp conversation opened with ${conversation.customerName}`,
+        'WhatsAppWebhook'
       );
     } else {
-      // Re-open conversation if closed
+      let updated = false;
+      if (!conversation.customerId && customer) {
+        conversation.customerId = customer.id;
+        updated = true;
+      }
+      if (!conversation.leadId && lead) {
+        conversation.leadId = lead.id;
+        updated = true;
+      }
+      if (conversation.customerName !== customer.name && customer.name) {
+        conversation.customerName = customer.name;
+        updated = true;
+      }
       if (conversation.state === 'CLOSED') {
         conversation.state = 'OPEN';
+        updated = true;
+      }
+      if (updated) {
         saveConversation(conversation);
       }
     }
 
-    // 3. Save Inbound Message
+    // 4. Save Every Incoming Message
     const msgId = `MSG-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     const message: MessageV2 = {
       id: msgId,
       conversationId: conversation.id,
       direction: 'INBOUND',
-      senderId: customer?.id || lead?.id || normPhone,
+      senderId: customer.id,
       senderName: conversation.customerName,
       messageType: options.attachments && options.attachments.length > 0 ? 'IMAGE' : 'TEXT',
       content: options.messageText,
@@ -221,7 +251,7 @@ export class LeadEngineService {
 
     saveMessage(message);
 
-    // 4. Record Timeline Activity
+    // 5. Record Timeline Activity & Broadcast Events for Real-Time UI
     addTimelineEntry(
       conversation.id,
       'MESSAGE_RECEIVED',
@@ -230,15 +260,22 @@ export class LeadEngineService {
     );
 
     eventBus.publishAsync('TimelineUpdated', 'TIMELINE', {
-      entityType: customer ? 'CUSTOMER' : 'LEAD',
-      entityId: customer?.id || lead?.id || conversation.id,
+      entityType: 'CUSTOMER',
+      entityId: customer.id,
       activityType: 'INBOUND_MESSAGE',
       summary: `Received message on ${options.channel}: ${options.messageText}`,
       actor: conversation.customerName,
     });
 
+    eventBus.publishAsync('NewMessage', 'CONVERSATION', {
+      conversationId: conversation.id,
+      messageId: message.id,
+      direction: message.direction,
+      content: message.content,
+    });
+
     return {
-      customerFound: !!customer,
+      customerFound: true,
       customer,
       lead,
       conversation,

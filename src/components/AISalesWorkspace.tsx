@@ -93,8 +93,13 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
 
   // Scroll ref for chat messages
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const activeConvIdRef = useRef<string | null>(null);
 
-  // Initial Load & Event Bus Subscriptions
+  useEffect(() => {
+    activeConvIdRef.current = activeConvId;
+  }, [activeConvId]);
+
+  // Initial Load & Event Bus Subscriptions & Real-time Polling
   useEffect(() => {
     fetchConversations();
 
@@ -117,6 +122,23 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
         message: `New WhatsApp message from ${payload?.contactNumber || 'Customer'}`,
       });
       fetchConversations();
+      if (activeConvIdRef.current) {
+        fetchActiveConversationDetails(activeConvIdRef.current);
+      }
+    });
+
+    const subMsg = eventBus.subscribe('NewMessage', () => {
+      fetchConversations();
+      if (activeConvIdRef.current) {
+        fetchActiveConversationDetails(activeConvIdRef.current);
+      }
+    });
+
+    const subTimeline = eventBus.subscribe('TimelineUpdated', () => {
+      fetchConversations();
+      if (activeConvIdRef.current) {
+        fetchActiveConversationDetails(activeConvIdRef.current);
+      }
     });
 
     const subAssign = eventBus.subscribe('ConversationAssigned', (data) => {
@@ -131,10 +153,21 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
       fetchConversations();
     });
 
+    // Background interval to refresh conversations & active conversation real-time without manual refresh
+    const pollInterval = setInterval(() => {
+      fetchConversations();
+      if (activeConvIdRef.current) {
+        fetchActiveConversationDetails(activeConvIdRef.current);
+      }
+    }, 3000);
+
     return () => {
       subLead.unsubscribe();
       subConv.unsubscribe();
+      subMsg.unsubscribe();
+      subTimeline.unsubscribe();
       subAssign.unsubscribe();
+      clearInterval(pollInterval);
     };
   }, []);
 

@@ -169,13 +169,20 @@ const SEED_EMPLOYEES: Employee[] = [
   }
 ];
 
-// Shared Client-side In-memory cache for operational databases (never persisted in LocalStorage)
+// Shared In-memory cache for operational databases
 export const crmMemoryStore: Record<string, string> = {};
+
+type ServerPersistHandler = (key: string, val: string) => Promise<void>;
+let serverPersistHandler: ServerPersistHandler | null = null;
+
+export function registerServerPersistHandler(handler: ServerPersistHandler): void {
+  serverPersistHandler = handler;
+}
 
 // Helper to get raw storage (with memory fallback)
 export const getStorageString = (key: string): string | null => {
   try {
-    if (key.includes('_theme') || key.includes('_is_fresh_load') || key === 'efilingg_crm_session' || key.includes('good_practice_shown_')) {
+    if (typeof window !== 'undefined' && (key.includes('_theme') || key.includes('_is_fresh_load') || key === 'efilingg_crm_session' || key.includes('good_practice_shown_'))) {
       return localStorage.getItem(key);
     }
     return crmMemoryStore[key] || null;
@@ -186,14 +193,23 @@ export const getStorageString = (key: string): string | null => {
 
 export const setStorageString = (key: string, val: string) => {
   try {
-    if (key.includes('_theme') || key.includes('_is_fresh_load') || key === 'efilingg_crm_session' || key.includes('good_practice_shown_')) {
+    if (typeof window !== 'undefined' && (key.includes('_theme') || key.includes('_is_fresh_load') || key === 'efilingg_crm_session' || key.includes('good_practice_shown_'))) {
       localStorage.setItem(key, val);
       return;
     }
     crmMemoryStore[key] = val;
-    pushToPostgres(key, val).catch((err) => {
-      console.warn(`PostgreSQL database push failed for key ${key}:`, err);
-    });
+
+    if (serverPersistHandler) {
+      serverPersistHandler(key, val).catch((err) => {
+        console.error(`[SQL Insert Error] Server persistence failed for key "${key}":`, err);
+      });
+    }
+
+    if (typeof window !== 'undefined') {
+      pushToPostgres(key, val).catch((err) => {
+        console.warn(`PostgreSQL database push failed for key ${key}:`, err);
+      });
+    }
   } catch (e) {
     console.error('In-memory cache update failed', e);
   }

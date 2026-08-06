@@ -16,6 +16,7 @@ import { serverFeatureFlagManager } from './src/server/featureFlags';
 import { eventBus, deadLetterQueue, eventRegistry } from './src/lib/eventBus';
 import { block1Router } from './src/lib/block1/router';
 import { WhatsAppService } from './src/lib/block1/WhatsAppService';
+import { registerServerPersistHandler, crmMemoryStore } from './src/lib/db';
 import { block2Router } from './src/lib/block2/router';
 import { block3Router } from './src/lib/block3/router';
 
@@ -232,9 +233,81 @@ async function initializeDatabaseSchema() {
 // Initial async verification trigger
 verifyDatabaseWithRetry().then(() => {
   startDailyBackupScheduler();
+  initCrmStoreInMemory();
 }).catch((err) => {
   console.error('[PostgreSQL] Startup verification crash:', err);
+  initCrmStoreInMemory();
 });
+
+// Register direct server persistence handler for CRM data keys
+registerServerPersistHandler(async (key: string, val: string) => {
+  savePreviewStore(key, val);
+  const p = getPostgresPool();
+  if (p) {
+    try {
+      await p.query(
+        `INSERT INTO crm_store (key, value, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+        [key, val]
+      );
+      console.log(`[SQL Sync] Persisted key "${key}" into crm_store table successfully.`);
+    } catch (sqlErr: any) {
+      console.error(`[SQL Error] Direct server database persistence failed for key "${key}":`, sqlErr.message || sqlErr);
+    }
+  }
+});
+
+function syncAllStoredWebhookLogs(): void {
+  try {
+    let rawLogs = previewStore['efilingg_crm_whatsapp_webhook_logs'];
+    if (rawLogs) {
+      const logs = JSON.parse(rawLogs);
+      if (Array.isArray(logs) && logs.length > 0) {
+        console.log(`[Webhook Diagnostic Re-Sync] Processing ${logs.length} stored WhatsApp webhook logs for CRM sync...`);
+        // Process in chronological order (oldest to newest)
+        const sortedLogs = [...logs].reverse();
+        for (const logItem of sortedLogs) {
+          if (logItem.payload) {
+            console.log(`\n===================================================================`);
+            console.log(`[Webhook Re-Sync Executing] Webhook ID: ${logItem.id} | Sender: ${logItem.sender_number}`);
+            WhatsAppService.processWebhook(logItem.payload);
+            console.log(`===================================================================\n`);
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error('[Webhook Re-Sync Error]', err);
+  }
+}
+
+function initCrmStoreInMemory(): void {
+  // 1. Populate crmMemoryStore from local preview store
+  for (const [k, v] of Object.entries(previewStore)) {
+    if (k.startsWith('efilingg_crm_')) {
+      crmMemoryStore[k] = v;
+    }
+  }
+
+  // 2. Query PostgreSQL crm_store and populate memory + re-sync logs
+  const p = getPostgresPool();
+  if (p) {
+    p.query('SELECT key, value FROM crm_store').then((res) => {
+      for (const row of res.rows) {
+        crmMemoryStore[row.key] = row.value;
+        previewStore[row.key] = row.value;
+      }
+      console.log(`[CRM Memory Sync] Loaded ${res.rows.length} keys from PostgreSQL crm_store into server memory.`);
+      syncAllStoredWebhookLogs();
+    }).catch((err) => {
+      console.warn('[CRM Memory Sync] Warning reading crm_store on startup:', err.message);
+      syncAllStoredWebhookLogs();
+    });
+  } else {
+    syncAllStoredWebhookLogs();
+  }
+}
 
 // --- ENTERPRISE ZERO DATA LOSS PROTECTION SETTINGS ---
 const SNAPSHOTS_DIR = path.join(process.cwd(), 'snapshots');

@@ -18,6 +18,9 @@ import {
 import { CustomerIdentityService } from './CustomerIdentityService';
 import { ExecutiveAssignmentService } from './ExecutiveAssignmentService';
 import {
+  getCustomers,
+  saveCustomer,
+  getLeads,
   getLeadById,
   saveLead,
   getConversationByContact,
@@ -62,7 +65,7 @@ export class LeadEngineService {
     const normPhone = CustomerIdentityService.normalizePhone(options.senderPhone);
     const now = new Date().toISOString();
 
-    // 1. Search Customer using Mobile Number (Create automatically if doesn't exist)
+    // 1. Customer Lookup
     const lookup = CustomerIdentityService.findCustomer({
       phone: normPhone,
       email: options.senderEmail,
@@ -70,6 +73,8 @@ export class LeadEngineService {
       gstin: options.senderGstin,
       companyName: options.companyName,
     });
+
+    console.log(`[Diagnostic 1/9] Customer Lookup | Phone: "${normPhone}" | Match Found: ${lookup.matchFound ? `YES (${lookup.customer?.id} - ${lookup.customer?.name})` : 'NO'}`);
 
     let customer: CustomerV2;
     if (lookup.matchFound && lookup.customer) {
@@ -84,8 +89,9 @@ export class LeadEngineService {
         matchType: lookup.matchType || 'PHONE',
         confidenceScore: lookup.confidenceScore || 1.0,
       });
+      console.log(`[Diagnostic 2/9] Customer Updated/Matched | ID: ${customer.id} | Name: "${customer.name}" | Phone: "${customer.phone}"`);
     } else {
-      // Create Customer automatically if it doesn't exist
+      // 2. Customer Creation
       customer = CustomerIdentityService.createCustomer({
         name: options.senderName || `WhatsApp Contact (${normPhone})`,
         phone: normPhone,
@@ -97,9 +103,10 @@ export class LeadEngineService {
         assignedExecutiveId: 'EMP-ADMIN',
         assignedExecutiveName: 'Master Admin',
       });
+      console.log(`[Diagnostic 2/9] Customer Created Automatically | ID: ${customer.id} | Name: "${customer.name}" | Phone: "${customer.phone}"`);
     }
 
-    // 2. Search Open Lead (Create automatically if no open lead exists)
+    // 3. Lead Lookup
     const allLeads = getLeads();
     let openLead = allLeads.find(
       (l) =>
@@ -107,10 +114,13 @@ export class LeadEngineService {
         l.status !== 'DISQUALIFIED'
     );
 
+    console.log(`[Diagnostic 3/9] Lead Lookup | Customer ID: ${customer.id} | Open Lead Found: ${openLead ? `YES (${openLead.id} - ${openLead.status})` : 'NO'}`);
+
     let lead: LeadV2 = openLead!;
     let opportunity: OpportunityV2 | undefined = undefined;
 
     if (!openLead) {
+      // 4. Lead Creation
       const assignment = ExecutiveAssignmentService.assignExecutive({
         strategy: 'ROUND_ROBIN',
         serviceCategory: options.serviceRequested,
@@ -144,6 +154,9 @@ export class LeadEngineService {
         assignedTo: lead.assignedExecutiveId,
         serviceRequested: lead.serviceRequested,
       });
+      console.log(`[Diagnostic 4/9] Lead Created Automatically | ID: ${lead.id} | Name: "${lead.name}" | Assigned Executive: "${lead.assignedExecutiveName}"`);
+    } else {
+      console.log(`[Diagnostic 4/9] Existing Lead Retained | ID: ${lead.id} | Status: "${lead.status}"`);
     }
 
     // Optionally create Opportunity if requested
@@ -165,10 +178,12 @@ export class LeadEngineService {
       saveOpportunity(opportunity);
     }
 
-    // 3. Open or Retrieve WhatsApp Conversation
+    // 5. Conversation Lookup
     let conversation = getConversationByContact(normPhone);
+    console.log(`[Diagnostic 5/9] Conversation Lookup | Contact Phone: "${normPhone}" | Found: ${conversation ? `YES (${conversation.id} - ${conversation.state})` : 'NO'}`);
 
     if (!conversation) {
+      // 6. Conversation Creation
       const convId = `CONV-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
       const executiveAssignment = ExecutiveAssignmentService.assignExecutive({
@@ -209,6 +224,7 @@ export class LeadEngineService {
         `WhatsApp conversation opened with ${conversation.customerName}`,
         'WhatsAppWebhook'
       );
+      console.log(`[Diagnostic 6/9] Conversation Created | ID: ${conversation.id} | Contact: "${conversation.contactNumber}" | Customer: "${conversation.customerName}"`);
     } else {
       let updated = false;
       if (!conversation.customerId && customer) {
@@ -230,9 +246,10 @@ export class LeadEngineService {
       if (updated) {
         saveConversation(conversation);
       }
+      console.log(`[Diagnostic 6/9] Conversation Retained/Updated | ID: ${conversation.id} | State: "${conversation.state}"`);
     }
 
-    // 4. Save Every Incoming Message
+    // 7. Save Message Insertion
     const msgId = `MSG-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     const message: MessageV2 = {
       id: msgId,
@@ -250,14 +267,28 @@ export class LeadEngineService {
     };
 
     saveMessage(message);
+    console.log(`[Diagnostic 7/9] Message Inserted | ID: ${message.id} | ConvID: ${conversation.id} | Direction: INBOUND | Content: "${message.content}"`);
 
-    // 5. Record Timeline Activity & Broadcast Events for Real-Time UI
+    // 8. EventBus Emit
     addTimelineEntry(
       conversation.id,
       'MESSAGE_RECEIVED',
       `Inbound message: "${options.messageText.substring(0, 50)}${options.messageText.length > 50 ? '...' : ''}"`,
       conversation.customerName
     );
+
+    eventBus.publishAsync('NewMessage', 'MESSAGE', {
+      conversationId: conversation.id,
+      messageId: message.id,
+      senderName: message.senderName,
+      content: message.content,
+    });
+
+    eventBus.publishAsync('TimelineUpdated', 'CONVERSATION', {
+      conversationId: conversation.id,
+    });
+
+    console.log(`[Diagnostic 8/9] EventBus Emitted | Events: [CustomerMatched, LeadCreated/Updated, ConversationCreated/Updated, NewMessage, TimelineUpdated] for Conv ${conversation.id}`);
 
     eventBus.publishAsync('TimelineUpdated', 'TIMELINE', {
       entityType: 'CUSTOMER',

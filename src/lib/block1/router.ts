@@ -242,6 +242,8 @@ block1Router.get('/v2/conversations', (req: Request, res: Response) => {
     conversations = conversations.filter((c) => c.assignedExecutiveId === executiveId);
   }
 
+  console.log(`[Diagnostic 9/9] AI Sales Inbox Query | GET /api/v2/conversations | State: ${state || 'ALL'} | Executive: ${executiveId || 'ALL'} | Total Count: ${conversations.length} | Conversations: ${JSON.stringify(conversations.map((c) => ({ id: c.id, customerName: c.customerName, contactNumber: c.contactNumber, lastMessageText: c.lastMessageText })))}`);
+
   return res.status(200).json({
     success: true,
     count: conversations.length,

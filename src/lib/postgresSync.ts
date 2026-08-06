@@ -110,7 +110,17 @@ export const SYNC_KEYS = [
   `${STORAGE_PREFIX}v2_opportunities`,
   `${STORAGE_PREFIX}v2_executives`,
   `${STORAGE_PREFIX}v2_timeline`,
-  `${STORAGE_PREFIX}v2_webhook_logs`
+  `${STORAGE_PREFIX}v2_webhook_logs`,
+  // Block 1 Specific Storage Keys
+  `${STORAGE_PREFIX}block1_customers`,
+  `${STORAGE_PREFIX}block1_leads`,
+  `${STORAGE_PREFIX}block1_conversations`,
+  `${STORAGE_PREFIX}block1_messages`,
+  `${STORAGE_PREFIX}block1_opportunities`,
+  `${STORAGE_PREFIX}block1_executives`,
+  `${STORAGE_PREFIX}block1_timeline`,
+  `${STORAGE_PREFIX}block1_webhook_logs`,
+  `${STORAGE_PREFIX}block1_rr_index`
 ];
 
 // Status tracker for live connection

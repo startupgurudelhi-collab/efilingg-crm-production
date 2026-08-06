@@ -130,28 +130,34 @@ export class WhatsAppService {
                 let messageText = '';
                 const attachments: AttachmentV2[] = [];
 
-                // Extract text & media content
-                if (msgObj.type === 'text' && msgObj.text?.body) {
+                // Extract text & media content robustly
+                if (msgObj.text?.body) {
                   messageText = msgObj.text.body;
-                } else if (msgObj.type === 'image' && msgObj.image) {
-                  messageText = msgObj.image.caption || '[Image Received]';
+                } else if (typeof msgObj.text === 'string') {
+                  messageText = msgObj.text;
+                } else if (msgObj.body) {
+                  messageText = msgObj.body;
+                } else if (msgObj.type === 'image' || msgObj.image) {
+                  const img = msgObj.image || {};
+                  messageText = img.caption || '[Image Received]';
                   attachments.push({
                     id: `ATT-${Date.now()}`,
-                    fileName: `whatsapp_image_${msgObj.image.id}.jpg`,
+                    fileName: `whatsapp_image_${img.id || Date.now()}.jpg`,
                     fileType: 'IMAGE',
-                    mimeType: msgObj.image.mime_type || 'image/jpeg',
-                    url: `https://whatsapp-media-cdn.mock/${msgObj.image.id}`,
-                    whatsappMediaId: msgObj.image.id,
+                    mimeType: img.mime_type || 'image/jpeg',
+                    url: img.id ? `https://whatsapp-media-cdn.mock/${img.id}` : '',
+                    whatsappMediaId: img.id,
                   });
-                } else if (msgObj.document) {
-                  messageText = msgObj.document.caption || `[Document: ${msgObj.document.filename || 'File'}]`;
+                } else if (msgObj.type === 'document' || msgObj.document) {
+                  const doc = msgObj.document || {};
+                  messageText = doc.caption || `[Document: ${doc.filename || 'File'}]`;
                   attachments.push({
                     id: `ATT-${Date.now()}`,
-                    fileName: msgObj.document.filename || `document_${msgObj.document.id}.pdf`,
+                    fileName: doc.filename || `document_${doc.id || Date.now()}.pdf`,
                     fileType: 'DOCUMENT',
-                    mimeType: msgObj.document.mime_type || 'application/pdf',
-                    url: `https://whatsapp-media-cdn.mock/${msgObj.document.id}`,
-                    whatsappMediaId: msgObj.document.id,
+                    mimeType: doc.mime_type || 'application/pdf',
+                    url: doc.id ? `https://whatsapp-media-cdn.mock/${doc.id}` : '',
+                    whatsappMediaId: doc.id,
                   });
                 } else {
                   messageText = `[Media/Interactive Message: ${msgObj.type || 'unknown'}]`;

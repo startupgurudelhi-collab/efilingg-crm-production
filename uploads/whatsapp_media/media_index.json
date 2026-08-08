@@ -34,5 +34,25 @@
     "download_url": "https://graph.facebook.com/v25.0/MEDIA_IMG_TEST_998877/download_url",
     "http_status": 401,
     "downloaded_at": "2026-08-08T16:51:13.904Z"
+  },
+  "1432674155586287": {
+    "media_id": "1432674155586287",
+    "mime_type": "application/octet-stream",
+    "filename": "whatsapp_media_1432674155586287.bin",
+    "size": 0,
+    "public_url": "",
+    "thumbnail_url": "",
+    "storage_path": "",
+    "download_url": "",
+    "http_status": 0,
+    "downloaded_at": "2026-08-08T20:01:42.128Z",
+    "first_32_hex": "",
+    "magic_header_valid": false,
+    "magic_header_type": "NONE",
+    "fallback_triggered": false,
+    "fallback_reason": "Stage 1 Failure: WHATSAPP_ACCESS_TOKEN is missing or contains sandbox/demo token (EAAP****************2026). Live Meta Cloud API access requires a valid access token.",
+    "failure_stage": "STAGE_1_TOKEN_INVALID",
+    "meta_metadata_response": null,
+    "media_status": "download_failed"
   }
 }

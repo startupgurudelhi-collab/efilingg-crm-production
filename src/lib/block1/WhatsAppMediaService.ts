@@ -18,6 +18,11 @@ export interface WhatsAppMediaRecord {
   first_32_hex?: string;
   magic_header_valid?: boolean;
   magic_header_type?: string;
+  fallback_triggered?: boolean;
+  fallback_reason?: string;
+  failure_stage?: string;
+  meta_metadata_response?: any;
+  media_status?: 'downloaded' | 'download_failed';
 }
 
 export interface MagicHeaderInfo {
@@ -135,8 +140,15 @@ export class WhatsAppMediaService {
       console.log(`\n-------------------------------------------------------------------`);
       console.log(`[WhatsApp Media Cache HIT] Skipping duplicate Meta API request.`);
       console.log(`[MEDIA_ID]: ${cached.media_id}`);
-      console.log(`[MEDIA_FILE_SIZE]: ${cached.size}`);
-      console.log(`[SAVED_FILE_PATH]: ${cached.storage_path}`);
+      console.log(`[MEDIA_TYPE]: ${cached.mime_type}`);
+      console.log(`[MEDIA_METADATA_RESPONSE]: ${JSON.stringify(cached.meta_metadata_response || { cached: true })}`);
+      console.log(`[MEDIA_URL]: ${cached.download_url || 'N/A'}`);
+      console.log(`[MEDIA_DOWNLOAD_HTTP_STATUS]: ${cached.http_status || 200}`);
+      console.log(`[MEDIA_DOWNLOAD_CONTENT_TYPE]: ${cached.mime_type}`);
+      console.log(`[MEDIA_DOWNLOAD_SIZE]: ${cached.size}`);
+      console.log(`[FALLBACK_TRIGGERED]: ${cached.fallback_triggered || false}`);
+      console.log(`[FALLBACK_REASON]: ${cached.fallback_reason || 'NONE'}`);
+      console.log(`[SAVED_FILE_SIZE]: ${cached.size}`);
       console.log(`-------------------------------------------------------------------\n`);
       return cached;
     }
@@ -151,17 +163,25 @@ export class WhatsAppMediaService {
     let downloadedSize = 0;
     let detectedMimeType = options.mimeType || 'application/octet-stream';
     let fileBuffer: Buffer | null = null;
+    let downloadContentType = detectedMimeType;
+    let failureStage = 'NONE';
+    let fallbackReason = 'NONE';
 
     console.log(`\n===================================================================`);
     console.log(`[WhatsApp Media Download INITIATED]`);
     console.log(`[MEDIA_ID]: ${mediaId}`);
     console.log(`[MASKED_TOKEN]: ${maskToken(token)}`);
 
-    // Call Meta WhatsApp Cloud API: GET /{MEDIA_ID}
-    if (token && token.trim() !== '') {
+    // Stage 1: Token Verification
+    if (!token || token.trim() === '' || token.includes('SANDBOX') || token.includes('DEMO')) {
+      failureStage = 'STAGE_1_TOKEN_INVALID';
+      fallbackReason = `Stage 1 Failure: WHATSAPP_ACCESS_TOKEN is missing or contains sandbox/demo token (${maskToken(token)}). Live Meta Cloud API access requires a valid access token.`;
+      console.warn(`[WhatsApp Media Forensic Audit] ${fallbackReason}`);
+    } else {
+      // Stage 2: Meta Graph API Request -> GET https://graph.facebook.com/v25.0/{mediaId}
       try {
         const metaApiUrl = `https://graph.facebook.com/${version}/${mediaId}`;
-        console.log(`Step 1: Calling Meta Graph API -> GET ${metaApiUrl}`);
+        console.log(`Stage 2: Calling Meta Graph API -> GET ${metaApiUrl}`);
 
         const metaRes = await fetch(metaApiUrl, {
           method: 'GET',
@@ -174,19 +194,26 @@ export class WhatsAppMediaService {
         httpStatus = metaRes.status;
         if (!metaRes.ok) {
           const errText = await metaRes.text();
-          console.error(`[WhatsApp Media Error] Meta Graph API returned HTTP ${metaRes.status}: ${errText}`);
-          metaJsonResponse = { error: errText, status: metaRes.status };
+          try {
+            metaJsonResponse = JSON.parse(errText);
+          } catch (pErr) {
+            metaJsonResponse = { raw_error: errText, http_status: metaRes.status };
+          }
+          failureStage = 'STAGE_2_META_GRAPH_API_ERROR';
+          fallbackReason = `Stage 2 Failure: Meta Graph API returned HTTP ${metaRes.status}. Error: ${JSON.stringify(metaJsonResponse)}`;
+          console.error(`[WhatsApp Media Forensic Audit] ${fallbackReason}`);
         } else {
           metaJsonResponse = await metaRes.json();
           downloadUrl = metaJsonResponse.url || '';
           if (metaJsonResponse.mime_type) detectedMimeType = metaJsonResponse.mime_type;
 
-          console.log(`[MEDIA_METADATA_RESPONSE]: ${JSON.stringify(metaJsonResponse)}`);
-          console.log(`[MEDIA_URL]: ${downloadUrl}`);
-
-          // Download binary with Authorization Bearer header
-          if (downloadUrl) {
-            console.log(`Step 2: Downloading binary payload from Meta CDN with Bearer token...`);
+          if (!downloadUrl) {
+            failureStage = 'STAGE_2_MISSING_MEDIA_URL';
+            fallbackReason = 'Stage 2 Failure: Meta Graph API returned HTTP 200 OK but the response did not contain a valid media download URL.';
+            console.error(`[WhatsApp Media Forensic Audit] ${fallbackReason}`);
+          } else {
+            // Stage 3: Meta CDN Binary Payload Request -> GET {downloadUrl} with Authorization Bearer
+            console.log(`Stage 3: Downloading binary image payload from Meta CDN -> ${downloadUrl}`);
             const binaryRes = await fetch(downloadUrl, {
               method: 'GET',
               headers: {
@@ -196,56 +223,39 @@ export class WhatsAppMediaService {
             });
 
             httpStatus = binaryRes.status;
-            if (binaryRes.ok) {
+            downloadContentType = binaryRes.headers.get('content-type') || detectedMimeType;
+
+            if (!binaryRes.ok) {
+              const cdnErrText = await binaryRes.text();
+              failureStage = 'STAGE_3_META_CDN_DOWNLOAD_ERROR';
+              fallbackReason = `Stage 3 Failure: Meta CDN binary download returned HTTP ${binaryRes.status}. Error: ${cdnErrText}`;
+              console.error(`[WhatsApp Media Forensic Audit] ${fallbackReason}`);
+            } else {
               const arrayBuf = await binaryRes.arrayBuffer();
               const downloadedBuf = Buffer.from(arrayBuf);
               const magicCheck = WhatsAppMediaService.inspectMagicHeader(downloadedBuf);
+              downloadedSize = downloadedBuf.length;
 
-              console.log(`[MEDIA_DOWNLOAD_STATUS]: ${binaryRes.status}`);
-              console.log(`[MEDIA_CONTENT_TYPE]: ${binaryRes.headers.get('content-type') || detectedMimeType}`);
-              console.log(`[MEDIA_FILE_SIZE]: ${downloadedBuf.length}`);
-              console.log(`[FIRST_32_BYTES_HEX]: ${magicCheck.first32Hex}`);
-
-              // Strict Signature Validation
+              // Stage 4: Binary Signature & File Size Validation
               const isImage = detectedMimeType.startsWith('image/') || options.filename?.match(/\.(jpg|jpeg|png|gif|webp)$/i);
-              if (isImage && (!magicCheck.isValid || downloadedBuf.length < 1000)) {
+              if (isImage && (!magicCheck.isValid || magicCheck.type === 'text/html' || downloadedBuf.length < 1000)) {
                 const textSnippet = downloadedBuf.toString('utf8', 0, Math.min(downloadedBuf.length, 500));
-                console.error(`[WhatsApp Media Error] Signature validation FAILED for downloaded image payload!`, {
-                  mediaId,
-                  detectedType: magicCheck.type,
-                  size: downloadedBuf.length,
-                  first32Hex: magicCheck.first32Hex,
-                  bodySnippet: textSnippet,
-                });
-                fileBuffer = null; // Rejection! Do not write corrupt bytes to disk
+                failureStage = 'STAGE_4_SIGNATURE_VALIDATION_FAILED';
+                fallbackReason = `Stage 4 Failure: Signature validation failed for downloaded image! Detected type: ${magicCheck.type}, Size: ${downloadedBuf.length}b, Hex: ${magicCheck.first32Hex}. Content snippet: ${textSnippet}`;
+                console.error(`[WhatsApp Media Forensic Audit] ${fallbackReason}`);
+                fileBuffer = null;
               } else {
                 fileBuffer = downloadedBuf;
-                downloadedSize = downloadedBuf.length;
               }
-            } else {
-              const cdnErrText = await binaryRes.text();
-              console.error(`[WhatsApp Media Error] Meta CDN returned HTTP ${binaryRes.status}: ${cdnErrText}`);
             }
           }
         }
       } catch (fetchErr) {
         const error = fetchErr instanceof Error ? fetchErr : new Error(String(fetchErr));
-        console.error(`[WhatsApp Media Exception] Failed during Meta API / CDN fetch:`, error.message);
+        failureStage = 'STAGE_FETCH_EXCEPTION';
+        fallbackReason = `Stage Exception: Network or runtime failure during Meta API/CDN request: ${error.message}`;
+        console.error(`[WhatsApp Media Forensic Audit] ${fallbackReason}`);
       }
-    }
-
-    // High-Quality Fallback: if no token or CDN fetch failed/invalid signature
-    if (!fileBuffer) {
-      console.log(`[WhatsApp Media Service] Generating high-quality valid media asset fallback...`);
-      httpStatus = httpStatus || 200;
-      fileBuffer = WhatsAppMediaService.createFallbackMediaBuffer(
-        detectedMimeType,
-        options.filename || mediaId,
-        options.caption
-      );
-      downloadedSize = fileBuffer.length;
-      downloadUrl = downloadUrl || `https://graph.facebook.com/${version}/${mediaId}/download_url`;
-      metaJsonResponse = metaJsonResponse || { note: 'DEVELOPER_FALLBACK_GENERATED', media_id: mediaId };
     }
 
     const ext = WhatsAppMediaService.getExtensionFromMime(detectedMimeType, options.filename);
@@ -255,54 +265,62 @@ export class WhatsAppMediaService {
     const finalFilename = `${mediaId}_${cleanFilename}`;
     const storagePath = path.join(MEDIA_STORAGE_DIR, finalFilename);
 
-    // Save raw binary buffer to disk
-    fs.writeFileSync(storagePath, fileBuffer);
+    let savedFileSize = 0;
+    let first32Hex = '';
+    let magicValid = false;
+    let magicType = 'NONE';
 
-    const magicInfo = WhatsAppMediaService.inspectMagicHeader(fileBuffer);
-    const first32Hex = magicInfo.first32Hex;
+    // DO NOT GENERATE PLACEHOLDER IMAGES IF META MEDIA DOWNLOAD FAILS
+    if (fileBuffer && fileBuffer.length > 0) {
+      fs.writeFileSync(storagePath, fileBuffer);
+      savedFileSize = fileBuffer.length;
+      const magicInfo = WhatsAppMediaService.inspectMagicHeader(fileBuffer);
+      first32Hex = magicInfo.first32Hex;
+      magicValid = magicInfo.isValid;
+      magicType = magicInfo.type;
+    } else {
+      console.warn(`[WhatsApp Media Service] Meta media download failed or rejected (${failureStage}). PLACEHOLDER GENERATION IS STRICTLY DISABLED.`);
+    }
 
-    // Structured Forensic Audit Logs Required
+    // REQUIRED FORENSIC AUDIT LOG FORMAT
     console.log(`[MEDIA_ID]: ${mediaId}`);
-    console.log(`[MEDIA_METADATA_RESPONSE]: ${JSON.stringify(metaJsonResponse)}`);
-    console.log(`[MEDIA_URL]: ${downloadUrl}`);
+    console.log(`[MEDIA_TYPE]: ${detectedMimeType}`);
+    console.log(`[MEDIA_METADATA_RESPONSE]: ${JSON.stringify(metaJsonResponse || { error: 'No Meta response received' })}`);
+    console.log(`[MEDIA_URL]: ${downloadUrl || 'NONE'}`);
+    console.log(`[MEDIA_DOWNLOAD_HTTP_STATUS]: ${httpStatus}`);
     console.log(`[MEDIA_DOWNLOAD_STATUS]: ${httpStatus}`);
-    console.log(`[MEDIA_CONTENT_TYPE]: ${detectedMimeType}`);
-    console.log(`[MEDIA_FILE_SIZE]: ${downloadedSize}`);
-    console.log(`[FIRST_32_BYTES_HEX]: ${first32Hex}`);
-    console.log(`[SAVED_FILE_PATH]: ${storagePath}`);
+    console.log(`[MEDIA_DOWNLOAD_CONTENT_TYPE]: ${downloadContentType}`);
+    console.log(`[MEDIA_DOWNLOAD_SIZE]: ${downloadedSize}`);
+    console.log(`[MEDIA_BINARY_SIGNATURE]: ${first32Hex || 'NONE'}`);
+    console.log(`[FALLBACK_TRIGGERED]: false`);
+    console.log(`[FALLBACK_REASON]: ${fallbackReason}`);
+    console.log(`[SAVED_FILE_PATH]: ${savedFileSize > 0 ? storagePath : 'NONE'}`);
+    console.log(`[SAVED_FILE_SIZE]: ${savedFileSize}`);
+    console.log(`===================================================================\n`);
 
-    const publicUrl = `/uploads/whatsapp_media/${finalFilename}`;
-    const thumbnailUrl = detectedMimeType.startsWith('image/') ? publicUrl : publicUrl;
-
-    console.log('[MEDIA PREVIEW GENERATED]', {
-      mediaId,
-      publicUrl,
-      thumbnailUrl,
-      timestamp: new Date().toISOString(),
-    });
+    const publicUrl = savedFileSize > 0 ? `/uploads/whatsapp_media/${finalFilename}` : '';
+    const thumbnailUrl = publicUrl;
 
     const record: WhatsAppMediaRecord = {
       media_id: mediaId,
       mime_type: detectedMimeType,
       filename: cleanFilename,
-      size: downloadedSize,
+      size: savedFileSize,
       public_url: publicUrl,
       thumbnail_url: thumbnailUrl,
-      storage_path: storagePath,
+      storage_path: savedFileSize > 0 ? storagePath : '',
       download_url: downloadUrl,
       http_status: httpStatus,
       downloaded_at: now,
       first_32_hex: first32Hex,
-      magic_header_valid: magicInfo.isValid,
-      magic_header_type: magicInfo.type,
+      magic_header_valid: magicValid,
+      magic_header_type: magicType,
+      fallback_triggered: false,
+      fallback_reason: fallbackReason,
+      failure_stage: failureStage,
+      meta_metadata_response: metaJsonResponse,
+      media_status: savedFileSize > 0 ? 'downloaded' : 'download_failed',
     };
-
-    console.log(`[WhatsApp Media Download COMPLETED & STORED]`);
-    console.log(`Media ID       : ${record.media_id}`);
-    console.log(`Magic Valid    : ${magicInfo.isValid} (${magicInfo.type})`);
-    console.log(`Downloaded Size: ${record.size} bytes`);
-    console.log(`Storage Path   : ${record.storage_path}`);
-    console.log(`===================================================================\n`);
 
     mediaCache[mediaId] = record;
     saveMediaIndex();
@@ -336,148 +354,6 @@ export class WhatsAppMediaService {
     if (mime.includes('sheet') || mime.includes('excel') || mime.includes('csv')) return '.xlsx';
     if (mime.includes('word') || mime.includes('document')) return '.docx';
     return '.bin';
-  }
-
-  private static createFallbackMediaBuffer(mime: string, name: string, caption?: string): Buffer {
-    const isSvg = mime.includes('svg') || /\.svg$/i.test(name);
-    const isJpg = mime.includes('jpeg') || mime.includes('jpg') || /\.jpe?g$/i.test(name);
-    const isPng = mime.includes('png') || mime.startsWith('image/') || /\.png$/i.test(name) || /image/i.test(name);
-    const isPdf = mime.includes('pdf') || /\.pdf$/i.test(name);
-
-    if (isSvg) {
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
-        <defs>
-          <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#0f172a" />
-            <stop offset="100%" stop-color="#1e293b" />
-          </linearGradient>
-        </defs>
-        <rect width="600" height="400" fill="url(#bg)"/>
-        <rect x="20" y="20" width="560" height="360" rx="16" fill="#1e293b" stroke="#334155" stroke-width="2"/>
-        <circle cx="300" cy="150" r="45" fill="#10b981" opacity="0.2"/>
-        <text x="300" y="240" font-family="system-ui, sans-serif" font-size="20" font-weight="bold" fill="#f8fafc" text-anchor="middle">WhatsApp Image Media</text>
-        <text x="300" y="270" font-family="system-ui, sans-serif" font-size="14" fill="#94a3b8" text-anchor="middle">${name}</text>
-        <text x="300" y="300" font-family="system-ui, sans-serif" font-size="12" fill="#64748b" text-anchor="middle">${caption || 'Efilingg Compliance Attachment'}</text>
-      </svg>`;
-      return Buffer.from(svg, 'utf-8');
-    } else if (isPng || (!isJpg && mime.startsWith('image/'))) {
-      return WhatsAppMediaService.createValidPngBuffer(400, 300);
-    } else if (isJpg) {
-      return WhatsAppMediaService.createValidJpgBuffer();
-    } else if (isPdf) {
-      const pdfDummy = `%PDF-1.4
-1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
-2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
-3 0 obj << /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /MediaBox [0 0 612 792] /Contents 5 0 R >> endobj
-4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
-5 0 obj << /Length 70 >> stream
-BT /F1 16 Tf 50 700 TD (Efilingg WhatsApp Compliance Document: ${name}) Tj ET
-endstream endobj
-xref
-0 6
-0000000000 65535 f
-0000000009 00000 n
-0000000058 00000 n
-0000000115 00000 n
-0000000244 00000 n
-0000000319 00000 n
-trailer << /Root 1 0 R /Size 6 >>
-startxref
-439
-%%EOF`;
-      return Buffer.from(pdfDummy, 'utf-8');
-    } else {
-      return Buffer.from(`Efilingg WhatsApp Media Attachment\nName: ${name}\nMIME: ${mime}\nTimestamp: ${new Date().toISOString()}`, 'utf-8');
-    }
-  }
-
-  /**
-   * Generates a 100% valid PNG image binary buffer (> 1000 bytes) with magic signature 89 50 4E 47
-   */
-  private static createValidPngBuffer(width = 400, height = 300): Buffer {
-    const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-
-    const ihdrData = Buffer.alloc(13);
-    ihdrData.writeUInt32BE(width, 0);
-    ihdrData.writeUInt32BE(height, 4);
-    ihdrData[8] = 8;  // bit depth
-    ihdrData[9] = 2;  // color type (RGB)
-    ihdrData[10] = 0; // compression
-    ihdrData[11] = 0; // filter
-    ihdrData[12] = 0; // interlace
-
-    const ihdrChunk = WhatsAppMediaService.createPngChunk('IHDR', ihdrData);
-
-    const scanlineLength = 1 + width * 3;
-    const rawPixels = Buffer.alloc(height * scanlineLength);
-
-    for (let y = 0; y < height; y++) {
-      const offset = y * scanlineLength;
-      rawPixels[offset] = 0; // None filter
-      for (let x = 0; x < width; x++) {
-        const pxOffset = offset + 1 + x * 3;
-        const isBorder = x < 12 || x > width - 12 || y < 12 || y > height - 12;
-        if (isBorder) {
-          rawPixels[pxOffset] = 16;     // R
-          rawPixels[pxOffset + 1] = 185; // G (Emerald)
-          rawPixels[pxOffset + 2] = 129; // B
-        } else {
-          rawPixels[pxOffset] = Math.floor((x / width) * 30 + 15);
-          rawPixels[pxOffset + 1] = Math.floor((y / height) * 50 + 25);
-          rawPixels[pxOffset + 2] = Math.floor((x / width) * 60 + 35);
-        }
-      }
-    }
-
-    const compressedPixels = zlib.deflateSync(rawPixels);
-    const idatChunk = WhatsAppMediaService.createPngChunk('IDAT', compressedPixels);
-    const iendChunk = WhatsAppMediaService.createPngChunk('IEND', Buffer.alloc(0));
-
-    return Buffer.concat([signature, ihdrChunk, idatChunk, iendChunk]);
-  }
-
-  /**
-   * Generates a 100% valid JPEG image binary buffer (> 2000 bytes) with magic signature FF D8 FF
-   */
-  private static createValidJpgBuffer(): Buffer {
-    const valid1x1Jpg = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAASABIAREA8iM4/8QAGBABAQEBAQAAAAAAAAAAAAAAAAYFAwT/2gAIAQEAAD8A8eSnd00Yx/8QAFgEBAQEAAAAAAAAAAAAAAAAAAgME/9oADAMBAScopeSnd00Yx/9k=';
-    const smallJpg = Buffer.from(valid1x1Jpg, 'base64');
-
-    const comData = Buffer.alloc(2000, 0x20);
-    comData.write('WhatsApp Image Media Payload - Efilingg Compliance System', 0);
-    const comHeader = Buffer.alloc(4);
-    comHeader[0] = 0xff;
-    comHeader[1] = 0xfe;
-    comHeader.writeUInt16BE(comData.length + 2, 2);
-
-    return Buffer.concat([
-      smallJpg.subarray(0, 20),
-      comHeader,
-      comData,
-      smallJpg.subarray(20),
-    ]);
-  }
-
-  private static createPngChunk(type: string, data: Buffer): Buffer {
-    const length = Buffer.alloc(4);
-    length.writeUInt32BE(data.length, 0);
-    const typeBuf = Buffer.from(type, 'ascii');
-    const crcBuf = Buffer.alloc(4);
-    const crc = WhatsAppMediaService.crc32(Buffer.concat([typeBuf, data]));
-    crcBuf.writeUInt32BE(crc, 0);
-    return Buffer.concat([length, typeBuf, data, crcBuf]);
-  }
-
-  private static crc32(buf: Buffer): number {
-    let crc = 0xffffffff;
-    for (let i = 0; i < buf.length; i++) {
-      crc ^= buf[i];
-      for (let j = 0; j < 8; j++) {
-        if (crc & 1) crc = (crc >>> 1) ^ 0xedb88320;
-        else crc = crc >>> 1;
-      }
-    }
-    return (crc ^ 0xffffffff) >>> 0;
   }
 }
 

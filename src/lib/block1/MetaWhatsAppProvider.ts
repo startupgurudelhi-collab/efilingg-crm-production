@@ -134,34 +134,48 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
                 let fileTypeCategory = 'DOCUMENT';
 
                 if (img || msgType === 'image') {
-                  mediaId = img?.id || (msgObj as any).id || '';
+                  mediaId = img?.id || (msgObj as any).image?.id || (msgObj as any).media_id || '';
                   mimeType = img?.mime_type || 'image/jpeg';
                   caption = img?.caption || '';
                   messageText = caption || '[Image Received]';
                   fileTypeCategory = 'IMAGE';
+                  filename = filename || `whatsapp_image_${mediaId || Date.now()}.${mimeType.includes('png') ? 'png' : 'jpg'}`;
+                  console.log('[MEDIA WEBHOOK RECEIVED]', { msgType: 'image', senderPhone, wamid: msgObj.id, timestamp: new Date().toISOString() });
+                  console.log('[MEDIA ID EXTRACTED]', { mediaId, mimeType, caption, timestamp: new Date().toISOString() });
                 } else if (doc || msgType === 'document') {
-                  mediaId = doc?.id || '';
+                  mediaId = doc?.id || (msgObj as any).document?.id || '';
                   mimeType = doc?.mime_type || 'application/pdf';
-                  filename = doc?.filename || '';
+                  filename = doc?.filename || `whatsapp_doc_${mediaId || Date.now()}.${mimeType.includes('pdf') ? 'pdf' : 'bin'}`;
                   caption = doc?.caption || '';
                   messageText = caption || `[Document: ${filename || 'File'}]`;
                   fileTypeCategory = 'DOCUMENT';
+                  console.log('[MEDIA WEBHOOK RECEIVED]', { msgType: 'document', senderPhone, wamid: msgObj.id, timestamp: new Date().toISOString() });
+                  console.log('[MEDIA ID EXTRACTED]', { mediaId, mimeType, filename, caption, timestamp: new Date().toISOString() });
                 } else if (audio || msgType === 'audio' || msgType === 'voice') {
-                  mediaId = audio?.id || '';
+                  mediaId = audio?.id || (msgObj as any).audio?.id || (msgObj as any).voice?.id || '';
                   mimeType = audio?.mime_type || 'audio/ogg';
+                  filename = `whatsapp_audio_${mediaId || Date.now()}.${mimeType.includes('mp3') ? 'mp3' : 'ogg'}`;
                   messageText = '[Voice Note / Audio Message]';
                   fileTypeCategory = 'AUDIO';
+                  console.log('[MEDIA WEBHOOK RECEIVED]', { msgType: 'audio', senderPhone, wamid: msgObj.id, timestamp: new Date().toISOString() });
+                  console.log('[MEDIA ID EXTRACTED]', { mediaId, mimeType, timestamp: new Date().toISOString() });
                 } else if (video || msgType === 'video') {
-                  mediaId = video?.id || '';
+                  mediaId = video?.id || (msgObj as any).video?.id || '';
                   mimeType = video?.mime_type || 'video/mp4';
                   caption = video?.caption || '';
+                  filename = `whatsapp_video_${mediaId || Date.now()}.mp4`;
                   messageText = caption || '[Video Received]';
                   fileTypeCategory = 'VIDEO';
+                  console.log('[MEDIA WEBHOOK RECEIVED]', { msgType: 'video', senderPhone, wamid: msgObj.id, timestamp: new Date().toISOString() });
+                  console.log('[MEDIA ID EXTRACTED]', { mediaId, mimeType, timestamp: new Date().toISOString() });
                 } else if (sticker || msgType === 'sticker') {
-                  mediaId = sticker?.id || '';
+                  mediaId = sticker?.id || (msgObj as any).sticker?.id || '';
                   mimeType = sticker?.mime_type || 'image/webp';
+                  filename = `whatsapp_sticker_${mediaId || Date.now()}.webp`;
                   messageText = '[Sticker Received]';
                   fileTypeCategory = 'IMAGE';
+                  console.log('[MEDIA WEBHOOK RECEIVED]', { msgType: 'sticker', senderPhone, wamid: msgObj.id, timestamp: new Date().toISOString() });
+                  console.log('[MEDIA ID EXTRACTED]', { mediaId, mimeType, timestamp: new Date().toISOString() });
                 } else if (msgObj.text?.body) {
                   messageText = msgObj.text.body;
                 } else if (typeof msgObj.text === 'string') {

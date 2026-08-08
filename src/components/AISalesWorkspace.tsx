@@ -1770,7 +1770,7 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
               </span>
               <div className="flex items-center space-x-2">
                 <a
-                  href={lightboxMedia.url}
+                  href={lightboxMedia.url.includes('/api/v2/whatsapp/media/') ? `${lightboxMedia.url}?download=true` : lightboxMedia.url}
                   download={lightboxMedia.name || 'image'}
                   target="_blank"
                   rel="noreferrer"

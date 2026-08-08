@@ -373,6 +373,31 @@ block1Router.get('/v2/whatsapp/media/:mediaId', async (req: Request, res: Respon
     if (record && record.storage_path && fs.existsSync(record.storage_path)) {
       const mime = record.mime_type || 'image/jpeg';
       res.setHeader('Content-Type', mime);
+      if (req.query.download === 'true') {
+        res.setHeader('Content-Disposition', `attachment; filename="${record.filename}"`);
+      }
+      return res.sendFile(path.resolve(record.storage_path));
+    }
+
+    return res.status(404).send('Media file not found');
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+block1Router.get('/v2/whatsapp/media/:mediaId/download', async (req: Request, res: Response) => {
+  try {
+    const mediaId = req.params.mediaId;
+    let record = WhatsAppMediaService.getCachedMedia(mediaId);
+    if (!record) {
+      record = await WhatsAppMediaService.downloadAndCacheMedia({ mediaId });
+    }
+
+    if (record && record.storage_path && fs.existsSync(record.storage_path)) {
+      const mime = record.mime_type || 'application/octet-stream';
+      res.setHeader('Content-Type', mime);
+      res.setHeader('Content-Disposition', `attachment; filename="${record.filename}"`);
       return res.sendFile(path.resolve(record.storage_path));
     }
 

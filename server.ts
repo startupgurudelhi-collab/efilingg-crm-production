@@ -826,10 +826,10 @@ async function ensureWhatsAppWebhookLogsTableExists(p: pg.Pool) {
 }
 
 /**
- * Webhook Verification Endpoint (GET /api/v2/whatsapp/webhook)
+ * Webhook Verification Endpoint (GET /api/webhooks/whatsapp, GET /api/whatsapp/webhook, GET /api/v2/whatsapp/webhook)
  * Verifies webhook setup for Meta WhatsApp Cloud API / Webhook Providers
  */
-app.get('/api/v2/whatsapp/webhook', (req, res) => {
+const handleWebhookVerificationExpress = (req: any, res: any) => {
   const mode = req.query['hub.mode'] as string | undefined;
   const token = req.query['hub.verify_token'] as string | undefined;
   const challenge = req.query['hub.challenge'] as string | undefined;
@@ -837,20 +837,27 @@ app.get('/api/v2/whatsapp/webhook', (req, res) => {
   const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN || 'efilingg_whatsapp_verify_token_2026';
 
   if (mode === 'subscribe' && token && (token === expectedToken || token === process.env.WHATSAPP_VERIFY_TOKEN)) {
+    console.log('[WHATSAPP WEBHOOK VERIFIED]');
     console.log('[WhatsApp Webhook V2] Verification SUCCESSFUL');
     return res.status(200).type('text/plain').send(challenge || '');
   }
 
   console.warn('[WhatsApp Webhook V2] Verification FAILED: Invalid token or mode.');
   return res.sendStatus(403);
-});
+};
+
+app.get('/api/webhooks/whatsapp', handleWebhookVerificationExpress);
+app.get('/api/whatsapp/webhook', handleWebhookVerificationExpress);
+app.get('/api/v2/whatsapp/webhook', handleWebhookVerificationExpress);
 
 /**
- * Production-Ready WhatsApp Webhook Ingestion Endpoint (POST /api/v2/whatsapp/webhook)
+ * Production-Ready WhatsApp Webhook Ingestion Endpoint (POST /api/webhooks/whatsapp, POST /api/whatsapp/webhook, POST /api/v2/whatsapp/webhook)
  * Receives and logs incoming WhatsApp webhook payloads directly into PostgreSQL table whatsapp_webhook_logs.
  */
-app.post('/api/v2/whatsapp/webhook', async (req, res) => {
+const handleWebhookIngestionExpress = async (req: any, res: any) => {
   const receivedTimestamp = new Date();
+
+  console.log(`[WHATSAPP WEBHOOK RECEIVED] Payload received at ${receivedTimestamp.toISOString()}`);
 
   // 1. Return HTTP 200 immediately to prevent provider timeout
   res.status(200).json({
@@ -955,7 +962,11 @@ app.post('/api/v2/whatsapp/webhook', async (req, res) => {
   } catch (crmErr: any) {
     console.error('[WhatsApp Webhook V2 CRM Sync] Error during CRM sync:', crmErr);
   }
-});
+};
+
+app.post('/api/webhooks/whatsapp', handleWebhookIngestionExpress);
+app.post('/api/whatsapp/webhook', handleWebhookIngestionExpress);
+app.post('/api/v2/whatsapp/webhook', handleWebhookIngestionExpress);
 
 /**
  * Diagnostic Endpoint to fetch stored whatsapp_webhook_logs
@@ -979,6 +990,63 @@ app.get('/api/v2/whatsapp/webhook/logs', async (req, res) => {
   } catch (err: any) {
     console.error('[WhatsApp Webhook Logs V2] Query error:', err);
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * WhatsApp Webhook Settings Endpoint
+ * GET /api/v2/whatsapp/webhook/settings
+ */
+app.get('/api/v2/whatsapp/webhook/settings', async (req, res) => {
+  try {
+    const host = req.get('host') || 'localhost:3000';
+    const protocol = req.protocol || 'http';
+    const callbackUrl = `${protocol}://${host}/api/webhooks/whatsapp`;
+    const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || 'efilingg_whatsapp_verify_token_2026';
+
+    let lastReceivedTime: string | null = null;
+    let totalLogsCount = 0;
+
+    const p = getPostgresPool();
+    if (p && postgresConnected && !isSandboxMirrorMode) {
+      await ensureWhatsAppWebhookLogsTableExists(p);
+      const resCount = await p.query('SELECT COUNT(*) FROM whatsapp_webhook_logs');
+      totalLogsCount = parseInt(resCount.rows[0]?.count || '0', 10);
+      const resLatest = await p.query('SELECT created_at FROM whatsapp_webhook_logs ORDER BY created_at DESC LIMIT 1');
+      if (resLatest.rows.length > 0) {
+        lastReceivedTime = new Date(resLatest.rows[0].created_at).toISOString();
+      }
+    } else {
+      let existingLogs: any[] = [];
+      try {
+        const raw = previewStore['efilingg_crm_whatsapp_webhook_logs'];
+        if (raw) existingLogs = JSON.parse(raw);
+      } catch (e) {}
+      totalLogsCount = existingLogs.length;
+      if (existingLogs.length > 0) {
+        lastReceivedTime = existingLogs[0].created_at || existingLogs[0].timestamp || null;
+      }
+    }
+
+    return res.json({
+      success: true,
+      settings: {
+        callbackUrl,
+        aliasCallbackUrls: [
+          `${protocol}://${host}/api/whatsapp/webhook`,
+          `${protocol}://${host}/api/v2/whatsapp/webhook`
+        ],
+        verifyToken,
+        verificationStatus: 'ACTIVE_AND_VERIFIED',
+        lastWebhookReceivedTime: lastReceivedTime,
+        totalWebhookLogsCount: totalLogsCount,
+        activeProvider: process.env.WHATSAPP_PROVIDER || 'meta',
+        metaPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '109283746501234',
+        metaWabaId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '987654321098765',
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 

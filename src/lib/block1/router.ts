@@ -36,7 +36,7 @@ export const block1Router = Router();
 // ==========================================
 
 /**
- * Webhook Verification Endpoint (GET /api/whatsapp/webhook, GET /api/v2/whatsapp/webhook)
+ * Webhook Verification Endpoint (GET /api/webhooks/whatsapp, GET /api/whatsapp/webhook, GET /api/v2/whatsapp/webhook)
  */
 const handleWebhookVerification = (req: Request, res: Response) => {
   const mode = req.query['hub.mode'] as string | undefined;
@@ -46,6 +46,7 @@ const handleWebhookVerification = (req: Request, res: Response) => {
   const verification = WhatsAppService.verifyWebhook(mode, token, challenge);
 
   if (verification.verified && verification.challenge) {
+    console.log('[WHATSAPP WEBHOOK VERIFIED] Challenge verified successfully');
     console.log('[WhatsApp Webhook] Verification SUCCESSFUL');
     return res.status(200).send(verification.challenge);
   }
@@ -54,15 +55,17 @@ const handleWebhookVerification = (req: Request, res: Response) => {
   return res.status(403).json({ error: verification.reason || 'Verification failed.' });
 };
 
+block1Router.get('/webhooks/whatsapp', handleWebhookVerification);
 block1Router.get('/whatsapp/webhook', handleWebhookVerification);
 block1Router.get('/v2/whatsapp/webhook', handleWebhookVerification);
 
 /**
- * Webhook Receiver Endpoint (POST /api/whatsapp/webhook, POST /api/v2/whatsapp/webhook)
+ * Webhook Receiver Endpoint (POST /api/webhooks/whatsapp, POST /api/whatsapp/webhook, POST /api/v2/whatsapp/webhook)
  */
 const handleWebhookIngestion = async (req: Request, res: Response) => {
   try {
     const payload = req.body;
+    console.log('[WHATSAPP WEBHOOK RECEIVED] Incoming webhook payload received via router');
     const result = await WhatsAppService.processWebhook(payload);
     return res.status(200).json({
       success: true,
@@ -75,6 +78,7 @@ const handleWebhookIngestion = async (req: Request, res: Response) => {
   }
 };
 
+block1Router.post('/webhooks/whatsapp', handleWebhookIngestion);
 block1Router.post('/whatsapp/webhook', handleWebhookIngestion);
 block1Router.post('/v2/whatsapp/webhook', handleWebhookIngestion);
 

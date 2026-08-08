@@ -59,8 +59,10 @@ import {
   Volume2,
   Download,
   AlertCircle,
+  Webhook,
 } from 'lucide-react';
 import { eventBus } from '../lib/eventBus';
+import WhatsAppWebhookSettings from './WhatsAppWebhookSettings';
 
 interface AISalesWorkspaceProps {
   currentUserId: string;
@@ -460,6 +462,7 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
   const [activeTab, setActiveTab] = useState<InboxTabFilter>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showWebhookModal, setShowWebhookModal] = useState(false);
 
   // Media Lightbox State
   const [lightboxMedia, setLightboxMedia] = useState<{ url: string; name?: string; type?: string } | null>(null);
@@ -1085,13 +1088,23 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
                   </span>
                 </div>
               </div>
-              <button
-                onClick={fetchConversations}
-                title="Refresh Inbox"
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors cursor-pointer"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              </button>
+              <div className="flex items-center space-x-1.5">
+                <button
+                  onClick={() => setShowWebhookModal(true)}
+                  title="WhatsApp Webhook Settings & Diagnostics"
+                  className="px-2 py-1 rounded-lg text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+                >
+                  <Webhook className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Webhooks</span>
+                </button>
+                <button
+                  onClick={fetchConversations}
+                  title="Refresh Inbox"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
             </div>
 
             {/* Search Input */}
@@ -1738,6 +1751,21 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
                 className="max-h-[70vh] max-w-full object-contain rounded-lg"
               />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* WhatsApp Webhook Settings Modal */}
+      {showWebhookModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto p-6 relative shadow-2xl">
+            <button
+              onClick={() => setShowWebhookModal(false)}
+              className="absolute top-4 right-4 p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition cursor-pointer z-10"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <WhatsAppWebhookSettings />
           </div>
         </div>
       )}

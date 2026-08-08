@@ -91,6 +91,7 @@ import OfferLetterModal from './OfferLetterModal';
 import EditEmployeeModal from './EditEmployeeModal';
 import ExitLetterModal from './ExitLetterModal';
 import AISalesWorkspace from './AISalesWorkspace';
+import WhatsAppWebhookSettings from './WhatsAppWebhookSettings';
 import { FeatureFlagGuard } from '../lib/featureFlags';
 
 interface AdminDashboardProps {
@@ -118,7 +119,7 @@ export default function AdminDashboard({
   const [logs, setLogs] = useState<ActivityLog[]>([]);
 
   // Local Views Tab
-  const [viewTab, setViewTab] = useState<'analytics' | 'employees' | 'leads' | 'proposals' | 'logs' | 'backup' | 'services' | 'templates' | 'payroll' | 'ai_sales_inbox'>('ai_sales_inbox');
+  const [viewTab, setViewTab] = useState<'analytics' | 'employees' | 'leads' | 'proposals' | 'logs' | 'backup' | 'services' | 'templates' | 'payroll' | 'ai_sales_inbox' | 'whatsapp_webhook'>('ai_sales_inbox');
 
   // Search & Filter leads state
   const [searchQuery, setSearchQuery] = useState('');
@@ -988,6 +989,14 @@ export default function AdminDashboard({
             </button>
           </FeatureFlagGuard>
           <button
+            onClick={() => setViewTab('whatsapp_webhook')}
+            className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-emerald-500/30 font-bold ${
+              viewTab === 'whatsapp_webhook' ? 'bg-emerald-600 text-white' : 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50'
+            }`}
+          >
+            ⚡ WhatsApp Webhooks
+          </button>
+          <button
             onClick={() => setViewTab('proposals')}
             className={`px-4 py-2 text-xs font-semibold rounded-xl ${
               viewTab === 'proposals' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-slate-505 hover:bg-slate-50'
@@ -1064,6 +1073,13 @@ export default function AdminDashboard({
             currentUserName={loggedInUser?.name || 'Administrator'}
           />
         </FeatureFlagGuard>
+      )}
+
+      {/* ==============================================================
+          TAB: WHATSAPP WEBHOOK SETTINGS & DIAGNOSTICS
+          ============================================================== */}
+      {viewTab === 'whatsapp_webhook' && (
+        <WhatsAppWebhookSettings />
       )}
 
       {/* ==============================================================

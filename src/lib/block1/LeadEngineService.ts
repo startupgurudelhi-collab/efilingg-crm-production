@@ -304,6 +304,7 @@ export class LeadEngineService {
     };
 
     saveMessage(message);
+    console.log(`[WHATSAPP MESSAGE SAVED] Saved message ID "${message.id}" (WhatsApp WAMID: "${message.whatsappMessageId || 'N/A'}") for conversation "${conversation.id}" from sender "${normPhone}"`);
     console.log(`[Diagnostic 7/9] Message Inserted | ID: ${message.id} | ConvID: ${conversation.id} | Direction: INBOUND | Content: "${message.content}"`);
 
     // 8. EventBus Emit

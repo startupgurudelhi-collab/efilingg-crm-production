@@ -56,12 +56,14 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
     const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN || DEFAULT_META_VERIFY_TOKEN;
 
     if (mode === 'subscribe' && token === expectedToken) {
+      console.log('[WHATSAPP WEBHOOK VERIFIED] Meta Cloud API Webhook challenge verified successfully.');
       return {
         verified: true,
         challenge,
       };
     }
 
+    console.warn('[WHATSAPP WEBHOOK VERIFICATION FAILED] Token mismatch or mode invalid.');
     return {
       verified: false,
       reason: 'Invalid verification token or mode.',
@@ -75,6 +77,7 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
     processedMessages: IngestionResult[];
     updatedStatusesCount: number;
   }> {
+    console.log('[WHATSAPP WEBHOOK RECEIVED] Processing incoming Meta Cloud API webhook payload.');
     const processedMessages: IngestionResult[] = [];
     let updatedStatusesCount = 0;
 
@@ -101,6 +104,7 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
                   const statusUpper = statusObj.status.toUpperCase() as DeliveryStatus;
                   const updated = updateMessageStatus(statusObj.id, statusUpper);
                   if (updated) updatedStatusesCount++;
+                  console.log(`[WHATSAPP STATUS UPDATED] Message ID "${statusObj.id}" delivery status updated to "${statusUpper}" (Recipient: ${statusObj.recipient_id || 'N/A'})`);
                 }
               }
             }

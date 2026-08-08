@@ -60,9 +60,12 @@ import {
   Download,
   AlertCircle,
   Webhook,
+  Bell,
+  VolumeX,
 } from 'lucide-react';
 import { eventBus } from '../lib/eventBus';
 import WhatsAppWebhookSettings from './WhatsAppWebhookSettings';
+import { useWhatsAppNotifications } from '../hooks/useWhatsAppNotifications';
 
 interface AISalesWorkspaceProps {
   currentUserId: string;
@@ -112,20 +115,34 @@ interface ConversationRowProps {
 
 const ConversationRow = React.memo(({ conv, isSelected, onSelect }: ConversationRowProps) => {
   const isAi = conv.assignedType === 'AI_AGENT';
+  const { isConversationAlerting } = useWhatsAppNotifications();
+  const isAlerting = isConversationAlerting(conv.id);
 
   return (
     <div
       onClick={() => onSelect(conv.id)}
-      className={`p-3 cursor-pointer transition-colors flex items-start space-x-3 ${
-        isSelected
+      className={`p-3 cursor-pointer transition-all flex items-start space-x-3 ${
+        isAlerting
+          ? 'bg-rose-950/40 border-l-4 border-rose-500 ring-2 ring-rose-500/50 animate-pulse shadow-lg'
+          : isSelected
           ? 'bg-slate-800/90 border-l-4 border-emerald-500'
           : 'hover:bg-slate-900/60'
       }`}
     >
       {/* Avatar Badge */}
       <div className="relative shrink-0">
-        <div className="h-9 w-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-slate-200 text-xs shadow-inner">
-          {conv.customerName ? conv.customerName.charAt(0).toUpperCase() : 'C'}
+        <div className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-xs shadow-inner ${
+          isAlerting
+            ? 'bg-rose-900 text-white border-2 border-rose-400 animate-bounce'
+            : 'bg-slate-800 border border-slate-700 text-slate-200'
+        }`}>
+          {isAlerting ? (
+            <Bell className="w-4 h-4 text-white animate-pulse" />
+          ) : conv.customerName ? (
+            conv.customerName.charAt(0).toUpperCase()
+          ) : (
+            'C'
+          )}
         </div>
         <div
           className={`absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-slate-950 flex items-center justify-center text-[8px] font-bold ${
@@ -140,8 +157,15 @@ const ConversationRow = React.memo(({ conv, isSelected, onSelect }: Conversation
       {/* Content Details */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between mb-0.5">
-          <span className="text-xs font-bold text-slate-100 truncate">
+          <span className={`text-xs font-bold truncate flex items-center gap-1 ${
+            isAlerting ? 'text-rose-300 font-black' : 'text-slate-100'
+          }`}>
             {conv.customerName}
+            {isAlerting && (
+              <span className="text-[9px] px-1 rounded bg-rose-600 text-white font-mono animate-pulse">
+                ALARM
+              </span>
+            )}
           </span>
           <span className="text-[10px] text-slate-500 font-mono shrink-0">
             {conv.lastMessageTimestamp || conv.updatedAt
@@ -161,9 +185,11 @@ const ConversationRow = React.memo(({ conv, isSelected, onSelect }: Conversation
           <span className="text-[9.5px] px-1.5 py-0.5 rounded-md bg-slate-800 text-emerald-400 font-mono font-semibold truncate max-w-[130px]">
             {conv.serviceCategory || 'General Inquiry'}
           </span>
-          {conv.unreadCount > 0 && (
-            <span className="h-4 px-1.5 rounded-full bg-emerald-500 text-white text-[9px] font-black flex items-center justify-center shrink-0">
-              {conv.unreadCount}
+          {(conv.unreadCount > 0 || isAlerting) && (
+            <span className={`h-4 px-1.5 rounded-full text-white text-[9px] font-black flex items-center justify-center shrink-0 ${
+              isAlerting ? 'bg-rose-600 animate-pulse shadow-md border border-rose-400' : 'bg-emerald-500'
+            }`}>
+              {conv.unreadCount || 1}
             </span>
           )}
         </div>
@@ -732,6 +758,8 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
     };
   }, [addNotification, fetchActiveConversationDetails, fetchConversations]);
 
+  const { markAlertRead } = useWhatsAppNotifications();
+
   // Fetch conversation messages & restore draft text when active selection changes (Requirement 1)
   useEffect(() => {
     if (activeConvId) {
@@ -741,14 +769,15 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
       // Restore draft message for this conversation
       setMessageText(draftsRef.current[activeConvId] || '');
 
-      // Zero out unread count in UI
+      // Zero out unread count in UI & stop audio alarm
       setConversations((prev) =>
         prev.map((c) => (c.id === activeConvId ? { ...c, unreadCount: 0 } : c))
       );
+      markAlertRead(activeConvId);
 
       fetchActiveConversationDetails(activeConvId);
     }
-  }, [activeConvId, fetchActiveConversationDetails]);
+  }, [activeConvId, fetchActiveConversationDetails, markAlertRead]);
 
   // Handle draft text updates
   const handleMessageTextChange = useCallback((val: string) => {

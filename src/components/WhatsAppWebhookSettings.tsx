@@ -19,8 +19,14 @@ import {
   Layers,
   FileCode,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  Volume2,
+  Mic,
+  Bell,
+  VolumeX,
 } from 'lucide-react';
+import { useWhatsAppNotifications } from '../hooks/useWhatsAppNotifications';
+import WhatsAppNotificationSettingsModal from './WhatsAppNotificationSettingsModal';
 
 export interface WebhookLogItem {
   id: string;
@@ -54,6 +60,15 @@ export default function WhatsAppWebhookSettings() {
   const [copiedUrl, setCopiedUrl] = useState<boolean>(false);
   const [copiedToken, setCopiedToken] = useState<boolean>(false);
   const [showToken, setShowToken] = useState<boolean>(false);
+  const [showVoiceModal, setShowVoiceModal] = useState<boolean>(false);
+
+  const {
+    settings: notifSettings,
+    playTestSound,
+    playTestVoice,
+    stopAllAlarms,
+    unreadCount,
+  } = useWhatsAppNotifications();
 
   // Verification test state
   const [verifying, setVerifying] = useState<boolean>(false);
@@ -555,6 +570,78 @@ export default function WhatsAppWebhookSettings() {
         </div>
       </div>
 
+      {/* Enterprise Voice & Sound Notification System Settings Card */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-850 to-emerald-950/40 p-5 rounded-xl border border-slate-800 space-y-4 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
+              <Bell className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                Enterprise Persistent Voice & Audio Notification System
+                {unreadCount > 0 && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500 text-white font-black animate-pulse">
+                    {unreadCount} Active Alarm{unreadCount > 1 ? 's' : ''}
+                  </span>
+                )}
+              </h3>
+              <p className="text-xs text-slate-400">
+                Loud sound chime, Speech Synthesis voice alerts ("{notifSettings.voiceText}"), repeating every {notifSettings.repeatIntervalSec}s
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => playTestVoice()}
+              className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <Mic className="w-3.5 h-3.5 text-emerald-400" />
+              Test Voice
+            </button>
+            <button
+              onClick={() => playTestSound()}
+              className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <Volume2 className="w-3.5 h-3.5 text-indigo-400" />
+              Test Sound
+            </button>
+            <button
+              onClick={() => setShowVoiceModal(true)}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition cursor-pointer shadow-md"
+            >
+              Configure Voice Alerts
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs bg-slate-950/60 p-3 rounded-lg border border-slate-800/80 font-mono">
+          <div>
+            <span className="text-slate-500 block text-[10px]">Speech Voice</span>
+            <span className={notifSettings.voiceEnabled ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
+              {notifSettings.voiceEnabled ? 'ACTIVE ("' + notifSettings.voiceText + '")' : 'DISABLED'}
+            </span>
+          </div>
+          <div>
+            <span className="text-slate-500 block text-[10px]">Chime Sound</span>
+            <span className={notifSettings.soundEnabled ? 'text-indigo-400 font-bold' : 'text-slate-500'}>
+              {notifSettings.soundEnabled ? 'ENABLED (' + notifSettings.volume + '%)' : 'DISABLED'}
+            </span>
+          </div>
+          <div>
+            <span className="text-slate-500 block text-[10px]">Repeat Interval</span>
+            <span className="text-amber-400 font-bold">Every {notifSettings.repeatIntervalSec} Seconds</span>
+          </div>
+          <div>
+            <span className="text-slate-500 block text-[10px]">Desktop Popups</span>
+            <span className={notifSettings.browserNotificationsEnabled ? 'text-sky-400 font-bold' : 'text-slate-500'}>
+              {notifSettings.browserNotificationsEnabled ? 'ENABLED' : 'DISABLED'}
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Interactive Inbound Webhook Payload Simulator */}
       <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -817,6 +904,11 @@ export default function WhatsAppWebhookSettings() {
           </table>
         </div>
       </div>
+
+      <WhatsAppNotificationSettingsModal
+        isOpen={showVoiceModal}
+        onClose={() => setShowVoiceModal(false)}
+      />
     </div>
   );
 }

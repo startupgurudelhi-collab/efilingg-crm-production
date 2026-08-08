@@ -21,6 +21,7 @@ import LeadModal from './components/LeadModal';
 import ProposalBuilder from './components/ProposalBuilder';
 import ProposalPdf from './components/ProposalPdf';
 import NotificationBar from './components/NotificationBar';
+import WhatsAppNotificationBar from './components/WhatsAppNotificationBar';
 import TeamConnectWidget from './components/TeamConnectWidget';
 import { ThemeProvider, useTheme } from './components/ThemeContext';
 import { FeatureFlagProvider } from './lib/featureFlags';
@@ -251,6 +252,9 @@ function AppContent() {
           >
             {theme === 'light' ? <Moon className="h-4.5 w-4.5" /> : <Sun className="h-4.5 w-4.5 text-amber-400" />}
           </button>
+
+          {/* Enterprise WhatsApp Notification & Voice Alert Engine Bell */}
+          <WhatsAppNotificationBar />
 
           {/* Real-time Notifications Bell */}
           <NotificationBar userId={sessionUser.id} triggerRefresh={triggerRefresh} />

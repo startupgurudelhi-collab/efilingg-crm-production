@@ -18,6 +18,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { useWhatsAppNotifications } from '../hooks/useWhatsAppNotifications';
+import { WhatsAppNotificationEngine } from '../lib/notifications/WhatsAppNotificationEngine';
 
 interface WhatsAppNotificationSettingsModalProps {
   isOpen: boolean;
@@ -73,6 +74,18 @@ export default function WhatsAppNotificationSettingsModal({
     playTestDesktop();
     setTestSuccessMessage('Triggered Browser Desktop Notification');
     setTimeout(() => setTestSuccessMessage(null), 3000);
+  };
+
+  const handleTestFullAlertClick = () => {
+    const testConvId = `conv_test_${Date.now()}`;
+    WhatsAppNotificationEngine.triggerInboundAlert({
+      conversationId: testConvId,
+      senderName: 'Rahul Sharma (Test Lead)',
+      senderPhone: '917530847878',
+      messageText: 'Hi, I need assistance with Private Limited Company registration pricing.',
+    });
+    setTestSuccessMessage('Triggered live full inbound message alert & repeating sound chime!');
+    setTimeout(() => setTestSuccessMessage(null), 4000);
   };
 
   return (
@@ -273,7 +286,7 @@ export default function WhatsAppNotificationSettingsModal({
               <Sparkles className="w-4 h-4 text-amber-400" />
               Live Interactive Audio & Voice Test Controls
             </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               <button
                 onClick={handleTestSoundClick}
                 className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-indigo-300 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 border border-slate-700 transition cursor-pointer"
@@ -296,6 +309,14 @@ export default function WhatsAppNotificationSettingsModal({
               >
                 <Bell className="w-3.5 h-3.5 text-sky-400" />
                 Test Desktop
+              </button>
+
+              <button
+                onClick={handleTestFullAlertClick}
+                className="py-2 px-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 border border-amber-500/40 transition cursor-pointer col-span-2 sm:col-span-1"
+              >
+                <Play className="w-3.5 h-3.5 text-amber-400" />
+                Test Popup Alert
               </button>
 
               <button

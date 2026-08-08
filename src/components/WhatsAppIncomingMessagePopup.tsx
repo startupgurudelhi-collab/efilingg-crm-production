@@ -48,7 +48,7 @@ export default function WhatsAppIncomingMessagePopup() {
   };
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 w-96 max-w-[calc(100vw-2.5rem)] animate-bounce-subtle">
+    <div className="fixed bottom-5 right-5 z-[9999] w-96 max-w-[calc(100vw-2.5rem)] animate-bounce-subtle">
       <div className="bg-slate-900 border-2 border-rose-500/80 rounded-2xl shadow-2xl p-4 text-slate-100 overflow-hidden relative backdrop-blur-md ring-4 ring-rose-500/20">
         {/* Animated pulse background glow */}
         <div className="absolute -right-10 -top-10 w-32 h-32 bg-rose-500/10 rounded-full blur-2xl pointer-events-none animate-pulse" />

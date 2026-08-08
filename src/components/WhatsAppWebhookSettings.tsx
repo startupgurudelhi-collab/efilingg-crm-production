@@ -27,6 +27,8 @@ import {
 } from 'lucide-react';
 import { useWhatsAppNotifications } from '../hooks/useWhatsAppNotifications';
 import WhatsAppNotificationSettingsModal from './WhatsAppNotificationSettingsModal';
+import { WhatsAppNotificationEngine } from '../lib/notifications/WhatsAppNotificationEngine';
+import { LeadEngineService } from '../lib/block1/LeadEngineService';
 
 export interface WebhookLogItem {
   id: string;
@@ -264,6 +266,30 @@ export default function WhatsAppWebhookSettings() {
 
       const data = await res.json();
       setSimResponse(JSON.stringify(data, null, 2));
+
+      if (simType === 'message') {
+        const cleanPhone = simPhone.replace(/\D/g, '') || '919876543210';
+        const convId = `conv_${cleanPhone}`;
+
+        // Ingest message into local client storage
+        LeadEngineService.processInboundMessage({
+          channel: 'WHATSAPP',
+          senderPhone: simPhone,
+          senderName: simName || 'WhatsApp Customer',
+          messageText: simText || 'New message received',
+          mobile: simPhone,
+          contactName: simName || 'WhatsApp Customer',
+        });
+
+        // Trigger immediate sound, speech, popup and repeating alarm
+        WhatsAppNotificationEngine.triggerInboundAlert({
+          conversationId: convId,
+          senderName: simName || 'WhatsApp Customer',
+          senderPhone: simPhone,
+          messageText: simText || 'New message received',
+        });
+      }
+
       // Refresh log table after simulation
       setTimeout(() => {
         fetchWebhookData();

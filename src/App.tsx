@@ -465,11 +465,9 @@ function AppContent() {
       )}
 
       {sessionUser && (
-        <>
-          <TeamConnectWidget currentUser={sessionUser} />
-          <WhatsAppIncomingMessagePopup />
-        </>
+        <TeamConnectWidget currentUser={sessionUser} />
       )}
+      <WhatsAppIncomingMessagePopup />
 
       {/* Simple Footer and operational information */}
       <footer className="py-6 border-t border-slate-150 dark:border-slate-850 text-center text-xs text-slate-450 dark:text-slate-550 flex flex-col sm:flex-row items-center justify-between px-8 bg-white dark:bg-slate-900 mt-12 gap-2 print:hidden">

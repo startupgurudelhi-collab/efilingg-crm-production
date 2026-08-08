@@ -61,6 +61,7 @@ class WhatsAppNotificationEngineClass {
 
   private sharedAudioCtx: AudioContext | null = null;
   private isAudioUnlocked: boolean = false;
+  private seenMessageIds: Set<string> = new Set();
 
   constructor() {
     this.loadSettings();
@@ -68,11 +69,57 @@ class WhatsAppNotificationEngineClass {
     this.initEventBusListeners();
     this.startRepeatLoop();
     this.initAudioUnlocker();
+    this.initStorageAndServerPoller();
 
     // Auto-request notification permission if browser notifications enabled
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
       // Permission can be requested on first user interaction
     }
+  }
+
+  /**
+   * Pre-populate seen messages and periodically poll for unhandled inbound messages
+   */
+  private initStorageAndServerPoller(): void {
+    if (typeof window === 'undefined') return;
+
+    // 1. Mark existing messages in localStorage as seen on boot
+    try {
+      const raw = localStorage.getItem('efilingg_crm_messages_v2');
+      if (raw) {
+        const msgs: any[] = JSON.parse(raw);
+        msgs.forEach((m) => {
+          if (m?.id) this.seenMessageIds.add(m.id);
+        });
+      }
+    } catch (e) {}
+
+    // 2. Background polling loop (every 2.5s)
+    setInterval(() => {
+      try {
+        const rawMsgs = localStorage.getItem('efilingg_crm_messages_v2');
+        if (rawMsgs) {
+          const msgs: any[] = JSON.parse(rawMsgs);
+          const inboundMsgs = msgs.filter(
+            (m) => (m.direction === 'INBOUND' || !m.direction) && m.id
+          );
+
+          inboundMsgs.forEach((msg) => {
+            if (!this.seenMessageIds.has(msg.id)) {
+              this.seenMessageIds.add(msg.id);
+              // Trigger alert for new inbound message
+              const convId = msg.conversationId || `conv_${msg.senderPhone || Date.now()}`;
+              this.triggerInboundAlert({
+                conversationId: convId,
+                senderName: msg.senderName || 'WhatsApp Contact',
+                senderPhone: msg.senderPhone || '',
+                messageText: msg.content || 'New message received',
+              });
+            }
+          });
+        }
+      } catch (e) {}
+    }, 2500);
   }
 
   /**
@@ -411,52 +458,64 @@ class WhatsAppNotificationEngineClass {
       if (!this.sharedAudioCtx) return;
 
       const ctx = this.sharedAudioCtx;
+
+      const runOscillators = () => {
+        try {
+          const now = ctx.currentTime;
+
+          // Master Gain Node
+          const master = ctx.createGain();
+          master.gain.setValueAtTime(vol * 0.9, now);
+          master.connect(ctx.destination);
+
+          // Note 1: High E6 (1318.51 Hz)
+          const osc1 = ctx.createOscillator();
+          const gain1 = ctx.createGain();
+          osc1.type = 'sine';
+          osc1.frequency.setValueAtTime(1318.51, now);
+          gain1.gain.setValueAtTime(0.8, now);
+          gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
+          osc1.connect(gain1);
+          gain1.connect(master);
+          osc1.start(now);
+          osc1.stop(now + 0.4);
+
+          // Note 2: Higher B6 (1975.53 Hz)
+          const osc2 = ctx.createOscillator();
+          const gain2 = ctx.createGain();
+          osc2.type = 'sine';
+          osc2.frequency.setValueAtTime(1975.53, now + 0.12);
+          gain2.gain.setValueAtTime(0.9, now + 0.12);
+          gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
+          osc2.connect(gain2);
+          gain2.connect(master);
+          osc2.start(now + 0.12);
+          osc2.stop(now + 0.7);
+
+          // Note 3: High E7 (2637.02 Hz) accent chime
+          const osc3 = ctx.createOscillator();
+          const gain3 = ctx.createGain();
+          osc3.type = 'sine';
+          osc3.frequency.setValueAtTime(2637.02, now + 0.25);
+          gain3.gain.setValueAtTime(0.8, now + 0.25);
+          gain3.gain.exponentialRampToValueAtTime(0.0001, now + 0.85);
+          osc3.connect(gain3);
+          gain3.connect(master);
+          osc3.start(now + 0.25);
+          osc3.stop(now + 0.85);
+        } catch (err) {
+          console.warn('[WhatsApp Notification Engine] Audio execution error:', err);
+        }
+      };
+
       if (ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
+        ctx
+          .resume()
+          .then(() => runOscillators())
+          .catch(() => runOscillators());
+      } else {
+        runOscillators();
       }
-
-      const now = ctx.currentTime;
-
-      // Master Gain Node
-      const master = ctx.createGain();
-      master.gain.setValueAtTime(vol * 0.9, now);
-      master.connect(ctx.destination);
-
-      // Note 1: High E6 (1318.51 Hz)
-      const osc1 = ctx.createOscillator();
-      const gain1 = ctx.createGain();
-      osc1.type = 'sine';
-      osc1.frequency.setValueAtTime(1318.51, now);
-      gain1.gain.setValueAtTime(0.8, now);
-      gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
-      osc1.connect(gain1);
-      gain1.connect(master);
-      osc1.start(now);
-      osc1.stop(now + 0.4);
-
-      // Note 2: Higher B6 (1975.53 Hz)
-      const osc2 = ctx.createOscillator();
-      const gain2 = ctx.createGain();
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(1975.53, now + 0.12);
-      gain2.gain.setValueAtTime(0.9, now + 0.12);
-      gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
-      osc2.connect(gain2);
-      gain2.connect(master);
-      osc2.start(now + 0.12);
-      osc2.stop(now + 0.7);
-
-      // Note 3: High E7 (2637.02 Hz) accent chime
-      const osc3 = ctx.createOscillator();
-      const gain3 = ctx.createGain();
-      osc3.type = 'sine';
-      osc3.frequency.setValueAtTime(2637.02, now + 0.25);
-      gain3.gain.setValueAtTime(0.8, now + 0.25);
-      gain3.gain.exponentialRampToValueAtTime(0.0001, now + 0.85);
-      osc3.connect(gain3);
-      gain3.connect(master);
-      osc3.start(now + 0.25);
-      osc3.stop(now + 0.85);
     } catch (e) {
       console.warn('[WhatsApp Notification Engine] Web Audio API error:', e);
     }
@@ -473,6 +532,10 @@ class WhatsAppNotificationEngineClass {
       const vol = (customVolume !== undefined ? customVolume : this.settings.volume) / 100;
 
       if (vol <= 0) return;
+
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
 
       // Cancel previous speech if still talking
       window.speechSynthesis.cancel();

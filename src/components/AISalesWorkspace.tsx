@@ -784,6 +784,11 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
       );
       markAlertRead(activeConvId);
 
+      // Explicitly trigger read state save on backend
+      fetch(`/api/v2/conversations/${activeConvId}/read`, { method: 'POST' }).catch((e) =>
+        console.warn('Failed to mark conversation read:', e)
+      );
+
       fetchActiveConversationDetails(activeConvId);
     }
   }, [activeConvId, fetchActiveConversationDetails, markAlertRead]);

@@ -26,6 +26,7 @@ import {
   getWebhookLogs,
   getExecutives,
   resetBlock1DB,
+  markConversationAsRead,
 } from './db';
 import { eventBus, deadLetterQueue } from '../eventBus';
 
@@ -555,7 +556,12 @@ block1Router.get('/v2/conversations', (req: Request, res: Response) => {
 block1Router.get('/v2/conversations/:id', (req: Request, res: Response) => {
   try {
     const id = req.params.id;
-    const conversation = getConversationById(id);
+    console.log('[CHAT OPENED]', { conversationId: id, timestamp: new Date().toISOString() });
+
+    // Mark as read when details are fetched upon opening
+    const readResult = markConversationAsRead(id);
+    const conversation = readResult.conversation || getConversationById(id);
+
     if (!conversation) {
       return res.status(404).json({ error: `Conversation ${id} not found.` });
     }
@@ -563,12 +569,57 @@ block1Router.get('/v2/conversations/:id', (req: Request, res: Response) => {
     const messages = getMessages(id);
     const timeline = getTimelineEntries(id);
 
+    console.log('[CONVERSATION RELOADED]', {
+      conversationId: id,
+      unreadCount: conversation.unreadCount,
+      messagesCount: messages.length,
+      lastReadAt: conversation.lastReadAt || conversation.last_read_at,
+    });
+
     return res.status(200).json({
       success: true,
       conversation,
       messagesCount: messages.length,
       messages,
       timeline,
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Mark Conversation as Read Endpoint (POST /api/v2/conversations/:id/read)
+ */
+block1Router.post('/v2/conversations/:id/read', (req: Request, res: Response) => {
+  try {
+    const conversationId = req.params.id;
+    console.log('[CHAT OPENED]', { conversationId, timestamp: new Date().toISOString() });
+    const result = markConversationAsRead(conversationId);
+    return res.status(200).json({
+      success: true,
+      conversation: result.conversation,
+      markedCount: result.markedCount,
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Mark Conversation as Read Alternative Endpoint (POST /api/v2/conversations/:id/mark-read)
+ */
+block1Router.post('/v2/conversations/:id/mark-read', (req: Request, res: Response) => {
+  try {
+    const conversationId = req.params.id;
+    console.log('[CHAT OPENED]', { conversationId, timestamp: new Date().toISOString() });
+    const result = markConversationAsRead(conversationId);
+    return res.status(200).json({
+      success: true,
+      conversation: result.conversation,
+      markedCount: result.markedCount,
     });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));

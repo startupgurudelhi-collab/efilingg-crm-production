@@ -103,6 +103,10 @@ export interface MessageV2 {
   providerMessageId?: string;
   deliveryStatus: DeliveryStatus;
   timestamp: string;
+  is_read?: boolean;
+  isRead?: boolean;
+  read_at?: string;
+  readAt?: string;
   rawPayload?: Record<string, unknown>;
   rawProviderResponse?: Record<string, unknown> | string;
   providerSuccess?: boolean;
@@ -138,6 +142,9 @@ export interface ConversationV2 {
   lastMessageText?: string;
   lastMessageTimestamp?: string;
   unreadCount: number;
+  unread_count?: number;
+  lastReadAt?: string;
+  last_read_at?: string;
   srno?: string;
   wabaSrno?: string;
   wabaNumber?: string;

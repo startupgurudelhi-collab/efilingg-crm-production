@@ -395,7 +395,30 @@ export function saveLead(lead: LeadV2): LeadV2 {
 // ==========================================
 
 export function getConversations(): ConversationV2[] {
-  return getItems<ConversationV2>(KEY_CONVERSATIONS, INITIAL_CONVERSATIONS);
+  const conversations = getItems<ConversationV2>(KEY_CONVERSATIONS, INITIAL_CONVERSATIONS);
+  const messages = getItems<MessageV2>(KEY_MESSAGES, INITIAL_MESSAGES);
+
+  // Dynamically calculate and enforce unreadCount based on last_read_at and message read status
+  conversations.forEach((conv) => {
+    const lastReadAt = conv.last_read_at || conv.lastReadAt;
+    const convMsgs = messages.filter(
+      (m) => m.conversationId === conv.id && (m.direction === 'INBOUND' || !m.direction)
+    );
+
+    const unreadMsgs = convMsgs.filter((m) => {
+      const isAlreadyRead = m.is_read || m.isRead || m.deliveryStatus === 'READ';
+      if (isAlreadyRead) return false;
+      if (lastReadAt && m.timestamp) {
+        return new Date(m.timestamp).getTime() > new Date(lastReadAt).getTime();
+      }
+      return true;
+    });
+
+    conv.unreadCount = unreadMsgs.length;
+    conv.unread_count = unreadMsgs.length;
+  });
+
+  return conversations;
 }
 
 export function getConversationById(id: string): ConversationV2 | undefined {
@@ -408,7 +431,7 @@ export function getConversationByContact(contactNumber: string): ConversationV2 
 }
 
 export function saveConversation(conv: ConversationV2): ConversationV2 {
-  const list = getConversations();
+  const list = getItems<ConversationV2>(KEY_CONVERSATIONS, INITIAL_CONVERSATIONS);
   const idx = list.findIndex((c) => c.id === conv.id);
   conv.updatedAt = new Date().toISOString();
 
@@ -419,6 +442,53 @@ export function saveConversation(conv: ConversationV2): ConversationV2 {
   }
   saveItems(KEY_CONVERSATIONS, list);
   return conv;
+}
+
+/**
+ * Mark Conversation as Read
+ * 1. Marks all inbound messages as read (is_read = true, read_at = timestamp)
+ * 2. Sets conversation last_read_at and resets unread_count = 0
+ * 3. Persists directly to database storage
+ */
+export function markConversationAsRead(conversationId: string): {
+  conversation: ConversationV2;
+  markedCount: number;
+} {
+  const nowISO = new Date().toISOString();
+  console.log('[READ STATE UPDATE START]', { conversationId, timestamp: nowISO });
+
+  // 1. Mark all inbound messages as read
+  const messages = getItems<MessageV2>(KEY_MESSAGES, INITIAL_MESSAGES);
+  let markedCount = 0;
+  messages.forEach((m) => {
+    if (m.conversationId === conversationId && (m.direction === 'INBOUND' || !m.direction)) {
+      m.is_read = true;
+      m.isRead = true;
+      m.read_at = m.read_at || nowISO;
+      m.readAt = m.readAt || nowISO;
+      m.deliveryStatus = 'READ';
+      markedCount++;
+    }
+  });
+  saveItems(KEY_MESSAGES, messages);
+  console.log('[MESSAGES MARKED READ]', { conversationId, markedCount });
+
+  // 2. Update conversation record
+  const conversations = getItems<ConversationV2>(KEY_CONVERSATIONS, INITIAL_CONVERSATIONS);
+  const conv = conversations.find((c) => c.id === conversationId);
+  if (conv) {
+    conv.last_read_at = nowISO;
+    conv.lastReadAt = nowISO;
+    conv.unread_count = 0;
+    conv.unreadCount = 0;
+    conv.updatedAt = nowISO;
+    saveItems(KEY_CONVERSATIONS, conversations);
+    console.log('[POSTGRES READ SAVE SUCCESS]', { conversationId, unreadCount: 0, lastReadAt: nowISO });
+    console.log('[UNREAD COUNT RESET]', { conversationId });
+    return { conversation: conv, markedCount };
+  }
+
+  return { conversation: null as any, markedCount };
 }
 
 // ==========================================
@@ -441,6 +511,11 @@ export function saveMessage(msg: MessageV2): MessageV2 {
   const list = getMessages();
   const idx = list.findIndex((m) => m.id === msg.id);
 
+  if (msg.direction === 'INBOUND' && msg.is_read === undefined && msg.isRead === undefined) {
+    msg.is_read = false;
+    msg.isRead = false;
+  }
+
   if (idx !== -1) {
     list[idx] = msg;
   } else {
@@ -453,8 +528,9 @@ export function saveMessage(msg: MessageV2): MessageV2 {
   if (conv) {
     conv.lastMessageText = msg.content;
     conv.lastMessageTimestamp = msg.timestamp;
-    if (msg.direction === 'INBOUND') {
+    if (msg.direction === 'INBOUND' && (!msg.is_read && !msg.isRead)) {
       conv.unreadCount = (conv.unreadCount || 0) + 1;
+      conv.unread_count = conv.unreadCount;
     }
     saveConversation(conv);
   }

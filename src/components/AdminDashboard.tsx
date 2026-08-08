@@ -93,6 +93,7 @@ import ExitLetterModal from './ExitLetterModal';
 import AISalesWorkspace from './AISalesWorkspace';
 import WhatsAppWebhookSettings from './WhatsAppWebhookSettings';
 import { FeatureFlagGuard } from '../lib/featureFlags';
+import { eventBus } from '../lib/eventBus';
 
 interface AdminDashboardProps {
   currentUserId: string;
@@ -209,6 +210,15 @@ export default function AdminDashboard({
       fetchDBSafetyDetails();
     }
   }, [viewTab, triggerRefresh]);
+
+  useEffect(() => {
+    const sub = eventBus.subscribe('NavigateToWhatsAppInbox', () => {
+      setViewTab('ai_sales_inbox');
+    });
+    return () => {
+      sub.unsubscribe();
+    };
+  }, []);
   const [overrideStatus, setOverrideStatus] = useState<'Present' | 'Absent' | 'Week Off' | 'Paid Leave'>('Present');
   const [selectedCalendarEmployee, setSelectedCalendarEmployee] = useState<Employee | null>(null);
 

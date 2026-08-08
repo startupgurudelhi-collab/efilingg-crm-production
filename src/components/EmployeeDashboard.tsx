@@ -65,6 +65,7 @@ import OfferLetterModal from './OfferLetterModal';
 import ExitLetterModal from './ExitLetterModal';
 import AISalesWorkspace from './AISalesWorkspace';
 import { FeatureFlagGuard } from '../lib/featureFlags';
+import { eventBus } from '../lib/eventBus';
 
 interface EmployeeDashboardProps {
   currentUserId: string;
@@ -130,6 +131,15 @@ export default function EmployeeDashboard({
       alert(err.message || 'Failed to update contacted status.');
     }
   };
+
+  useEffect(() => {
+    const sub = eventBus.subscribe('NavigateToWhatsAppInbox', () => {
+      setActiveTab('ai_sales');
+    });
+    return () => {
+      sub.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     // Run automated attendance checkouts or absents on load

@@ -59,16 +59,57 @@ class WhatsAppNotificationEngineClass {
   private titleFlashTimer: any = null;
   private isTitleFlashing: boolean = false;
 
+  private sharedAudioCtx: AudioContext | null = null;
+  private isAudioUnlocked: boolean = false;
+
   constructor() {
     this.loadSettings();
     this.loadAlerts();
     this.initEventBusListeners();
     this.startRepeatLoop();
+    this.initAudioUnlocker();
 
     // Auto-request notification permission if browser notifications enabled
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
       // Permission can be requested on first user interaction
     }
+  }
+
+  /**
+   * Unlock Web Audio & Speech Synthesis on first user interaction
+   */
+  private initAudioUnlocker(): void {
+    if (typeof window === 'undefined') return;
+
+    const unlock = () => {
+      try {
+        if (!this.sharedAudioCtx) {
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioContextClass) {
+            this.sharedAudioCtx = new AudioContextClass();
+          }
+        }
+
+        if (this.sharedAudioCtx && this.sharedAudioCtx.state === 'suspended') {
+          this.sharedAudioCtx.resume().then(() => {
+            this.isAudioUnlocked = true;
+          }).catch(() => {});
+        } else if (this.sharedAudioCtx) {
+          this.isAudioUnlocked = true;
+        }
+
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.getVoices();
+        }
+      } catch (e) {
+        console.warn('[WhatsApp Notification Engine] Audio unlock listener error:', e);
+      }
+    };
+
+    const events = ['pointerdown', 'touchstart', 'click', 'keydown'];
+    events.forEach((evt) => {
+      window.addEventListener(evt, unlock, { passive: true });
+    });
   }
 
   // =========================================================================
@@ -360,44 +401,62 @@ class WhatsAppNotificationEngineClass {
       const vol = (customVolume !== undefined ? customVolume : this.settings.volume) / 100;
       if (vol <= 0) return;
 
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioContextClass) return;
+      if (!this.sharedAudioCtx) {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContextClass) {
+          this.sharedAudioCtx = new AudioContextClass();
+        }
+      }
 
-      const ctx = new AudioContextClass();
+      if (!this.sharedAudioCtx) return;
+
+      const ctx = this.sharedAudioCtx;
       if (ctx.state === 'suspended') {
         ctx.resume().catch(() => {});
       }
 
       const now = ctx.currentTime;
 
-      // Master Gain
+      // Master Gain Node
       const master = ctx.createGain();
-      master.gain.setValueAtTime(vol, now);
+      master.gain.setValueAtTime(vol * 0.9, now);
       master.connect(ctx.destination);
 
-      // Note 1: E6 (1318.51 Hz)
+      // Note 1: High E6 (1318.51 Hz)
       const osc1 = ctx.createOscillator();
       const gain1 = ctx.createGain();
       osc1.type = 'sine';
       osc1.frequency.setValueAtTime(1318.51, now);
-      gain1.gain.setValueAtTime(0.7, now);
-      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      gain1.gain.setValueAtTime(0.8, now);
+      gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
       osc1.connect(gain1);
       gain1.connect(master);
       osc1.start(now);
-      osc1.stop(now + 0.35);
+      osc1.stop(now + 0.4);
 
-      // Note 2: B6 (1975.53 Hz) starting slightly after
+      // Note 2: Higher B6 (1975.53 Hz)
       const osc2 = ctx.createOscillator();
       const gain2 = ctx.createGain();
       osc2.type = 'sine';
       osc2.frequency.setValueAtTime(1975.53, now + 0.12);
-      gain2.gain.setValueAtTime(0.8, now + 0.12);
-      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      gain2.gain.setValueAtTime(0.9, now + 0.12);
+      gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
       osc2.connect(gain2);
       gain2.connect(master);
       osc2.start(now + 0.12);
-      osc2.stop(now + 0.6);
+      osc2.stop(now + 0.7);
+
+      // Note 3: High E7 (2637.02 Hz) accent chime
+      const osc3 = ctx.createOscillator();
+      const gain3 = ctx.createGain();
+      osc3.type = 'sine';
+      osc3.frequency.setValueAtTime(2637.02, now + 0.25);
+      gain3.gain.setValueAtTime(0.8, now + 0.25);
+      gain3.gain.exponentialRampToValueAtTime(0.0001, now + 0.85);
+      osc3.connect(gain3);
+      gain3.connect(master);
+      osc3.start(now + 0.25);
+      osc3.stop(now + 0.85);
     } catch (e) {
       console.warn('[WhatsApp Notification Engine] Web Audio API error:', e);
     }

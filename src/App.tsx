@@ -22,6 +22,7 @@ import ProposalBuilder from './components/ProposalBuilder';
 import ProposalPdf from './components/ProposalPdf';
 import NotificationBar from './components/NotificationBar';
 import WhatsAppNotificationBar from './components/WhatsAppNotificationBar';
+import WhatsAppIncomingMessagePopup from './components/WhatsAppIncomingMessagePopup';
 import TeamConnectWidget from './components/TeamConnectWidget';
 import { ThemeProvider, useTheme } from './components/ThemeContext';
 import { FeatureFlagProvider } from './lib/featureFlags';
@@ -464,7 +465,10 @@ function AppContent() {
       )}
 
       {sessionUser && (
-        <TeamConnectWidget currentUser={sessionUser} />
+        <>
+          <TeamConnectWidget currentUser={sessionUser} />
+          <WhatsAppIncomingMessagePopup />
+        </>
       )}
 
       {/* Simple Footer and operational information */}

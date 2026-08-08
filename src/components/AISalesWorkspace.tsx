@@ -721,6 +721,14 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
       }
     });
 
+    const subOpenConv = eventBus.subscribe('OpenWhatsAppConversation', (data) => {
+      const payload = data.payload as any;
+      if (payload?.conversationId) {
+        setActiveConvId(payload.conversationId);
+        fetchActiveConversationDetails(payload.conversationId);
+      }
+    });
+
     const subTimeline = eventBus.subscribe('TimelineUpdated', () => {
       fetchConversations();
       if (activeConvIdRef.current) {
@@ -752,6 +760,7 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
       subLead.unsubscribe();
       subConv.unsubscribe();
       subMsg.unsubscribe();
+      subOpenConv.unsubscribe();
       subTimeline.unsubscribe();
       subAssign.unsubscribe();
       clearInterval(pollInterval);

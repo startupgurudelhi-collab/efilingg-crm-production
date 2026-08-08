@@ -871,6 +871,11 @@ const handleWebhookIngestionExpress = async (req: any, res: any) => {
   console.log(`[WhatsApp Webhook V2] [${receivedTimestamp.toISOString()}] Received incoming webhook payload:`);
   console.log(JSON.stringify(payload, null, 2));
 
+  console.log('[NOTIFICATION_EVENT_CREATED]', {
+    source: 'WEBHOOK_POST_INGESTION',
+    receivedAt: receivedTimestamp.toISOString(),
+  });
+
   // 3. Extract metadata fields safely from incoming payload
   let senderNumber = '';
   let messageId = '';

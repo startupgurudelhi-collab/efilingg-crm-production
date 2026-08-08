@@ -78,7 +78,7 @@ class WhatsAppNotificationEngineClass {
   }
 
   /**
-   * Pre-populate seen messages and periodically poll for unhandled inbound messages
+   * Pre-populate seen messages and periodically poll for unhandled inbound messages and server webhooks
    */
   private initStorageAndServerPoller(): void {
     if (typeof window === 'undefined') return;
@@ -94,8 +94,9 @@ class WhatsAppNotificationEngineClass {
       }
     } catch (e) {}
 
-    // 2. Background polling loop (every 2.5s)
-    setInterval(() => {
+    // 2. Background polling loop (every 2s) to check both local storage and server endpoints
+    setInterval(async () => {
+      // Check 2a: Client Local Storage
       try {
         const rawMsgs = localStorage.getItem('efilingg_crm_messages_v2');
         if (rawMsgs) {
@@ -107,7 +108,6 @@ class WhatsAppNotificationEngineClass {
           inboundMsgs.forEach((msg) => {
             if (!this.seenMessageIds.has(msg.id)) {
               this.seenMessageIds.add(msg.id);
-              // Trigger alert for new inbound message
               const convId = msg.conversationId || `conv_${msg.senderPhone || Date.now()}`;
               this.triggerInboundAlert({
                 conversationId: convId,
@@ -119,7 +119,40 @@ class WhatsAppNotificationEngineClass {
           });
         }
       } catch (e) {}
-    }, 2500);
+
+      // Check 2b: Real Server Conversations Endpoint (/api/v2/conversations)
+      try {
+        const res = await fetch('/api/v2/conversations');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.conversations && Array.isArray(data.conversations)) {
+            data.conversations.forEach((conv: any) => {
+              if (conv.unreadCount > 0 && conv.lastMessageText) {
+                const alertKey = `server_conv_${conv.id}_${conv.lastMessageTimestamp || conv.updatedAt || conv.unreadCount}`;
+                if (!this.seenMessageIds.has(alertKey)) {
+                  this.seenMessageIds.add(alertKey);
+
+                  console.log('[NOTIFICATION_EVENT_RECEIVED]', {
+                    source: 'SERVER_POLL',
+                    conversationId: conv.id,
+                    customerName: conv.customerName || conv.contactName,
+                    lastMessageText: conv.lastMessageText,
+                    unreadCount: conv.unreadCount,
+                  });
+
+                  this.triggerInboundAlert({
+                    conversationId: conv.id,
+                    senderName: conv.customerName || conv.contactName || conv.contactNumber || 'WhatsApp Lead',
+                    senderPhone: conv.contactNumber || conv.mobile || '',
+                    messageText: conv.lastMessageText || 'New inbound WhatsApp message received',
+                  });
+                }
+              }
+            });
+          }
+        }
+      } catch (e) {}
+    }, 2000);
   }
 
   /**
@@ -233,6 +266,21 @@ class WhatsAppNotificationEngineClass {
     messageText?: string;
   }): void {
     const { conversationId, senderName = 'WhatsApp Customer', senderPhone = '', messageText = 'New message' } = params;
+
+    console.log('[NOTIFICATION_EVENT_RECEIVED]', {
+      conversationId,
+      senderName,
+      senderPhone,
+      messageText,
+      timestamp: new Date().toISOString(),
+    });
+
+    console.log('[POPUP_TRIGGERED]', {
+      conversationId,
+      senderName,
+      messageText,
+      status: 'DISPLAYING_IN_UI',
+    });
 
     const alertId = `alert_${conversationId}_${Date.now()}`;
     const newItem: WhatsAppAlertItem = {
@@ -392,9 +440,21 @@ class WhatsAppNotificationEngineClass {
    */
   private playImmediateAlert(alert: WhatsAppAlertItem): void {
     if (this.settings.soundEnabled) {
+      console.log('[SOUND_TRIGGERED]', {
+        conversationId: alert.conversationId,
+        soundEnabled: this.settings.soundEnabled,
+        volume: this.settings.volume,
+        timestamp: new Date().toISOString(),
+      });
       this.playChimeSound();
     }
     if (this.settings.voiceEnabled) {
+      console.log('[VOICE_TRIGGERED]', {
+        conversationId: alert.conversationId,
+        voiceEnabled: this.settings.voiceEnabled,
+        spokenText: this.settings.voiceText,
+        timestamp: new Date().toISOString(),
+      });
       this.speakVoiceAlert(this.settings.voiceText);
     }
     if (this.settings.browserNotificationsEnabled) {

@@ -315,6 +315,15 @@ export class LeadEngineService {
       conversation.customerName
     );
 
+    console.log('[NOTIFICATION_EVENT_CREATED]', {
+      conversationId: conversation.id,
+      messageId: message.id,
+      senderName: conversation.customerName,
+      senderPhone: normPhone,
+      messageText: message.content,
+      timestamp: new Date().toISOString(),
+    });
+
     eventBus.publishAsync('NewMessage', 'SYSTEM', {
       conversationId: conversation.id,
       messageId: message.id,

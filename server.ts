@@ -16,6 +16,7 @@ import { serverFeatureFlagManager } from './src/server/featureFlags';
 import { eventBus, deadLetterQueue, eventRegistry } from './src/lib/eventBus';
 import { block1Router } from './src/lib/block1/router';
 import { WhatsAppService } from './src/lib/block1/WhatsAppService';
+import { WhatsAppProviderFactory } from './src/lib/block1/WhatsAppProviderFactory';
 import { registerServerPersistHandler, crmMemoryStore } from './src/lib/db';
 import { block2Router } from './src/lib/block2/router';
 import { block3Router } from './src/lib/block3/router';
@@ -26,6 +27,9 @@ serverFeatureFlagManager.setOverride('ENABLE_CUSTOMER360', true);
 serverFeatureFlagManager.setOverride('ENABLE_AI_SALES_WORKSPACE', true);
 
 dotenv.config();
+
+// Validate WhatsApp Provider Environment Configuration on Server Startup
+WhatsAppProviderFactory.validateEnvironmentOnStartup();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -1763,6 +1767,11 @@ Write a helpful, warm, and precise summary under 100 words. Keep it in a single 
   }
 });
 
+// Explicit JSON 404 handler for unmatched /api routes to prevent falling through to Vite/SPA HTML
+app.all('/api*', (req, res) => {
+  res.status(404).json({ success: false, error: `API route not found: ${req.method} ${req.originalUrl}` });
+});
+
 // --- BROWSER RECONCILIATION FOR VITE ---
 
 async function startServer() {
@@ -1780,9 +1789,28 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Efilingg CRM] Server listening on port ${PORT}`);
-  });
+  function listenOnPort(portToTry: number, maxAttempts = 10) {
+    const server = app.listen(portToTry, '0.0.0.0', () => {
+      console.log(`[Efilingg CRM] Server listening on port ${portToTry}`);
+    });
+
+    server.on('error', (err: any) => {
+      if (err.code === 'EADDRINUSE') {
+        console.warn(`[Server Warning] Port ${portToTry} is already in use (EADDRINUSE).`);
+        if (maxAttempts > 0) {
+          const nextPort = portToTry + 1;
+          console.warn(`Automatically trying next available port: ${nextPort}...`);
+          listenOnPort(nextPort, maxAttempts - 1);
+        } else {
+          console.error(`Could not find an open port after multiple attempts.`);
+        }
+      } else {
+        console.error(`[Server Error] Server listen error:`, err);
+      }
+    });
+  }
+
+  listenOnPort(PORT);
 }
 
 startServer();

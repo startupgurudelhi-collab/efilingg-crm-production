@@ -97,12 +97,7 @@ export class LegomarkCPaaSService {
 
     // Official Legomark CPaaS Send Message Endpoint & Environment Variables
     const cpaasUrl = process.env.CPAAS_API_URL || DEFAULT_CPAAS_SEND_URL;
-    const apiKey =
-      process.env.CPAAS_API_KEY ||
-      process.env.WHATSAPP_ACCESS_TOKEN ||
-      process.env.LEGOMARK_KEY ||
-      process.env.WHATSAPP_API_KEY ||
-      'd571a8f906b3e828';
+    const apiKey = process.env.CPAAS_API_KEY || '';
 
     // Official Legomark CPaaS Chatbox Request Payload Format
     const payload = {
@@ -118,33 +113,32 @@ export class LegomarkCPaaSService {
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      'Accept': 'application/json, text/plain, */*',
+      'Accept-Language': 'en-US,en;q=0.9',
       'Key': apiKey,
       'wabaNumber': wabaNumber || '919217666839',
+      'Origin': 'https://cpaas.legomarkindia.com',
+      'Referer': 'https://cpaas.legomarkindia.com/chatbox/',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
     };
 
+    const cookies = process.env.CPAAS_COOKIES || 'None (Stateless API Authentication via Key Header)';
     const jsonBody = JSON.stringify(payload);
     const contentLength = Buffer.byteLength(jsonBody, 'utf8');
 
     const keyVal = headers.Key || '';
     const maskedKey = keyVal.length > 4 ? `${keyVal.substring(0, 4)}********` : '********';
 
-    console.log(`------------------------------------------------`);
-    console.log(`TRANSMITTED HEADERS OBJECT:`);
-    console.log(headers);
-    console.log(`headers.Key: ${headers.Key}`);
-    console.log(`typeof headers.Key: ${typeof headers.Key}`);
-    console.log(`headers.hasOwnProperty("Key"): ${Object.prototype.hasOwnProperty.call(headers, "Key")}`);
-    console.log(`Object.keys(headers): ${JSON.stringify(Object.keys(headers))}`);
-    console.log(`Masked Key Value: ${maskedKey}`);
-    console.log(`------------------------------------------------`);
-    console.log(`Outgoing URL: ${cpaasUrl}`);
-    console.log(`Outgoing Headers:\n${JSON.stringify(headers, null, 2)}`);
-    console.log(`Outgoing JSON Body:\n${JSON.stringify(payload, null, 2)}`);
-    console.log(`JSON.stringify(body): ${jsonBody}`);
-    console.log(`typeof body.mobile: ${typeof payload.mobile}`);
-    console.log(`body.mobile: ${payload.mobile}`);
-    console.log(`Object.keys(body): ${JSON.stringify(Object.keys(payload))}`);
-    console.log(`Content-Length: ${contentLength}`);
+    console.log(`===================================================================`);
+    console.log(`[LEGOMARK CPAAS TRANSPORT LAYER DIAGNOSTICS]`);
+    console.log(`Final URL      : ${cpaasUrl}`);
+    console.log(`Final Method   : POST`);
+    console.log(`Final Cookies  : ${cookies}`);
+    console.log(`Final Headers  :\n${JSON.stringify(headers, null, 2)}`);
+    console.log(`Masked Key     : ${maskedKey}`);
+    console.log(`Content-Length : ${contentLength} bytes`);
+    console.log(`Final Payload  :\n${jsonBody}`);
+    console.log(`===================================================================`);
 
     let finalStatus: DeliveryStatus = 'FAILED';
     let providerMessageId: string | undefined = undefined;

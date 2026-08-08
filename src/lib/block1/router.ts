@@ -13,6 +13,7 @@ import { CustomerIdentityService } from './CustomerIdentityService';
 import { ExecutiveAssignmentService } from './ExecutiveAssignmentService';
 import { LeadEngineService } from './LeadEngineService';
 import { WhatsAppService, DEFAULT_WHATSAPP_VERIFY_TOKEN } from './WhatsAppService';
+import { WhatsAppProviderFactory } from './WhatsAppProviderFactory';
 import { WhatsAppMediaService } from './WhatsAppMediaService';
 import {
   getCustomers,
@@ -35,9 +36,9 @@ export const block1Router = Router();
 // ==========================================
 
 /**
- * Webhook Verification Endpoint (GET /api/whatsapp/webhook)
+ * Webhook Verification Endpoint (GET /api/whatsapp/webhook, GET /api/v2/whatsapp/webhook)
  */
-block1Router.get('/whatsapp/webhook', (req: Request, res: Response) => {
+const handleWebhookVerification = (req: Request, res: Response) => {
   const mode = req.query['hub.mode'] as string | undefined;
   const token = req.query['hub.verify_token'] as string | undefined;
   const challenge = req.query['hub.challenge'] as string | undefined;
@@ -51,12 +52,15 @@ block1Router.get('/whatsapp/webhook', (req: Request, res: Response) => {
 
   console.warn('[WhatsApp Webhook] Verification FAILED:', verification.reason);
   return res.status(403).json({ error: verification.reason || 'Verification failed.' });
-});
+};
+
+block1Router.get('/whatsapp/webhook', handleWebhookVerification);
+block1Router.get('/v2/whatsapp/webhook', handleWebhookVerification);
 
 /**
- * Webhook Receiver Endpoint (POST /api/whatsapp/webhook)
+ * Webhook Receiver Endpoint (POST /api/whatsapp/webhook, POST /api/v2/whatsapp/webhook)
  */
-block1Router.post('/whatsapp/webhook', async (req: Request, res: Response) => {
+const handleWebhookIngestion = async (req: Request, res: Response) => {
   try {
     const payload = req.body;
     const result = await WhatsAppService.processWebhook(payload);
@@ -69,7 +73,10 @@ block1Router.post('/whatsapp/webhook', async (req: Request, res: Response) => {
     const error = err instanceof Error ? err : new Error(String(err));
     return res.status(500).json({ success: false, error: error.message });
   }
-});
+};
+
+block1Router.post('/whatsapp/webhook', handleWebhookIngestion);
+block1Router.post('/v2/whatsapp/webhook', handleWebhookIngestion);
 
 /**
  * Send Outbound WhatsApp Message (POST /api/whatsapp/send, POST /api/v2/whatsapp/send, POST /api/v2/messages/send)
@@ -100,6 +107,205 @@ const handleOutboundSend = async (req: Request, res: Response) => {
 block1Router.post('/whatsapp/send', handleOutboundSend);
 block1Router.post('/v2/whatsapp/send', handleOutboundSend);
 block1Router.post('/v2/messages/send', handleOutboundSend);
+
+/**
+ * Get Active WhatsApp Provider Status & Diagnostics (GET /api/v2/whatsapp/provider)
+ */
+block1Router.get('/v2/whatsapp/provider', (req: Request, res: Response) => {
+  try {
+    const statusReport = WhatsAppProviderFactory.getStatusReport();
+    return res.status(200).json({
+      success: true,
+      report: statusReport,
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Dynamically Switch Active WhatsApp Provider (POST /api/v2/whatsapp/provider/switch)
+ */
+block1Router.post('/v2/whatsapp/provider/switch', (req: Request, res: Response) => {
+  try {
+    const { provider } = req.body;
+    if (!provider || !['meta', 'cpaas'].includes(String(provider).toLowerCase())) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid provider value. Must be "meta" or "cpaas".',
+      });
+    }
+
+    const targetProvider = String(provider).toLowerCase() as 'meta' | 'cpaas';
+    WhatsAppProviderFactory.setRuntimeProviderOverride(targetProvider);
+
+    const updatedReport = WhatsAppProviderFactory.getStatusReport();
+    return res.status(200).json({
+      success: true,
+      message: `WhatsApp provider dynamically updated to ${targetProvider.toUpperCase()}.`,
+      report: updatedReport,
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Send WhatsApp Template Message (POST /api/v2/whatsapp/send-template)
+ * Supports OTP, Invoice, and Payment Reminder templates
+ */
+block1Router.post('/v2/whatsapp/send-template', async (req: Request, res: Response) => {
+  try {
+    const { toPhone, templateName, languageCode, components, conversationId, senderId, senderName } = req.body;
+    if (!toPhone || !templateName) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required parameters: toPhone, templateName',
+      });
+    }
+
+    const message = await WhatsAppService.sendTemplateMessageAsync({
+      toPhone,
+      templateName,
+      languageCode: languageCode || 'en_US',
+      components,
+      conversationId,
+      senderId,
+      senderName,
+    });
+
+    return res.status(200).json({ success: true, message });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Send WhatsApp OTP Message (POST /api/v2/whatsapp/send-otp)
+ */
+block1Router.post('/v2/whatsapp/send-otp', async (req: Request, res: Response) => {
+  try {
+    const { toPhone, otpCode } = req.body;
+    if (!toPhone || !otpCode) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required parameters: toPhone, otpCode',
+      });
+    }
+
+    const message = await WhatsAppService.sendOtpAsync(toPhone, otpCode);
+    return res.status(200).json({ success: true, message });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Send WhatsApp Invoice PDF Message (POST /api/v2/whatsapp/send-invoice-pdf)
+ */
+block1Router.post('/v2/whatsapp/send-invoice-pdf', async (req: Request, res: Response) => {
+  try {
+    const { toPhone, pdfUrl, invoiceNumber, caption } = req.body;
+    if (!toPhone || !pdfUrl || !invoiceNumber) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required parameters: toPhone, pdfUrl, invoiceNumber',
+      });
+    }
+
+    const message = await WhatsAppService.sendInvoicePdfAsync(toPhone, pdfUrl, invoiceNumber, caption);
+    return res.status(200).json({ success: true, message });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Send WhatsApp Reminder Message (POST /api/v2/whatsapp/send-reminder)
+ */
+block1Router.post('/v2/whatsapp/send-reminder', async (req: Request, res: Response) => {
+  try {
+    const { toPhone, reminderTitle, dueDate } = req.body;
+    if (!toPhone || !reminderTitle) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required parameters: toPhone, reminderTitle',
+      });
+    }
+
+    const message = await WhatsAppService.sendReminderAsync(toPhone, reminderTitle, dueDate);
+    return res.status(200).json({ success: true, message });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Send WhatsApp Media Message (POST /api/v2/whatsapp/send-media)
+ * Supports Images, Documents, Audio, Video
+ */
+block1Router.post('/v2/whatsapp/send-media', async (req: Request, res: Response) => {
+  try {
+    const { toPhone, mediaType, mediaUrl, caption, filename, conversationId, senderId, senderName } = req.body;
+    if (!toPhone || !mediaType || !mediaUrl) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required parameters: toPhone, mediaType, mediaUrl',
+      });
+    }
+
+    const message = await WhatsAppService.sendMediaMessageAsync({
+      toPhone,
+      mediaType,
+      mediaUrl,
+      caption,
+      filename,
+      conversationId,
+      senderId,
+      senderName,
+    });
+
+    return res.status(200).json({ success: true, message });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Test Provider Transmission (POST /api/v2/whatsapp/test-provider)
+ */
+block1Router.post('/v2/whatsapp/test-provider', async (req: Request, res: Response) => {
+  try {
+    const targetProviderType = req.body.provider
+      ? (String(req.body.provider).toLowerCase() as 'meta' | 'cpaas')
+      : WhatsAppProviderFactory.getActiveProviderType();
+
+    const providerInstance = WhatsAppProviderFactory.getProvider(targetProviderType);
+
+    const testMessage = await providerInstance.sendOutboundMessageAsync({
+      conversationId: req.body.conversationId || 'CONV-TEST-PROVIDER',
+      senderId: 'SYS_TESTER',
+      senderName: 'Provider Test Suite',
+      content: `Provider Test Verification on ${providerInstance.getProviderName()} at ${new Date().toISOString()}`,
+    });
+
+    return res.status(200).json({
+      success: testMessage.deliveryStatus === 'SENT' || testMessage.providerSuccess === true,
+      provider: providerInstance.getProviderName(),
+      message: testMessage,
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 /**
  * Get Cached WhatsApp Media List (GET /api/v2/whatsapp/media/cache)

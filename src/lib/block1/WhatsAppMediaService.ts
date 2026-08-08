@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { maskToken } from './MetaWhatsAppProvider';
 
 export interface WhatsAppMediaRecord {
   media_id: string;
@@ -83,11 +84,8 @@ export class WhatsAppMediaService {
       return cached;
     }
 
-    const token =
-      process.env.WHATSAPP_ACCESS_TOKEN ||
-      process.env.CPAAS_API_KEY ||
-      process.env.WHATSAPP_TOKEN ||
-      process.env.WHATSAPP_API_KEY;
+    const token = process.env.WHATSAPP_ACCESS_TOKEN;
+    const version = process.env.META_GRAPH_VERSION || 'v25.0';
 
     const now = new Date().toISOString();
     let downloadUrl = '';
@@ -99,12 +97,12 @@ export class WhatsAppMediaService {
     console.log(`\n===================================================================`);
     console.log(`[WhatsApp Media Download INITIATED]`);
     console.log(`Media ID     : ${mediaId}`);
-    console.log(`Access Token : ${token ? 'Bearer Token Configured' : 'No Token (Developer Sandbox Mode)'}`);
+    console.log(`Masked Token : ${maskToken(token)}`);
 
-    // Requirement 2: Call Meta WhatsApp Cloud API: GET /{MEDIA_ID}
-    if (token) {
+    // Call Meta WhatsApp Cloud API: GET /{MEDIA_ID}
+    if (token && token.trim() !== '') {
       try {
-        const metaApiUrl = `https://graph.facebook.com/v18.0/${mediaId}`;
+        const metaApiUrl = `https://graph.facebook.com/${version}/${mediaId}`;
         console.log(`Step 1: Calling Meta Graph API -> GET ${metaApiUrl}`);
 
         const metaRes = await fetch(metaApiUrl, {
@@ -165,7 +163,7 @@ export class WhatsAppMediaService {
         options.caption
       );
       downloadedSize = fileBuffer.length;
-      downloadUrl = downloadUrl || `https://graph.facebook.com/v18.0/${mediaId}/download_url`;
+      downloadUrl = downloadUrl || `https://graph.facebook.com/${version}/${mediaId}/download_url`;
     }
 
     // Requirement 5 & 6: Store in persistent storage and save metadata

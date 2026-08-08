@@ -1504,7 +1504,7 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
                             <div className="mt-2 p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-[10px] space-y-1">
                               <div className="flex items-center space-x-1 font-bold text-rose-700">
                                 <AlertCircle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
-                                <span>CPaaS Delivery Error</span>
+                                <span>WhatsApp Delivery Error</span>
                                 {msg.httpStatus !== undefined && (
                                   <span className="font-mono text-[8.5px] bg-rose-200 text-rose-900 px-1 py-0.2 rounded">
                                     HTTP {msg.httpStatus}

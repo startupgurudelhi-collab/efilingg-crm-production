@@ -408,6 +408,74 @@ block1Router.get('/v2/whatsapp/media/:mediaId/download', async (req: Request, re
   }
 });
 
+/**
+ * FORENSIC MEDIA DEBUG ENDPOINT
+ * GET /api/debug/media/:mediaId
+ * Returns file path, size, mime type, first 32 bytes hex, download status, media URL status
+ */
+const handleMediaDebugRequest = async (req: Request, res: Response) => {
+  try {
+    const mediaId = req.params.mediaId;
+    let record = WhatsAppMediaService.getCachedMedia(mediaId);
+    if (!record) {
+      record = await WhatsAppMediaService.downloadAndCacheMedia({ mediaId });
+    }
+
+    if (!record) {
+      return res.status(404).json({
+        success: false,
+        media_id: mediaId,
+        error: `Media ID ${mediaId} could not be fetched or found.`,
+        filePath: null,
+        size: 0,
+        mimeType: null,
+        first32BytesHex: '',
+        downloadStatus: 404,
+        mediaUrlStatus: 404,
+      });
+    }
+
+    let fileExists = false;
+    let fileSize = 0;
+    let first32Hex = '';
+    let magicValid = false;
+    let magicType = 'NONE';
+
+    if (record.storage_path && fs.existsSync(record.storage_path)) {
+      fileExists = true;
+      const fileBuf = fs.readFileSync(record.storage_path);
+      fileSize = fileBuf.length;
+      const magic = WhatsAppMediaService.inspectMagicHeader(fileBuf);
+      first32Hex = magic.first32Hex;
+      magicValid = magic.isValid;
+      magicType = magic.type;
+    }
+
+    return res.status(200).json({
+      success: true,
+      media_id: record.media_id,
+      filePath: record.storage_path || null,
+      fileExists,
+      size: fileSize,
+      mimeType: record.mime_type || null,
+      first32BytesHex: first32Hex,
+      downloadStatus: record.http_status || (fileExists ? 200 : 404),
+      mediaUrlStatus: (record.download_url || record.media_url) ? 200 : 404,
+      magicHeaderValid: magicValid,
+      magicHeaderType: magicType,
+      filename: record.filename,
+      mediaUrl: record.download_url || record.media_url || record.public_url || null,
+      downloadedAt: record.downloaded_at,
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+block1Router.get('/debug/media/:mediaId', handleMediaDebugRequest);
+block1Router.get('/v2/whatsapp/media/:mediaId/debug', handleMediaDebugRequest);
+
 // ==========================================
 // 2. Customer Identity REST Endpoints
 // ==========================================

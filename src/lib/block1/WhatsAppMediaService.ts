@@ -168,7 +168,7 @@ export class WhatsAppMediaService {
     let fallbackReason = 'NONE';
 
     console.log(`\n===================================================================`);
-    console.log(`[WhatsApp Media Download INITIATED]`);
+    console.log(`[MEDIA_PROCESS_START] Processing media item download pipeline`);
     console.log(`[MEDIA_ID]: ${mediaId}`);
     console.log(`[MASKED_TOKEN]: ${maskToken(token)}`);
 
@@ -176,7 +176,7 @@ export class WhatsAppMediaService {
     if (!token || token.trim() === '' || token.includes('SANDBOX') || token.includes('DEMO')) {
       failureStage = 'STAGE_1_TOKEN_INVALID';
       fallbackReason = `Stage 1 Failure: WHATSAPP_ACCESS_TOKEN is missing or contains sandbox/demo token (${maskToken(token)}). Live Meta Cloud API access requires a valid access token.`;
-      console.warn(`[WhatsApp Media Forensic Audit] ${fallbackReason}`);
+      console.warn(`[MEDIA_PIPELINE_ERROR]: ${fallbackReason}`);
     } else {
       // Stage 2: Meta Graph API Request -> GET https://graph.facebook.com/v25.0/{mediaId}
       try {
@@ -201,19 +201,20 @@ export class WhatsAppMediaService {
           }
           failureStage = 'STAGE_2_META_GRAPH_API_ERROR';
           fallbackReason = `Stage 2 Failure: Meta Graph API returned HTTP ${metaRes.status}. Error: ${JSON.stringify(metaJsonResponse)}`;
-          console.error(`[WhatsApp Media Forensic Audit] ${fallbackReason}`);
+          console.error(`[MEDIA_PIPELINE_ERROR]: ${fallbackReason}`);
         } else {
           metaJsonResponse = await metaRes.json();
+          console.log(`[MEDIA_METADATA_FETCHED]: ${JSON.stringify(metaJsonResponse)}`);
           downloadUrl = metaJsonResponse.url || '';
           if (metaJsonResponse.mime_type) detectedMimeType = metaJsonResponse.mime_type;
 
           if (!downloadUrl) {
             failureStage = 'STAGE_2_MISSING_MEDIA_URL';
-            fallbackReason = 'Stage 2 Failure: Meta Graph API returned HTTP 200 OK but the response did not contain a valid media download URL.';
-            console.error(`[WhatsApp Media Forensic Audit] ${fallbackReason}`);
+            fallbackReason = 'Stage 2 Failure: Meta Graph API returned HTTP 200 OK but response missing download URL.';
+            console.error(`[MEDIA_PIPELINE_ERROR]: ${fallbackReason}`);
           } else {
             // Stage 3: Meta CDN Binary Payload Request -> GET {downloadUrl} with Authorization Bearer
-            console.log(`Stage 3: Downloading binary image payload from Meta CDN -> ${downloadUrl}`);
+            console.log(`[MEDIA_DOWNLOAD_STARTED]: Downloading binary payload from Meta CDN -> ${downloadUrl}`);
             const binaryRes = await fetch(downloadUrl, {
               method: 'GET',
               headers: {
@@ -225,16 +226,20 @@ export class WhatsAppMediaService {
             httpStatus = binaryRes.status;
             downloadContentType = binaryRes.headers.get('content-type') || detectedMimeType;
 
+            console.log(`[MEDIA_DOWNLOAD_STATUS]: ${httpStatus}`);
+            console.log(`[MEDIA_DOWNLOAD_CONTENT_TYPE]: ${downloadContentType}`);
+
             if (!binaryRes.ok) {
               const cdnErrText = await binaryRes.text();
               failureStage = 'STAGE_3_META_CDN_DOWNLOAD_ERROR';
               fallbackReason = `Stage 3 Failure: Meta CDN binary download returned HTTP ${binaryRes.status}. Error: ${cdnErrText}`;
-              console.error(`[WhatsApp Media Forensic Audit] ${fallbackReason}`);
+              console.error(`[MEDIA_PIPELINE_ERROR]: ${fallbackReason}`);
             } else {
               const arrayBuf = await binaryRes.arrayBuffer();
               const downloadedBuf = Buffer.from(arrayBuf);
               const magicCheck = WhatsAppMediaService.inspectMagicHeader(downloadedBuf);
               downloadedSize = downloadedBuf.length;
+              console.log(`[MEDIA_DOWNLOAD_SIZE]: ${downloadedSize}`);
 
               // Stage 4: Binary Signature & File Size Validation
               const isImage = detectedMimeType.startsWith('image/') || options.filename?.match(/\.(jpg|jpeg|png|gif|webp)$/i);
@@ -242,7 +247,7 @@ export class WhatsAppMediaService {
                 const textSnippet = downloadedBuf.toString('utf8', 0, Math.min(downloadedBuf.length, 500));
                 failureStage = 'STAGE_4_SIGNATURE_VALIDATION_FAILED';
                 fallbackReason = `Stage 4 Failure: Signature validation failed for downloaded image! Detected type: ${magicCheck.type}, Size: ${downloadedBuf.length}b, Hex: ${magicCheck.first32Hex}. Content snippet: ${textSnippet}`;
-                console.error(`[WhatsApp Media Forensic Audit] ${fallbackReason}`);
+                console.error(`[MEDIA_PIPELINE_ERROR]: ${fallbackReason}`);
                 fileBuffer = null;
               } else {
                 fileBuffer = downloadedBuf;
@@ -254,7 +259,7 @@ export class WhatsAppMediaService {
         const error = fetchErr instanceof Error ? fetchErr : new Error(String(fetchErr));
         failureStage = 'STAGE_FETCH_EXCEPTION';
         fallbackReason = `Stage Exception: Network or runtime failure during Meta API/CDN request: ${error.message}`;
-        console.error(`[WhatsApp Media Forensic Audit] ${fallbackReason}`);
+        console.error(`[MEDIA_PIPELINE_ERROR]: ${fallbackReason}`);
       }
     }
 
@@ -278,8 +283,10 @@ export class WhatsAppMediaService {
       first32Hex = magicInfo.first32Hex;
       magicValid = magicInfo.isValid;
       magicType = magicInfo.type;
+      console.log(`[MEDIA_FILE_SAVED]: ${storagePath}`);
     } else {
-      console.warn(`[WhatsApp Media Service] Meta media download failed or rejected (${failureStage}). PLACEHOLDER GENERATION IS STRICTLY DISABLED.`);
+      console.warn(`[MEDIA_FILE_SAVED]: NONE (Meta media download failed or rejected at ${failureStage}. PLACEHOLDER GENERATION IS STRICTLY DISABLED.)`);
+      console.error(`[MEDIA_PIPELINE_ERROR]: ${fallbackReason}`);
     }
 
     // REQUIRED FORENSIC AUDIT LOG FORMAT

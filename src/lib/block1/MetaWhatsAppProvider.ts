@@ -140,6 +140,7 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
                   messageText = caption || '[Image Received]';
                   fileTypeCategory = 'IMAGE';
                   filename = filename || `whatsapp_image_${mediaId || Date.now()}.${mimeType.includes('png') ? 'png' : 'jpg'}`;
+                  console.log('[WEBHOOK_INBOUND_IMAGE_RECEIVED]', { msgType: 'image', senderPhone, wamid: msgObj.id, mediaId, mimeType, caption, timestamp: new Date().toISOString() });
                   console.log('[MEDIA WEBHOOK RECEIVED]', { msgType: 'image', senderPhone, wamid: msgObj.id, timestamp: new Date().toISOString() });
                   console.log('[MEDIA ID EXTRACTED]', { mediaId, mimeType, caption, timestamp: new Date().toISOString() });
                 } else if (doc || msgType === 'document') {

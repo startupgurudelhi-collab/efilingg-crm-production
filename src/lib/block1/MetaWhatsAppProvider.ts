@@ -102,7 +102,17 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
               for (const statusObj of value.statuses) {
                 if (statusObj.id && statusObj.status) {
                   const statusUpper = statusObj.status.toUpperCase() as DeliveryStatus;
-                  const updated = updateMessageStatus(statusObj.id, statusUpper);
+                  const errObj = statusObj.errors?.[0];
+                  const errTitle = errObj?.title || (errObj as { message?: string })?.message;
+                  const errCode = errObj?.code;
+                  const failureReason = errTitle ? `${errTitle}${errCode ? ` (Code ${errCode})` : ''}` : undefined;
+
+                  const updated = updateMessageStatus(statusObj.id, statusUpper, {
+                    timestamp: statusObj.timestamp,
+                    failure_reason: failureReason,
+                    errorCode: errCode,
+                    raw_status_payload: statusObj,
+                  });
                   if (updated) updatedStatusesCount++;
                   console.log(`[WHATSAPP STATUS UPDATED] Message ID "${statusObj.id}" delivery status updated to "${statusUpper}" (Recipient: ${statusObj.recipient_id || 'N/A'})`);
                 }
@@ -414,13 +424,19 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
         ? mediaTypeLower
         : 'document';
 
+      let mediaUrl = att.url;
+      if (mediaUrl && mediaUrl.startsWith('/')) {
+        const baseUrl = process.env.APP_URL || 'https://ais-dev-sspqobfvu5h7novljinqdy-160367546751.asia-southeast1.run.app';
+        mediaUrl = `${baseUrl}${mediaUrl}`;
+      }
+
       metaPayload = {
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
         to: mobile,
         type: metaType,
         [metaType]: {
-          link: att.url,
+          link: mediaUrl,
           caption: options.content || undefined,
           filename: att.fileName || undefined,
         },
@@ -444,13 +460,19 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
     const finalStatus: DeliveryStatus = result.success ? 'SENT' : 'FAILED';
 
     outboundMsg.deliveryStatus = finalStatus;
+    outboundMsg.status = finalStatus.toLowerCase();
     outboundMsg.whatsappMessageId = resolvedMessageId;
     outboundMsg.providerMessageId = resolvedMessageId;
+    outboundMsg.meta_message_id = resolvedMessageId;
     outboundMsg.rawProviderResponse = result.parsedResponse || result.responseBodyText;
     outboundMsg.providerSuccess = result.success;
     outboundMsg.providerErrorCode = result.errorCode;
     outboundMsg.providerErrorMessage = result.errorMessage;
     outboundMsg.httpStatus = result.httpStatusCode;
+    if (!result.success) {
+      outboundMsg.failed_at = new Date().toISOString();
+      outboundMsg.failure_reason = result.errorMessage || 'Outbound WhatsApp delivery failed';
+    }
     saveMessage(outboundMsg);
 
     addWebhookLog({

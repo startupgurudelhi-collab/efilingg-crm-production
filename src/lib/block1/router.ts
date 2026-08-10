@@ -27,6 +27,9 @@ import {
   getExecutives,
   resetBlock1DB,
   markConversationAsRead,
+  archiveConversation,
+  deleteConversation,
+  updateMessageStatus,
 } from './db';
 import { eventBus, deadLetterQueue } from '../eventBus';
 
@@ -745,15 +748,18 @@ block1Router.post('/v2/conversations/:id/messages', async (req: Request, res: Re
     const conversationId = req.params.id;
     const { senderId, senderName, content, attachments } = req.body;
 
-    if (!content) {
-      return res.status(400).json({ error: 'Message content is required.' });
+    const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+    if (!content && !hasAttachments) {
+      return res.status(400).json({ error: 'Message content or attachments are required.' });
     }
+
+    const messageContent = content || (hasAttachments ? `[${attachments[0].fileType || 'Attachment'}: ${attachments[0].fileName || 'File'}]` : '');
 
     const message = await WhatsAppService.sendOutboundMessageAsync({
       conversationId,
       senderId: senderId || 'EMP-ADMIN',
       senderName: senderName || 'Executive',
-      content,
+      content: messageContent,
       attachments,
     });
 
@@ -761,6 +767,77 @@ block1Router.post('/v2/conversations/:id/messages', async (req: Request, res: Re
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Archive / Unarchive Conversation (POST /api/v2/conversations/:id/archive, PATCH /api/v2/conversations/:id/archive)
+ */
+const handleConversationArchive = (req: Request, res: Response) => {
+  try {
+    const conversationId = req.params.id;
+    const isArchived = req.body.is_archived !== undefined ? Boolean(req.body.is_archived) : true;
+
+    const conv = archiveConversation(conversationId, isArchived);
+    if (!conv) {
+      return res.status(404).json({ success: false, error: `Conversation ${conversationId} not found.` });
+    }
+
+    return res.status(200).json({ success: true, conversation: conv });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+block1Router.post('/v2/conversations/:id/archive', handleConversationArchive);
+block1Router.patch('/v2/conversations/:id/archive', handleConversationArchive);
+
+/**
+ * Soft Delete Conversation (DELETE /api/v2/conversations/:id)
+ */
+block1Router.delete('/v2/conversations/:id', (req: Request, res: Response) => {
+  try {
+    const conversationId = req.params.id;
+    const deletedBy = (req.body && req.body.deletedBy) || 'User';
+
+    const success = deleteConversation(conversationId, deletedBy);
+    if (!success) {
+      return res.status(404).json({ success: false, error: `Conversation ${conversationId} not found.` });
+    }
+
+    return res.status(200).json({ success: true, message: `Conversation ${conversationId} deleted.` });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Update / Simulate Message Status (POST /api/v2/whatsapp/status)
+ */
+block1Router.post('/v2/whatsapp/status', (req: Request, res: Response) => {
+  try {
+    const { whatsappMessageId, messageId, status, failure_reason, errorCode, timestamp } = req.body;
+    const targetId = whatsappMessageId || messageId;
+    if (!targetId || !status) {
+      return res.status(400).json({ error: 'Missing targetId (whatsappMessageId/messageId) or status' });
+    }
+
+    const updated = updateMessageStatus(targetId, status.toUpperCase(), {
+      timestamp,
+      failure_reason,
+      errorCode,
+    });
+
+    if (!updated) {
+      return res.status(404).json({ error: `Message with ID ${targetId} not found` });
+    }
+
+    return res.status(200).json({ success: true, messageId: targetId, status: status.toUpperCase() });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ error: error.message });
   }
 });
 

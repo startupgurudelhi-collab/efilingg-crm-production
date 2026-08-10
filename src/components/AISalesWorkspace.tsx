@@ -62,6 +62,15 @@ import {
   Webhook,
   Bell,
   VolumeX,
+  Check,
+  Archive,
+  ArchiveRestore,
+  Trash2,
+  FileDown,
+  MoreVertical,
+  Printer,
+  Upload,
+  RotateCw,
 } from 'lucide-react';
 import { eventBus } from '../lib/eventBus';
 import WhatsAppWebhookSettings from './WhatsAppWebhookSettings';
@@ -111,9 +120,11 @@ interface ConversationRowProps {
   conv: ConversationV2;
   isSelected: boolean;
   onSelect: (id: string) => void;
+  onArchive?: (id: string, isArchived?: boolean, e?: React.MouseEvent) => void;
+  onDelete?: (id: string, e?: React.MouseEvent) => void;
 }
 
-const ConversationRow = React.memo(({ conv, isSelected, onSelect }: ConversationRowProps) => {
+const ConversationRow = React.memo(({ conv, isSelected, onSelect, onArchive, onDelete }: ConversationRowProps) => {
   const isAi = conv.assignedType === 'AI_AGENT';
   const { isConversationAlerting } = useWhatsAppNotifications();
   const isAlerting = isConversationAlerting(conv.id);
@@ -121,7 +132,7 @@ const ConversationRow = React.memo(({ conv, isSelected, onSelect }: Conversation
   return (
     <div
       onClick={() => onSelect(conv.id)}
-      className={`p-3 cursor-pointer transition-all flex items-start space-x-3 ${
+      className={`p-3 cursor-pointer transition-all flex items-start space-x-3 group relative ${
         isAlerting
           ? 'bg-rose-950/40 border-l-4 border-rose-500 ring-2 ring-rose-500/50 animate-pulse shadow-lg'
           : isSelected
@@ -129,6 +140,28 @@ const ConversationRow = React.memo(({ conv, isSelected, onSelect }: Conversation
           : 'hover:bg-slate-900/60'
       }`}
     >
+      {/* Quick Action Icons on Hover */}
+      <div className="absolute right-2 top-2 hidden group-hover:flex items-center space-x-1 bg-slate-900/90 backdrop-blur-xs p-1 rounded-lg border border-slate-700/80 z-10 shadow-md">
+        {onArchive && (
+          <button
+            onClick={(e) => onArchive(conv.id, conv.is_archived, e)}
+            title={conv.is_archived ? "Unarchive chat" : "Archive chat"}
+            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-indigo-400 rounded transition-colors"
+          >
+            {conv.is_archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+          </button>
+        )}
+        {onDelete && (
+          <button
+            onClick={(e) => onDelete(conv.id, e)}
+            title="Delete conversation"
+            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-rose-400 rounded transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
       {/* Avatar Badge */}
       <div className="relative shrink-0">
         <div className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-xs shadow-inner ${
@@ -177,9 +210,44 @@ const ConversationRow = React.memo(({ conv, isSelected, onSelect }: Conversation
           </span>
         </div>
 
-        <div className="text-[11px] text-slate-400 font-mono mb-1 truncate">
+        <div className="text-[11px] text-slate-400 font-mono truncate">
           +{conv.contactNumber}
         </div>
+
+        {conv.lastMessageText && (
+          <div className="flex items-center space-x-1.5 text-[11px] text-slate-300 font-normal truncate my-0.5">
+            <span className="truncate flex-1 text-slate-300">
+              {conv.lastMessageText}
+            </span>
+            {conv.lastMessageDirection === 'OUTBOUND' && (
+              <span className="shrink-0 flex items-center">
+                {conv.lastMessageDeliveryStatus === 'READ' ? (
+                  <span title="Read (Double Blue Ticks)" className="flex items-center text-sky-400 font-bold text-[9px] gap-0.5">
+                    <CheckCheck className="h-3 w-3 text-sky-400 font-bold" />
+                    <span>Read</span>
+                  </span>
+                ) : conv.lastMessageDeliveryStatus === 'DELIVERED' ? (
+                  <span title="Delivered (Double Grey Ticks)" className="flex items-center text-slate-400 text-[9px]">
+                    <CheckCheck className="h-3 w-3 text-slate-400" />
+                  </span>
+                ) : conv.lastMessageDeliveryStatus === 'FAILED' ? (
+                  <span title="Delivery Failed" className="flex items-center text-rose-400 font-bold text-[9px] gap-0.5">
+                    <AlertCircle className="h-3 w-3 text-rose-500" />
+                    <span>Failed</span>
+                  </span>
+                ) : conv.lastMessageDeliveryStatus === 'SENDING' ? (
+                  <span title="Sending" className="flex items-center text-slate-500 text-[9px]">
+                    <Clock className="h-2.5 w-2.5 animate-spin text-slate-400" />
+                  </span>
+                ) : (
+                  <span title="Sent (Single Grey Tick)" className="flex items-center text-slate-400 text-[9px]">
+                    <Check className="h-3 w-3 text-slate-400" />
+                  </span>
+                )}
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="flex items-center justify-between">
           <span className="text-[9.5px] px-1.5 py-0.5 rounded-md bg-slate-800 text-emerald-400 font-mono font-semibold truncate max-w-[130px]">
@@ -506,6 +574,233 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
   const [messageText, setMessageText] = useState('');
   const [composerMode, setComposerMode] = useState<'PUBLIC' | 'INTERNAL_NOTE'>('PUBLIC');
 
+  // Attachment Sending State (Enterprise Feature 1)
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileAttachment, setFileAttachment] = useState<any | null>(null);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setSelectedFile(file);
+    setUploadError(null);
+    setIsUploadingAttachment(true);
+    setUploadProgress(15);
+
+    try {
+      const reader = new FileReader();
+      reader.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 70);
+          setUploadProgress(15 + percent);
+        }
+      };
+
+      reader.onload = async () => {
+        try {
+          const base64Data = reader.result as string;
+          setUploadProgress(85);
+
+          const res = await fetch('/api/chat/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              filename: file.name,
+              fileType: file.type || 'application/octet-stream',
+              base64Data,
+            }),
+          });
+
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({ error: 'Upload failed' }));
+            throw new Error(errData.error || 'Failed to upload attachment');
+          }
+
+          const data = await res.json();
+          setUploadProgress(100);
+
+          let fileCategory = 'DOCUMENT';
+          if (file.type.startsWith('image/')) fileCategory = 'IMAGE';
+          else if (file.type.startsWith('video/')) fileCategory = 'VIDEO';
+          else if (file.type.startsWith('audio/')) fileCategory = 'AUDIO';
+
+          const att = {
+            id: `ATT-${Date.now()}`,
+            fileName: file.name,
+            fileType: fileCategory,
+            fileSize: file.size,
+            mimeType: file.type || 'application/octet-stream',
+            url: data.url,
+          };
+
+          setFileAttachment(att);
+          setIsUploadingAttachment(false);
+        } catch (err: any) {
+          setUploadError(err.message || 'Failed to process attachment');
+          setIsUploadingAttachment(false);
+        }
+      };
+
+      reader.onerror = () => {
+        setUploadError('Failed to read file');
+        setIsUploadingAttachment(false);
+      };
+
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      setUploadError(err.message || 'File upload failed');
+      setIsUploadingAttachment(false);
+    }
+  };
+
+  const clearSelectedAttachment = () => {
+    setSelectedFile(null);
+    setFileAttachment(null);
+    setUploadError(null);
+    setIsUploadingAttachment(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleArchiveConversation = async (convId: string, currentIsArchived?: boolean, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      const res = await fetch(`/api/v2/conversations/${convId}/archive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_archived: !currentIsArchived }),
+      });
+      if (res.ok) {
+        setConversations((prev) =>
+          prev.map((c) => (c.id === convId ? { ...c, is_archived: !currentIsArchived } : c))
+        );
+        fetchConversations();
+      }
+    } catch (err) {
+      console.error('Failed to archive conversation:', err);
+    }
+  };
+
+  const handleDeleteConversation = async (convId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm('Are you sure you want to delete this conversation? This will soft delete the thread.')) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/v2/conversations/${convId}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        setConversations((prev) => prev.filter((c) => c.id !== convId));
+        if (activeConvId === convId) {
+          const remaining = conversations.filter((c) => c.id !== convId && !c.deleted_at && !c.is_archived);
+          setActiveConvId(remaining.length > 0 ? remaining[0].id : null);
+        }
+        fetchConversations();
+      }
+    } catch (err) {
+      console.error('Failed to delete conversation:', err);
+    }
+  };
+
+  const handleExportPDF = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Please allow popups to open the conversation PDF export.');
+      return;
+    }
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Export Chat - ${activeConv?.customerName || 'Customer'}</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 30px; color: #1e293b; background: #fff; }
+            .header { border-bottom: 2px solid #00a884; padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; }
+            .brand { color: #00a884; font-size: 20px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+            .subtitle { font-size: 11px; color: #64748b; margin-top: 3px; }
+            .meta { text-align: right; font-size: 11px; color: #475569; line-height: 1.5; }
+            .details-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12px; }
+            .details-item span { font-weight: bold; color: #334155; }
+            .chat-container { display: flex; flex-direction: column; gap: 12px; margin-bottom: 30px; }
+            .message { padding: 10px 14px; border-radius: 12px; max-width: 80%; font-size: 12px; line-height: 1.5; position: relative; }
+            .inbound { background: #f1f5f9; border: 1px solid #e2e8f0; align-self: flex-start; }
+            .outbound { background: #d9fdd3; border: 1px solid #bbf7d0; align-self: flex-end; }
+            .sender { font-weight: bold; font-size: 11px; margin-bottom: 4px; color: #0f766e; }
+            .time { font-size: 9px; color: #64748b; text-align: right; margin-top: 6px; }
+            .attachment-info { margin-top: 6px; padding: 6px 10px; background: rgba(0,0,0,0.04); border-radius: 6px; font-size: 11px; font-weight: 500; }
+            .footer { border-top: 1px solid #e2e8f0; padding-top: 15px; text-align: center; font-size: 10px; color: #94a3b8; margin-top: 40px; }
+            @media print {
+              body { padding: 0; }
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="no-print" style="margin-bottom: 20px; text-align: right;">
+            <button onclick="window.print()" style="background: #00a884; color: white; border: none; padding: 10px 20px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer;">🖨️ Print / Save as PDF</button>
+          </div>
+
+          <div class="header">
+            <div>
+              <div class="brand">Efilingg CRM Enterprise</div>
+              <div class="subtitle">Official WhatsApp Sales Conversation Log</div>
+            </div>
+            <div class="meta">
+              <div><strong>Export Date:</strong> ${new Date().toLocaleString()}</div>
+              <div><strong>Generated By:</strong> ${currentUserName}</div>
+            </div>
+          </div>
+
+          <div class="details-box">
+            <div class="details-item"><span>Customer Name:</span> ${activeConv?.customerName || 'N/A'}</div>
+            <div class="details-item"><span>Phone Number:</span> +${activeConv?.contactNumber || ''}</div>
+            <div class="details-item"><span>Service Category:</span> ${activeConv?.serviceCategory || 'General Inquiry'}</div>
+            <div class="details-item"><span>Conversation ID:</span> ${activeConv?.id || ''}</div>
+            <div class="details-item"><span>Handled By:</span> ${activeConv?.assignedExecutiveName || 'AI Co-pilot'} (${activeConv?.assignedType || 'AI'})</div>
+            <div class="details-item"><span>Total Messages:</span> ${messages.length}</div>
+          </div>
+
+          <h3>Conversation History</h3>
+          <div class="chat-container">
+            ${messages
+              .map((m) => {
+                const isInbound = m.direction === 'INBOUND';
+                const timeStr = m.timestamp ? new Date(m.timestamp).toLocaleString() : '';
+                const attsStr = m.attachments && m.attachments.length > 0
+                  ? m.attachments.map((a) => `<div class="attachment-info">📎 <strong>[${a.fileType || 'Attachment'}]:</strong> ${a.fileName}</div>`).join('')
+                  : '';
+
+                return `
+                  <div class="message ${isInbound ? 'inbound' : 'outbound'}">
+                    <div class="sender">${m.senderName || (isInbound ? 'Customer' : 'Executive')}</div>
+                    <div>${m.content}</div>
+                    ${attsStr}
+                    <div class="time">${timeStr} ${!isInbound ? `• ${m.deliveryStatus || 'SENT'}` : ''}</div>
+                  </div>
+                `;
+              })
+              .join('')}
+          </div>
+
+          <div class="footer">
+            CONFIDENTIAL & PROPRIETARY — Efilingg CRM Enterprise WhatsApp Intelligence Platform<br/>
+            This document contains confidential client communication records.
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
   // AI Cache & Action States (Requirement 6)
   const aiSuggestionsCacheRef = useRef<Record<string, { lastMsgId: string; suggestions: string[] }>>({});
   const [suggestedReplies, setSuggestedReplies] = useState<string[]>([]);
@@ -748,6 +1043,13 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
       fetchConversations();
     });
 
+    const subStatus = eventBus.subscribe('MessageStatusUpdated', (data) => {
+      fetchConversations();
+      if (activeConvIdRef.current) {
+        fetchActiveConversationDetails(activeConvIdRef.current);
+      }
+    });
+
     // Background interval to refresh conversations & active conversation
     const pollInterval = setInterval(() => {
       fetchConversations();
@@ -763,6 +1065,7 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
       subOpenConv.unsubscribe();
       subTimeline.unsubscribe();
       subAssign.unsubscribe();
+      subStatus.unsubscribe();
       clearInterval(pollInterval);
     };
   }, [addNotification, fetchActiveConversationDetails, fetchConversations]);
@@ -814,6 +1117,14 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
   // Filter conversations by active tab and search query
   const filteredConversations = useMemo(() => {
     return conversations.filter((c) => {
+      if (c.deleted_at) return false;
+
+      if (activeTab === ('ARCHIVED' as any)) {
+        if (!c.is_archived) return false;
+      } else {
+        if (c.is_archived) return false;
+      }
+
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         const matchName = c.customerName?.toLowerCase().includes(q);
@@ -874,8 +1185,10 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
 
   // Send Message with Optimistic UI (Requirement 8)
   const handleSendMessage = async (textToSend?: string) => {
-    const text = textToSend || messageText;
-    if (!text.trim() || !activeConvId) return;
+    const text = textToSend !== undefined ? textToSend : messageText;
+    const hasAttachment = Boolean(fileAttachment);
+
+    if ((!text.trim() && !hasAttachment) || !activeConvId) return;
 
     if (composerMode === 'INTERNAL_NOTE') {
       try {
@@ -897,16 +1210,20 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
         console.error('Failed to post internal note:', err);
       }
     } else {
-      // Optimistic Message Object (Requirement 8)
+      // Optimistic Message Object
       const tempId = `TEMP-${Date.now()}`;
+      const attachmentsToSend = fileAttachment ? [fileAttachment] : undefined;
+      const messageContent = text.trim() || (fileAttachment ? `[${fileAttachment.fileType}: ${fileAttachment.fileName}]` : '');
+
       const tempMsg: MessageV2 = {
         id: tempId,
         conversationId: activeConvId,
         direction: 'OUTBOUND',
         senderId: currentUserId,
         senderName: currentUserName,
-        messageType: 'TEXT',
-        content: text,
+        messageType: fileAttachment ? (fileAttachment.fileType as any) : 'TEXT',
+        content: messageContent,
+        attachments: attachmentsToSend,
         deliveryStatus: 'SENDING' as any,
         timestamp: new Date().toISOString(),
       };
@@ -914,18 +1231,19 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
       // Instantly add to UI & force scroll to bottom
       setMessages((prev) => [...prev, tempMsg]);
       setMessageText('');
+      clearSelectedAttachment();
       delete draftsRef.current[activeConvId];
       scrollToBottom(true);
 
       try {
-        const res = await fetch('/api/v2/whatsapp/send', {
+        const res = await fetch(`/api/v2/conversations/${activeConvId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            conversationId: activeConvId,
             senderId: currentUserId,
             senderName: currentUserName,
-            content: text,
+            content: messageContent,
+            attachments: attachmentsToSend,
           }),
         });
 
@@ -938,18 +1256,36 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
           fetchConversations();
 
           if (activeConv?.assignedType === 'AI_AGENT') {
-            triggerAiAutoReply(activeConvId, text);
+            triggerAiAutoReply(activeConvId, messageContent);
           }
         } else {
-          console.error('Outbound WhatsApp delivery failed:', await res.text());
+          const errText = await res.text();
+          console.error('Outbound WhatsApp delivery failed:', errText);
+          let parsedErr: any = {};
+          try {
+            parsedErr = JSON.parse(errText);
+          } catch {}
+
           setMessages((prev) =>
-            prev.map((m) => (m.id === tempId ? { ...m, deliveryStatus: 'FAILED' as any } : m))
+            prev.map((m) =>
+              m.id === tempId
+                ? {
+                    ...m,
+                    deliveryStatus: 'FAILED' as any,
+                    providerErrorMessage: parsedErr.error || 'Outbound WhatsApp delivery failed.',
+                  }
+                : m
+            )
           );
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to send outbound message:', err);
         setMessages((prev) =>
-          prev.map((m) => (m.id === tempId ? { ...m, deliveryStatus: 'FAILED' as any } : m))
+          prev.map((m) =>
+            m.id === tempId
+              ? { ...m, deliveryStatus: 'FAILED' as any, providerErrorMessage: err.message || 'Network error.' }
+              : m
+          )
         );
       }
     }
@@ -1168,6 +1504,7 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
                 [
                   { id: 'ALL', label: 'All' },
                   { id: 'UNREAD', label: 'Unread' },
+                  { id: 'ARCHIVED', label: '📁 Archived' },
                   { id: 'ASSIGNED', label: 'My Leads' },
                   { id: 'AI_HANDLING', label: '🤖 AI' },
                   { id: 'HUMAN_HANDLING', label: '👤 Human' },
@@ -1177,7 +1514,7 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
               ).map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => setActiveTab(tab.id as any)}
                   className={`px-2.5 py-1 rounded-lg font-bold whitespace-nowrap transition-colors cursor-pointer ${
                     activeTab === tab.id
                       ? 'bg-emerald-600 text-white shadow-sm'
@@ -1204,6 +1541,8 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
                   conv={conv}
                   isSelected={conv.id === activeConvId}
                   onSelect={handleSelectConversation}
+                  onArchive={handleArchiveConversation}
+                  onDelete={handleDeleteConversation}
                 />
               ))
             )}
@@ -1269,6 +1608,42 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
                   >
                     <Sparkles className="h-3.5 w-3.5 text-amber-500" />
                     <span className="hidden sm:inline">AI Summary</span>
+                  </button>
+
+                  <button
+                    onClick={handleExportPDF}
+                    title="Export Chat to PDF"
+                    className="p-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 transition-colors cursor-pointer text-xs flex items-center space-x-1 px-2.5 shadow-xs font-medium"
+                  >
+                    <FileDown className="h-3.5 w-3.5 text-emerald-600" />
+                    <span className="hidden lg:inline">Export PDF</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleArchiveConversation(activeConv.id, activeConv.is_archived)}
+                    title={activeConv.is_archived ? "Unarchive Chat" : "Archive Chat"}
+                    className="p-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 transition-colors cursor-pointer text-xs flex items-center space-x-1 px-2.5 shadow-xs font-medium"
+                  >
+                    {activeConv.is_archived ? (
+                      <>
+                        <ArchiveRestore className="h-3.5 w-3.5 text-indigo-600" />
+                        <span className="hidden lg:inline">Unarchive</span>
+                      </>
+                    ) : (
+                      <>
+                        <Archive className="h-3.5 w-3.5 text-indigo-600" />
+                        <span className="hidden lg:inline">Archive</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => handleDeleteConversation(activeConv.id)}
+                    title="Delete Conversation"
+                    className="p-1.5 rounded-xl bg-white hover:bg-rose-50 border border-rose-200 text-rose-700 transition-colors cursor-pointer text-xs flex items-center space-x-1 px-2.5 shadow-xs font-medium"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+                    <span className="hidden lg:inline">Delete</span>
                   </button>
                 </div>
               </div>
@@ -1549,8 +1924,18 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
                                   <AlertCircle className="h-3 w-3 text-rose-600" />
                                   <span>Delivery Failed</span>
                                 </span>
+                              ) : msg.deliveryStatus === 'READ' ? (
+                                <span title="Read (Double Blue Ticks)" className="flex items-center">
+                                  <CheckCheck className="h-3.5 w-3.5 text-sky-500 fill-sky-500/20 font-bold" />
+                                </span>
+                              ) : msg.deliveryStatus === 'DELIVERED' ? (
+                                <span title="Delivered (Double Grey Ticks)" className="flex items-center">
+                                  <CheckCheck className="h-3.5 w-3.5 text-slate-500" />
+                                </span>
                               ) : (
-                                <CheckCheck className="h-3.5 w-3.5 text-emerald-600" />
+                                <span title="Sent (Single Grey Tick)" className="flex items-center">
+                                  <Check className="h-3.5 w-3.5 text-slate-500" />
+                                </span>
                               )
                             )}
                           </div>
@@ -1558,22 +1943,32 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
                           {/* Provider Error Banner inside message bubble if FAILED */}
                           {msg.deliveryStatus === 'FAILED' && (
                             <div className="mt-2 p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-[10px] space-y-1">
-                              <div className="flex items-center space-x-1 font-bold text-rose-700">
-                                <AlertCircle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
-                                <span>WhatsApp Delivery Error</span>
-                                {msg.httpStatus !== undefined && (
-                                  <span className="font-mono text-[8.5px] bg-rose-200 text-rose-900 px-1 py-0.2 rounded">
-                                    HTTP {msg.httpStatus}
-                                  </span>
-                                )}
-                                {msg.providerErrorCode !== undefined && (
-                                  <span className="font-mono text-[8.5px] bg-rose-200 text-rose-900 px-1 py-0.2 rounded">
-                                    Code: {msg.providerErrorCode}
-                                  </span>
-                                )}
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-1 font-bold text-rose-700">
+                                  <AlertCircle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+                                  <span>WhatsApp Delivery Error</span>
+                                  {msg.httpStatus !== undefined && (
+                                    <span className="font-mono text-[8.5px] bg-rose-200 text-rose-900 px-1 py-0.2 rounded">
+                                      HTTP {msg.httpStatus}
+                                    </span>
+                                  )}
+                                  {msg.providerErrorCode !== undefined && (
+                                    <span className="font-mono text-[8.5px] bg-rose-200 text-rose-900 px-1 py-0.2 rounded">
+                                      Code: {msg.providerErrorCode}
+                                    </span>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() => handleSendMessage(msg.content)}
+                                  className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white font-bold text-[9.5px] cursor-pointer transition-colors shadow-2xs flex items-center space-x-1"
+                                  title="Retry sending this message"
+                                >
+                                  <RotateCw className="h-2.5 w-2.5" />
+                                  <span>Retry</span>
+                                </button>
                               </div>
                               <p className="font-medium text-rose-800 leading-tight">
-                                {msg.providerErrorMessage || 'Provider returned error or unconfirmed delivery status.'}
+                                {msg.providerErrorMessage || msg.failure_reason || 'Provider returned error or unconfirmed delivery status.'}
                               </p>
                               {msg.rawProviderResponse && (
                                 <details className="mt-1">
@@ -1661,6 +2056,74 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
 
               {/* Message Composer Footer */}
               <div className="p-3 bg-[#f0f2f5] border-t border-slate-200 space-y-2 shrink-0">
+                {/* Hidden File Input */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileSelect}
+                  accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,audio/*,video/*"
+                  className="hidden"
+                />
+
+                {/* Attachment Upload Preview Bar */}
+                {(isUploadingAttachment || fileAttachment || uploadError) && (
+                  <div className="p-2.5 rounded-xl bg-white border border-slate-300 flex items-center justify-between space-x-3 shadow-xs">
+                    {isUploadingAttachment ? (
+                      <div className="flex-1 flex items-center space-x-3">
+                        <Upload className="h-4 w-4 text-emerald-600 animate-bounce shrink-0" />
+                        <div className="flex-1">
+                          <div className="flex justify-between text-[10px] font-bold text-slate-700">
+                            <span className="truncate max-w-[200px]">{selectedFile?.name || 'Uploading media...'}</span>
+                            <span>{uploadProgress}%</span>
+                          </div>
+                          <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mt-1">
+                            <div
+                              className="h-full bg-emerald-500 transition-all duration-200"
+                              style={{ width: `${uploadProgress}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ) : uploadError ? (
+                      <div className="flex-1 flex items-center justify-between text-rose-600 text-xs font-semibold">
+                        <div className="flex items-center space-x-1.5">
+                          <AlertCircle className="h-4 w-4 shrink-0" />
+                          <span>{uploadError}</span>
+                        </div>
+                        <button
+                          onClick={clearSelectedAttachment}
+                          className="p-1 hover:bg-rose-100 rounded text-rose-700 transition-colors"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : fileAttachment ? (
+                      <div className="flex-1 flex items-center justify-between">
+                        <div className="flex items-center space-x-2.5 overflow-hidden">
+                          <div className="p-1.5 rounded-lg bg-emerald-100 text-emerald-700 shrink-0">
+                            <Paperclip className="h-4 w-4" />
+                          </div>
+                          <div className="overflow-hidden">
+                            <span className="text-xs font-bold text-slate-900 block truncate">
+                              {fileAttachment.fileName}
+                            </span>
+                            <span className="text-[10px] font-mono text-emerald-700 font-semibold block">
+                              Ready to send ({fileAttachment.fileType})
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={clearSelectedAttachment}
+                          className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                          title="Remove attachment"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+
                 {/* Composer Mode Selector */}
                 <div className="flex items-center space-x-2 text-[10px] font-mono">
                   <button
@@ -1687,6 +2150,18 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
 
                 {/* Input Area */}
                 <div className="flex items-end space-x-2">
+                  {composerMode === 'PUBLIC' && (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploadingAttachment}
+                      title="Attach Image, PDF, Document, Audio, Video"
+                      className="h-10 px-3 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer flex items-center justify-center shrink-0 shadow-2xs disabled:opacity-50"
+                    >
+                      <Paperclip className="h-4 w-4 text-slate-600" />
+                    </button>
+                  )}
+
                   <textarea
                     rows={2}
                     placeholder={
@@ -1711,7 +2186,7 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
 
                   <button
                     onClick={() => handleSendMessage()}
-                    disabled={!messageText.trim()}
+                    disabled={!messageText.trim() && !fileAttachment}
                     className={`h-10 px-4 rounded-xl text-xs font-bold text-white flex items-center justify-center space-x-1.5 transition-all cursor-pointer disabled:opacity-40 ${
                       composerMode === 'INTERNAL_NOTE'
                         ? 'bg-amber-600 hover:bg-amber-700'

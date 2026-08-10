@@ -101,12 +101,19 @@ export interface MessageV2 {
   attachments?: AttachmentV2[];
   whatsappMessageId?: string;
   providerMessageId?: string;
+  meta_message_id?: string;
   deliveryStatus: DeliveryStatus;
+  status?: string; // 'sending' | 'sent' | 'delivered' | 'read' | 'failed'
   timestamp: string;
   is_read?: boolean;
   isRead?: boolean;
   read_at?: string;
   readAt?: string;
+  delivered_at?: string;
+  deliveredAt?: string;
+  failed_at?: string;
+  failedAt?: string;
+  failure_reason?: string;
   rawPayload?: Record<string, unknown>;
   rawProviderResponse?: Record<string, unknown> | string;
   providerSuccess?: boolean;
@@ -141,6 +148,9 @@ export interface ConversationV2 {
   serviceCategory?: string;
   lastMessageText?: string;
   lastMessageTimestamp?: string;
+  lastMessageDirection?: MessageDirection;
+  lastMessageDeliveryStatus?: DeliveryStatus;
+  lastMessageStatus?: string;
   unreadCount: number;
   unread_count?: number;
   lastReadAt?: string;
@@ -150,6 +160,9 @@ export interface ConversationV2 {
   wabaNumber?: string;
   mobile?: string;
   contactName?: string;
+  is_archived?: boolean;
+  deleted_at?: string | null;
+  deleted_by?: string;
   createdAt: string;
   updatedAt: string;
 }

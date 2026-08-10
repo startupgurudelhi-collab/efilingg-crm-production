@@ -17,6 +17,7 @@ import {
   ConversationTimelineEntry,
 } from './types';
 import { getStorageString, setStorageString } from '../db';
+import { eventBus } from '../eventBus';
 
 // Storage Keys
 const KEY_CUSTOMERS = 'efilingg_crm_block1_customers';
@@ -394,9 +395,30 @@ export function saveLead(lead: LeadV2): LeadV2 {
 // Conversation Storage Methods
 // ==========================================
 
-export function getConversations(): ConversationV2[] {
-  const conversations = getItems<ConversationV2>(KEY_CONVERSATIONS, INITIAL_CONVERSATIONS);
+export function getConversations(includeDeleted = false): ConversationV2[] {
+  const rawConversations = getItems<ConversationV2>(KEY_CONVERSATIONS, INITIAL_CONVERSATIONS);
   const messages = getItems<MessageV2>(KEY_MESSAGES, INITIAL_MESSAGES);
+
+  // Automatic Migration: ensure is_archived and deleted_at defaults exist
+  let modified = false;
+  rawConversations.forEach((conv) => {
+    if (conv.is_archived === undefined) {
+      conv.is_archived = false;
+      modified = true;
+    }
+    if (conv.deleted_at === undefined) {
+      conv.deleted_at = null;
+      modified = true;
+    }
+  });
+
+  if (modified) {
+    saveItems(KEY_CONVERSATIONS, rawConversations);
+  }
+
+  const conversations = includeDeleted
+    ? rawConversations
+    : rawConversations.filter((c) => !c.deleted_at);
 
   // Dynamically calculate and enforce unreadCount based on last_read_at and message read status
   conversations.forEach((conv) => {
@@ -416,18 +438,29 @@ export function getConversations(): ConversationV2[] {
 
     conv.unreadCount = unreadMsgs.length;
     conv.unread_count = unreadMsgs.length;
+
+    // Dynamically calculate last message metadata
+    const allConvMsgs = messages.filter((m) => m.conversationId === conv.id);
+    if (allConvMsgs.length > 0) {
+      const lastMsg = allConvMsgs[allConvMsgs.length - 1];
+      conv.lastMessageText = lastMsg.content;
+      conv.lastMessageTimestamp = lastMsg.timestamp;
+      conv.lastMessageDirection = lastMsg.direction;
+      conv.lastMessageDeliveryStatus = lastMsg.deliveryStatus;
+      conv.lastMessageStatus = lastMsg.status || lastMsg.deliveryStatus?.toLowerCase();
+    }
   });
 
   return conversations;
 }
 
 export function getConversationById(id: string): ConversationV2 | undefined {
-  return getConversations().find((c) => c.id === id);
+  return getConversations(true).find((c) => c.id === id);
 }
 
 export function getConversationByContact(contactNumber: string): ConversationV2 | undefined {
   const cleanContact = contactNumber.replace(/\D/g, '');
-  return getConversations().find((c) => c.contactNumber.replace(/\D/g, '') === cleanContact);
+  return getConversations(false).find((c) => c.contactNumber.replace(/\D/g, '') === cleanContact);
 }
 
 export function saveConversation(conv: ConversationV2): ConversationV2 {
@@ -442,6 +475,29 @@ export function saveConversation(conv: ConversationV2): ConversationV2 {
   }
   saveItems(KEY_CONVERSATIONS, list);
   return conv;
+}
+
+export function archiveConversation(id: string, isArchived: boolean = true): ConversationV2 | undefined {
+  const conv = getConversationById(id);
+  if (conv) {
+    conv.is_archived = isArchived;
+    conv.updatedAt = new Date().toISOString();
+    saveConversation(conv);
+    return conv;
+  }
+  return undefined;
+}
+
+export function deleteConversation(id: string, deletedBy: string = 'User'): boolean {
+  const conv = getConversationById(id);
+  if (conv) {
+    conv.deleted_at = new Date().toISOString();
+    conv.deleted_by = deletedBy;
+    conv.updatedAt = new Date().toISOString();
+    saveConversation(conv);
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -523,11 +579,14 @@ export function saveMessage(msg: MessageV2): MessageV2 {
   }
   saveItems(KEY_MESSAGES, list);
 
-  // Update conversation's last message text and timestamp
+  // Update conversation's last message text, timestamp, direction, and delivery status
   const conv = getConversationById(msg.conversationId);
   if (conv) {
     conv.lastMessageText = msg.content;
     conv.lastMessageTimestamp = msg.timestamp;
+    conv.lastMessageDirection = msg.direction;
+    conv.lastMessageDeliveryStatus = msg.deliveryStatus;
+    conv.lastMessageStatus = msg.status || msg.deliveryStatus?.toLowerCase();
     if (msg.direction === 'INBOUND' && (!msg.is_read && !msg.isRead)) {
       conv.unreadCount = (conv.unreadCount || 0) + 1;
       conv.unread_count = conv.unreadCount;
@@ -540,15 +599,101 @@ export function saveMessage(msg: MessageV2): MessageV2 {
 
 export function updateMessageStatus(
   whatsappMessageIdOrId: string,
-  status: MessageV2['deliveryStatus']
+  status: MessageV2['deliveryStatus'],
+  details?: {
+    timestamp?: string;
+    failure_reason?: string;
+    errorCode?: string | number;
+    raw_status_payload?: any;
+  }
 ): boolean {
   const list = getMessages();
   const msg = list.find(
-    (m) => m.whatsappMessageId === whatsappMessageIdOrId || m.id === whatsappMessageIdOrId
+    (m) =>
+      m.whatsappMessageId === whatsappMessageIdOrId ||
+      m.providerMessageId === whatsappMessageIdOrId ||
+      m.meta_message_id === whatsappMessageIdOrId ||
+      m.id === whatsappMessageIdOrId
   );
+
   if (msg) {
+    const statusRanks: Record<string, number> = {
+      DRAFT: 0,
+      SENDING: 1,
+      SENT: 2,
+      DELIVERED: 3,
+      READ: 4,
+      FAILED: 5,
+    };
+
+    const currentRank = statusRanks[msg.deliveryStatus] ?? 0;
+    const newRank = statusRanks[status] ?? 0;
+
+    // Prevent downgrading status if message is already READ unless new status is FAILED
+    if (currentRank === 4 && newRank < 4) {
+      console.log(`[updateMessageStatus] Ignoring status downgrade from READ to ${status} for msg ${msg.id}`);
+      return false;
+    }
+
     msg.deliveryStatus = status;
+    msg.status = status.toLowerCase();
+    if (whatsappMessageIdOrId) {
+      msg.meta_message_id = whatsappMessageIdOrId;
+      msg.whatsappMessageId = msg.whatsappMessageId || whatsappMessageIdOrId;
+      msg.providerMessageId = msg.providerMessageId || whatsappMessageIdOrId;
+    }
+
+    const tsIso = details?.timestamp
+      ? (isNaN(Number(details.timestamp)) ? details.timestamp : new Date(Number(details.timestamp) * 1000).toISOString())
+      : new Date().toISOString();
+
+    if (status === 'SENT') {
+      msg.timestamp = msg.timestamp || tsIso;
+    } else if (status === 'DELIVERED') {
+      msg.delivered_at = tsIso;
+      msg.deliveredAt = tsIso;
+    } else if (status === 'READ') {
+      msg.read_at = tsIso;
+      msg.readAt = tsIso;
+      msg.delivered_at = msg.delivered_at || tsIso;
+      msg.deliveredAt = msg.delivered_at;
+      msg.is_read = true;
+      msg.isRead = true;
+    } else if (status === 'FAILED') {
+      msg.failed_at = tsIso;
+      msg.failedAt = tsIso;
+      if (details?.failure_reason) {
+        msg.failure_reason = details.failure_reason;
+        msg.providerErrorMessage = details.failure_reason;
+      }
+      if (details?.errorCode !== undefined) {
+        msg.providerErrorCode = details.errorCode;
+      }
+    }
+
     saveItems(KEY_MESSAGES, list);
+
+    // Update conversation last message status
+    const conv = getConversationById(msg.conversationId);
+    if (conv) {
+      conv.lastMessageDeliveryStatus = msg.deliveryStatus;
+      conv.lastMessageStatus = msg.status;
+      saveConversation(conv);
+    }
+
+    // Emit eventBus notification for real-time status updates
+    eventBus.publishAsync('MessageStatusUpdated', 'CONVERSATION', {
+      messageId: msg.id,
+      conversationId: msg.conversationId,
+      whatsappMessageId: msg.whatsappMessageId || msg.providerMessageId || msg.meta_message_id,
+      deliveryStatus: msg.deliveryStatus,
+      status: msg.status,
+      delivered_at: msg.delivered_at,
+      read_at: msg.read_at,
+      failed_at: msg.failed_at,
+      failure_reason: msg.failure_reason,
+    });
+
     return true;
   }
   return false;

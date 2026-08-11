@@ -414,6 +414,17 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
 
     saveMessage(outboundMsg);
 
+    const messageText = (options.content || '').trim();
+
+    if (!messageText && (!options.attachments || options.attachments.length === 0)) {
+      console.error('[AI_EMPTY_RESPONSE]', '[WHATSAPP_SEND_ERROR]', 'Attempted to send empty outbound text message. Aborting. Parameter text.body is required.');
+      outboundMsg.deliveryStatus = 'FAILED';
+      outboundMsg.failure_reason = 'The parameter text.body is required';
+      outboundMsg.failed_at = new Date().toISOString();
+      saveMessage(outboundMsg);
+      throw new Error('The parameter text.body is required');
+    }
+
     // Build standard Meta WhatsApp Cloud API request payload
     let metaPayload: Record<string, unknown> = {};
 
@@ -437,7 +448,7 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
         type: metaType,
         [metaType]: {
           link: mediaUrl,
-          caption: options.content || undefined,
+          caption: messageText || undefined,
           filename: att.fileName || undefined,
         },
       };
@@ -449,12 +460,23 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
         type: 'text',
         text: {
           preview_url: false,
-          body: options.content,
+          body: messageText,
         },
       };
     }
 
+    // Diagnostics Logging
+    console.log('[WHATSAPP_PAYLOAD]', JSON.stringify(metaPayload));
+
     const result = await this.executeMetaGraphApiRequest(metaPayload);
+
+    if (!result.success) {
+      console.error('[WHATSAPP_SEND_ERROR]', result.errorMessage || 'Outbound WhatsApp delivery failed', {
+        errorCode: result.errorCode,
+        httpStatus: result.httpStatusCode,
+        parsedResponse: result.parsedResponse || result.responseBodyText,
+      });
+    }
 
     const resolvedMessageId = result.providerMessageId || tempWamid;
     const finalStatus: DeliveryStatus = result.success ? 'SENT' : 'FAILED';

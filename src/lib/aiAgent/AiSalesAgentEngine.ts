@@ -7,6 +7,7 @@ import { ConversationV2, MessageV2 } from '../block1/types';
 import { WhatsAppService } from '../block1/WhatsAppService';
 import { AiAgentRepository } from './db';
 import { AiService, AiFaq } from '../../types/aiAgent';
+import { createLead } from '../db';
 
 export class AiSalesAgentEngine {
   /**
@@ -120,7 +121,6 @@ export class AiSalesAgentEngine {
           currentService = newlyMatchedService.service_name;
           currentStage = 'SERVICE_DISCUSSION';
 
-          const serviceFaqs = activeFaqs.filter((f) => f.service_id === newlyMatchedService!.id);
           const docsList = Array.isArray(newlyMatchedService.required_documents)
             ? newlyMatchedService.required_documents.join(', ')
             : String(newlyMatchedService.required_documents || 'PAN Card, Aadhaar Card, Address Proof');
@@ -129,16 +129,6 @@ export class AiSalesAgentEngine {
           responseText += `• *Price:* ₹${newlyMatchedService.price}\n`;
           responseText += `• *Timeline:* ${newlyMatchedService.timeline}\n`;
           responseText += `• *Required Documents:* ${docsList}\n\n`;
-          responseText += `${newlyMatchedService.description || 'Professional filing and compliance services.'}\n\n`;
-
-          if (serviceFaqs.length > 0) {
-            responseText += `💡 *Frequently Asked Questions:*\n`;
-            serviceFaqs.slice(0, 2).forEach((faq) => {
-              responseText += `• *Q:* ${faq.question}\n  *A:* ${faq.answer}\n`;
-            });
-            responseText += `\n`;
-          }
-
           responseText += `Would you like to start your ${newlyMatchedService.service_name} today? Reply *YES* or share your Name to proceed.`;
 
           // Save session state
@@ -157,44 +147,18 @@ export class AiSalesAgentEngine {
         else if (session && currentService) {
           const matchedServiceObj = activeServices.find((s) => s.service_name === currentService);
 
-          const isTimelineQuery = lowerContent.includes('din') || lowerContent.includes('time') || lowerContent.includes('days') || lowerContent.includes('duration') || lowerContent.includes('lag');
-          const isPriceQuery = lowerContent.includes('price') || lowerContent.includes('cost') || lowerContent.includes('charge') || lowerContent.includes('fee') || lowerContent.includes('kitna');
-          const isDocQuery = lowerContent.includes('doc') || lowerContent.includes('kagaz') || lowerContent.includes('paper') || lowerContent.includes('requirement');
+          const isCollectingStage = [
+            'COLLECTING_NAME',
+            'COLLECTING_MOBILE',
+            'COLLECTING_EMAIL',
+            'COLLECTING_STATE',
+            'COLLECTING_BUSINESS_TYPE',
+            'COLLECTING_TURNOVER',
+          ].includes(currentStage);
 
-          // FAQ Match Check [BRANCH: PROCESS_QUERY]
-          let matchedFaq: AiFaq | undefined = undefined;
-          for (const faq of activeFaqs) {
-            const fQ = faq.question.toLowerCase();
-            if (fQ.includes(lowerContent) || lowerContent.includes(fQ.substring(0, 15))) {
-              matchedFaq = faq;
-              break;
-            }
-          }
-
-          if (isTimelineQuery && matchedServiceObj) {
-            // [BRANCH: TIMELINE_QUERY]
-            responseText = `${matchedServiceObj.service_name} normally *${matchedServiceObj.timeline}* me complete ho jata hai.\n\nWould you like to proceed with the filing?`;
-          } else if (isPriceQuery && matchedServiceObj) {
-            // [BRANCH: PRICE_QUERY]
-            responseText = `${matchedServiceObj.service_name} standard package price is *₹${matchedServiceObj.price}*.\n\nWould you like to proceed?`;
-          } else if (isDocQuery && matchedServiceObj) {
-            // [BRANCH: DOCUMENT_QUERY]
-            const docsList = Array.isArray(matchedServiceObj.required_documents)
-              ? matchedServiceObj.required_documents.join(', ')
-              : String(matchedServiceObj.required_documents || 'PAN Card, Aadhaar Card, Address Proof');
-            responseText = `Required Documents for ${matchedServiceObj.service_name}:\n• ${docsList}\n\nWould you like to start?`;
-          } else if (matchedFaq) {
-            // [BRANCH: PROCESS_QUERY]
-            responseText = `💡 *${matchedFaq.question}*\n\n${matchedFaq.answer}\n\nWould you like to proceed with your ${currentService}?`;
-          } else {
-            // LEAD COLLECTION STAGE TRANSITIONS [BRANCH: START_APPLICATION / LEAD_COLLECTION / HANDOVER]
-            const isAffirmative = lowerContent === 'yes' || lowerContent === 'ha' || lowerContent === 'haan' || lowerContent.includes('start') || lowerContent.includes('proceed') || lowerContent.includes('apply');
-
-            if (currentStage === 'SERVICE_DISCUSSION' || isAffirmative) {
-              currentStage = 'COLLECTING_NAME';
-              responseText = `Great! Let's get started with your ${currentService}.\n\n*Stage 1/6:* Please reply with your *Full Name*:`;
-
-            } else if (currentStage === 'COLLECTING_NAME') {
+          if (isCollectingStage) {
+            // ACTIVE LEAD COLLECTION FLOW — DETERMINISTICALLY CAPTURE STAGE RESPONSE
+            if (currentStage === 'COLLECTING_NAME') {
               collectedData.name = rawContent;
               currentStage = 'COLLECTING_MOBILE';
               responseText = `Thank you, ${rawContent}! 👍\n\n*Stage 2/6:* Please provide your 10-digit *Mobile Number* (or reply 'SAME' to use ${conversation.contactNumber}):`;
@@ -224,20 +188,71 @@ export class AiSalesAgentEngine {
               currentStage = 'HANDOVER';
               isHandoverTriggered = true;
 
-              // AUTO LEAD CREATION
-              const newQualifiedLead = AiAgentRepository.addQualifiedLead({
+              // [AI_LEAD_CREATE_START] LOG
+              console.log('[AI_LEAD_CREATE_START]', {
                 conversation_id: conversation.id,
-                customer_name: collectedData.name || conversation.customerName || 'WhatsApp Customer',
-                mobile: collectedData.mobile || conversation.contactNumber,
-                email: collectedData.email || 'N/A',
+                customer_phone: conversation.contactNumber,
                 service_name: currentService,
-                lead_summary: `Service: ${currentService} | State: ${collectedData.state || 'N/A'} | Type: ${collectedData.business_type || 'N/A'} | Turnover: ${collectedData.turnover || 'N/A'}`,
-                collected_data: collectedData,
-                status: 'PENDING_FOLLOWUP',
-                assigned_to: 'Unassigned',
+                collected_fields: collectedData,
               });
 
-              console.log(`[AI_AGENT_LEAD_CREATED] Successfully created Qualified Lead ID "${newQualifiedLead.id}" with status PENDING_FOLLOWUP`);
+              try {
+                // 1. Create AI Qualified Lead record
+                const newQualifiedLead = AiAgentRepository.addQualifiedLead({
+                  conversation_id: conversation.id,
+                  customer_name: collectedData.name || conversation.customerName || 'WhatsApp Customer',
+                  mobile: collectedData.mobile || conversation.contactNumber,
+                  email: collectedData.email || 'N/A',
+                  service_name: currentService,
+                  lead_summary: `Service: ${currentService} | State: ${collectedData.state || 'N/A'} | Type: ${collectedData.business_type || 'N/A'} | Turnover: ${collectedData.turnover || 'N/A'}`,
+                  collected_data: collectedData,
+                  status: 'PENDING_FOLLOWUP',
+                  assigned_to: 'Unassigned',
+                });
+
+                // 2. Also register in Main CRM Lead Store (db.ts)
+                try {
+                  createLead(
+                    {
+                      customerName: collectedData.name || conversation.customerName || 'WhatsApp Customer',
+                      businessName: collectedData.business_type ? `${collectedData.name || 'Client'} (${collectedData.business_type})` : 'N/A',
+                      mobile: collectedData.mobile || conversation.contactNumber,
+                      email: collectedData.email || 'N/A',
+                      serviceRequired: currentService,
+                      leadSource: 'AI WhatsApp Agent',
+                      stage: 'New Lead',
+                      assignedTo: 'EMP-ADMIN',
+                      createdBy: 'AI_SALES_AGENT',
+                      notes: `Auto-generated lead via AI WhatsApp Sales Concierge. State: ${collectedData.state || 'N/A'}, Turnover: ${collectedData.turnover || 'N/A'}`,
+                    },
+                    'AI_SALES_AGENT'
+                  );
+                } catch (crmErr: any) {
+                  console.warn('[AI_LEAD_CREATE_CRM_SYNC_NOTE]', crmErr.message);
+                }
+
+                // [AI_LEAD_CREATE_SUCCESS] LOG
+                console.log('[AI_LEAD_CREATE_SUCCESS]', {
+                  lead_id: newQualifiedLead.id,
+                  status: newQualifiedLead.status,
+                  storage_location: 'efilingg_crm_ai_qualified_leads & efilingg_leads',
+                  assigned_to: newQualifiedLead.assigned_to,
+                  conversation_id: conversation.id,
+                  phone: conversation.contactNumber,
+                  service: currentService,
+                  all_collected_fields: collectedData,
+                });
+
+              } catch (createErr: any) {
+                // [AI_LEAD_CREATE_FAIL] LOG
+                console.error('[AI_LEAD_CREATE_FAIL]', {
+                  conversation_id: conversation.id,
+                  phone: conversation.contactNumber,
+                  service: currentService,
+                  all_collected_fields: collectedData,
+                  error: createErr.message,
+                });
+              }
 
               responseText = `Thank you for sharing the details. 🙏\nOur team will contact you shortly.`;
 
@@ -251,8 +266,51 @@ export class AiSalesAgentEngine {
                 lead_score: 90,
                 handover_required: true,
               });
+            }
+
+          } else {
+            // NOT IN AN ACTIVE COLLECTION STAGE (E.G. SERVICE_DISCUSSION OR QUERY PHASE)
+            const isTimelineQuery = lowerContent.includes('din') || lowerContent.includes('time') || lowerContent.includes('days') || lowerContent.includes('duration') || lowerContent.includes('lag') || lowerContent.includes('kitna din');
+            const isPriceQuery = lowerContent.includes('price') || lowerContent.includes('cost') || lowerContent.includes('charge') || lowerContent.includes('fee') || lowerContent.includes('fees') || lowerContent.includes('kitna');
+            const isDocQuery = lowerContent.includes('doc') || lowerContent.includes('kagaz') || lowerContent.includes('paper') || lowerContent.includes('requirement') || lowerContent.includes('mandatory') || lowerContent.includes('required');
+            const isProcessQuery = lowerContent.includes('process') || lowerContent.includes('how') || lowerContent.includes('kaise') || lowerContent.includes('step');
+
+            // FAQ Match Check
+            let matchedFaq: AiFaq | undefined = undefined;
+            for (const faq of activeFaqs) {
+              const fQ = faq.question.toLowerCase();
+              const fA = faq.answer.toLowerCase();
+              if (
+                fQ.includes(lowerContent) ||
+                lowerContent.includes(fQ.substring(0, 15)) ||
+                (lowerContent.includes('mandatory') && (fQ.includes('mandatory') || fA.includes('mandatory'))) ||
+                (lowerContent.includes('required') && (fQ.includes('required') || fA.includes('required')))
+              ) {
+                matchedFaq = faq;
+                break;
+              }
+            }
+
+            const isAffirmative = lowerContent === 'yes' || lowerContent === 'ha' || lowerContent === 'haan' || lowerContent.includes('start') || lowerContent.includes('proceed') || lowerContent.includes('apply');
+
+            if (isAffirmative || currentStage === 'START') {
+              currentStage = 'COLLECTING_NAME';
+              responseText = `Great! Let's get started with your ${currentService}.\n\n*Stage 1/6:* Please reply with your *Full Name*:`;
+            } else if (isTimelineQuery && matchedServiceObj) {
+              responseText = `${matchedServiceObj.service_name} normally *${matchedServiceObj.timeline}* me complete ho jata hai.\n\nWould you like to proceed with the filing?`;
+            } else if (isPriceQuery && matchedServiceObj) {
+              responseText = `${matchedServiceObj.service_name} standard package price is *₹${matchedServiceObj.price}*.\n\nWould you like to proceed?`;
+            } else if (isDocQuery && matchedServiceObj) {
+              const docsList = Array.isArray(matchedServiceObj.required_documents)
+                ? matchedServiceObj.required_documents.join(', ')
+                : String(matchedServiceObj.required_documents || 'PAN Card, Aadhaar Card, Address Proof');
+              responseText = `Required Documents for ${matchedServiceObj.service_name}:\n• ${docsList}\n\nWould you like to start?`;
+            } else if (matchedFaq) {
+              responseText = `💡 *${matchedFaq.question}*\n\n${matchedFaq.answer}\n\nWould you like to proceed with your ${currentService}?`;
+            } else if (isProcessQuery && matchedServiceObj) {
+              responseText = `*Process for ${matchedServiceObj.service_name}:*\n1. Share requested basic details & documents\n2. Document verification by expert\n3. Government portal application filing\n4. Registration certificate issue (${matchedServiceObj.timeline})\n\nWould you like to start?`;
             } else {
-              // Session Context Fallback
+              // Default Fallback
               responseText = `Regarding your ${currentService} inquiry: How can I assist you further? You can ask about price, timeline, required documents, or reply *YES* to start your application.`;
             }
           }

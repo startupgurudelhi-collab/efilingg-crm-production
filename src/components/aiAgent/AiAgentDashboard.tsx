@@ -37,18 +37,33 @@ interface AiAgentDashboardProps {
 export default function AiAgentDashboard({ onNavigateToTab, triggerRefresh = 0 }: AiAgentDashboardProps) {
   const [metrics, setMetrics] = useState<AiDashboardMetrics>(AiAgentRepository.getDashboardMetrics());
   const [recentLeads, setRecentLeads] = useState<AiQualifiedLead[]>([]);
+  const [pendingFollowups, setPendingFollowups] = useState<AiQualifiedLead[]>([]);
   const [recentLogs, setRecentLogs] = useState<AiTrainingLog[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  const getLeadAge = (createdAt: string): string => {
+    const diffMs = Date.now() - new Date(createdAt).getTime();
+    const mins = Math.floor(diffMs / (1000 * 60));
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins} mins ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours} hrs ago`;
+    const days = Math.floor(hours / 24);
+    return `${days} days ago`;
+  };
 
   const loadData = () => {
     setIsLoading(true);
     try {
       const currentMetrics = AiAgentRepository.getDashboardMetrics();
-      const leads = AiAgentRepository.getQualifiedLeads().slice(0, 5);
+      const allLeads = AiAgentRepository.getQualifiedLeads();
+      const recent = allLeads.slice(0, 5);
+      const pending = allLeads.filter((l) => l.status === 'PENDING_FOLLOWUP' || l.status === 'NEW');
       const logs = AiAgentRepository.getTrainingLogs().slice(0, 6);
 
       setMetrics(currentMetrics);
-      setRecentLeads(leads);
+      setRecentLeads(recent);
+      setPendingFollowups(pending);
       setRecentLogs(logs);
     } catch (err) {
       console.error('Error loading AI Agent Dashboard data:', err);
@@ -63,6 +78,8 @@ export default function AiAgentDashboard({ onNavigateToTab, triggerRefresh = 0 }
 
   const getStatusBadge = (status: string) => {
     switch (status) {
+      case 'PENDING_FOLLOWUP':
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-800">PENDING FOLLOWUP</span>;
       case 'NEW':
         return <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800">NEW</span>;
       case 'CONTACTED':
@@ -228,6 +245,84 @@ export default function AiAgentDashboard({ onNavigateToTab, triggerRefresh = 0 }
             {metrics.conversionRate}% Conversion Rate
           </div>
         </div>
+      </div>
+
+      {/* 🔥 AI Pending Followups Queue Widget */}
+      <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-transparent rounded-2xl border border-amber-500/30 dark:border-amber-500/20 shadow-xs p-5 space-y-4">
+        <div className="flex items-center justify-between border-b border-amber-200/60 dark:border-amber-800/40 pb-3">
+          <div>
+            <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center space-x-2">
+              <span className="text-base">🔥</span>
+              <span>AI Pending Followups Queue</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500 text-white shadow-xs">
+                {pendingFollowups.length} PENDING
+              </span>
+            </h3>
+            <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+              Qualified leads requiring human executive contact after AI conversation completion
+            </p>
+          </div>
+          <button
+            onClick={() => onNavigateToTab('qualified_leads')}
+            className="text-xs font-bold text-amber-600 hover:text-amber-700 dark:text-amber-400 flex items-center space-x-1 cursor-pointer"
+          >
+            <span>Open Followup Queue</span>
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        {pendingFollowups.length === 0 ? (
+          <div className="py-6 text-center text-slate-500 dark:text-slate-400 text-xs font-medium">
+            ✅ No pending followups! All AI leads have been attended to.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-amber-200/50 dark:border-amber-800/30 text-amber-900/60 dark:text-amber-300/60 font-bold uppercase tracking-wider text-[10px]">
+                  <th className="py-2.5 px-3">Lead Name</th>
+                  <th className="py-2.5 px-3">Phone</th>
+                  <th className="py-2.5 px-3">Service</th>
+                  <th className="py-2.5 px-3">Created Time</th>
+                  <th className="py-2.5 px-3">Age</th>
+                  <th className="py-2.5 px-3">Status</th>
+                  <th className="py-2.5 px-3 text-right">Assigned To</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-amber-100/60 dark:divide-amber-900/20 font-medium text-slate-800 dark:text-slate-200">
+                {pendingFollowups.map((lead) => (
+                  <tr key={lead.id} className="hover:bg-amber-500/10 transition-colors">
+                    <td className="py-3 px-3 font-bold text-slate-900 dark:text-white">
+                      {lead.customer_name}
+                    </td>
+                    <td className="py-3 px-3 font-mono text-[11px] text-slate-700 dark:text-slate-300">
+                      +{lead.mobile}
+                    </td>
+                    <td className="py-3 px-3">
+                      <span className="px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 font-bold text-[11px] border border-amber-200 dark:border-amber-800">
+                        {lead.service_name}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 font-mono text-[10.5px] text-slate-500 dark:text-slate-400">
+                      {new Date(lead.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({new Date(lead.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })})
+                    </td>
+                    <td className="py-3 px-3 font-extrabold text-[11px] text-amber-600 dark:text-amber-400">
+                      {getLeadAge(lead.created_at)}
+                    </td>
+                    <td className="py-3 px-3">
+                      {getStatusBadge(lead.status)}
+                    </td>
+                    <td className="py-3 px-3 text-right">
+                      <span className="px-2 py-0.5 rounded-md text-[10.5px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                        {lead.assigned_to || 'Unassigned'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Main Grid Section: Funnel & Recent Leads */}

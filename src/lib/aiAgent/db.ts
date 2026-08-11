@@ -823,24 +823,53 @@ export class AiAgentRepository {
 
   // CONVERSATION SESSIONS
   static getConversationSessions(): AiConversationSession[] {
-    return getItems<AiConversationSession>(KEY_SESSIONS, []);
+    const rawSessions = getItems<AiConversationSession>(KEY_SESSIONS, []);
+    return rawSessions.map((s) => ({
+      ...s,
+      customer_phone: s.customer_phone || s.customer_number || '',
+      current_service: s.current_service || s.service_detected || '',
+      current_stage: s.current_stage || s.current_step || 'SERVICE_DISCUSSION',
+      collected_fields_json: s.collected_fields_json || s.collected_data || {},
+      handover_required: typeof s.handover_required === 'boolean' ? s.handover_required : s.session_status === 'HANDOVER',
+    }));
   }
 
-  static saveConversationSession(sessionData: Omit<AiConversationSession, 'id' | 'created_at' | 'updated_at'>): AiConversationSession {
+  static getConversationSessionByConversationId(conversationId: string): AiConversationSession | undefined {
+    return this.getConversationSessions().find((s) => s.conversation_id === conversationId);
+  }
+
+  static saveConversationSession(
+    sessionData: Partial<AiConversationSession> & { conversation_id: string }
+  ): AiConversationSession {
     const sessions = this.getConversationSessions();
     const existingIdx = sessions.findIndex((s) => s.conversation_id === sessionData.conversation_id);
+
+    const normalizedData = {
+      conversation_id: sessionData.conversation_id,
+      customer_phone: sessionData.customer_phone || sessionData.customer_number || '',
+      customer_number: sessionData.customer_phone || sessionData.customer_number || '',
+      current_service: sessionData.current_service || sessionData.service_detected || '',
+      service_detected: sessionData.current_service || sessionData.service_detected || '',
+      current_stage: sessionData.current_stage || sessionData.current_step || 'SERVICE_DISCUSSION',
+      current_step: sessionData.current_stage || sessionData.current_step || 'SERVICE_DISCUSSION',
+      collected_fields_json: sessionData.collected_fields_json || sessionData.collected_data || {},
+      collected_data: sessionData.collected_fields_json || sessionData.collected_data || {},
+      lead_score: sessionData.lead_score ?? 50,
+      handover_required: sessionData.handover_required ?? false,
+      session_status: sessionData.handover_required ? ('HANDOVER' as const) : ('ACTIVE' as const),
+    };
 
     if (existingIdx !== -1) {
       sessions[existingIdx] = {
         ...sessions[existingIdx],
-        ...sessionData,
+        ...normalizedData,
         updated_at: new Date().toISOString(),
       };
       saveItems(KEY_SESSIONS, sessions);
       return sessions[existingIdx];
     } else {
       const newSession: AiConversationSession = {
-        ...sessionData,
+        ...normalizedData,
         id: `SESS-${Date.now().toString(36).toUpperCase()}`,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),

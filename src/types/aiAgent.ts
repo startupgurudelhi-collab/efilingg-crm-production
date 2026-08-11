@@ -3,7 +3,7 @@
  * Efilingg CRM AI Sales Module
  */
 
-export type AiQualifiedLeadStatus = 'NEW' | 'CONTACTED' | 'CONVERTED' | 'LOST';
+export type AiQualifiedLeadStatus = 'NEW' | 'PENDING_FOLLOWUP' | 'CONTACTED' | 'CONVERTED' | 'LOST';
 
 export type AiSessionStatus = 'ACTIVE' | 'HANDOVER' | 'COMPLETED' | 'EXPIRED';
 
@@ -81,6 +81,7 @@ export interface AiQualifiedLead {
   collected_data: Record<string, any>;
   status: AiQualifiedLeadStatus;
   status_history?: AiQualifiedLeadStatusHistoryItem[];
+  assigned_to?: string;
   created_at: string;
   updated_at: string;
 }
@@ -88,11 +89,17 @@ export interface AiQualifiedLead {
 export interface AiConversationSession {
   id: string;
   conversation_id: string;
-  customer_number: string;
-  service_detected: string;
-  current_step: string;
-  collected_data: Record<string, any>;
-  session_status: AiSessionStatus;
+  customer_phone: string;
+  customer_number?: string;
+  current_service: string;
+  service_detected?: string;
+  current_stage: string;
+  current_step?: string;
+  collected_fields_json: Record<string, any>;
+  collected_data?: Record<string, any>;
+  lead_score?: number;
+  handover_required: boolean;
+  session_status?: AiSessionStatus;
   created_at: string;
   updated_at: string;
 }

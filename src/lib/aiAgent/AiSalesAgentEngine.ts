@@ -1,12 +1,12 @@
 /**
- * AI Sales Agent V1 Foundation - Core Execution Engine
+ * AI Sales Agent V1 Foundation - Core Execution Engine with Conversation Memory
  * Efilingg CRM AI Sales Module
  */
 
 import { ConversationV2, MessageV2 } from '../block1/types';
 import { WhatsAppService } from '../block1/WhatsAppService';
 import { AiAgentRepository } from './db';
-import { AiService, AiFaq, AiLeadForm, AiLeadFormField, AiConversationSession } from '../../types/aiAgent';
+import { AiService, AiFaq, AiConversationSession } from '../../types/aiAgent';
 
 export class AiSalesAgentEngine {
   /**
@@ -44,96 +44,96 @@ export class AiSalesAgentEngine {
         return null;
       }
 
-      const content = message.content ? message.content.trim() : '';
-      if (!content) {
+      const rawContent = message.content ? message.content.trim() : '';
+      if (!rawContent) {
         return null;
       }
 
-      console.log(`[AI_AGENT_START] Processing inbound WhatsApp message: "${content}" for Conversation ID: "${conversation.id}" (Contact: ${conversation.contactNumber})`);
+      console.log(`[AI_AGENT_START] Processing inbound WhatsApp message: "${rawContent}" for Conversation ID: "${conversation.id}" (Contact: ${conversation.contactNumber})`);
 
-      const lowerContent = content.toLowerCase();
+      const lowerContent = rawContent.toLowerCase();
 
       // Fetch Knowledge Base Assets
       const activeServices = AiAgentRepository.getServices().filter((s) => s.active);
       const activeFaqs = AiAgentRepository.getFaqs().filter((f) => f.active);
-      const activeForms = AiAgentRepository.getLeadForms().filter((f) => f.active);
-      const allFields = AiAgentRepository.getLeadFields();
-      const sessions = AiAgentRepository.getConversationSessions();
 
       // Check existing conversation session
-      let session = sessions.find((s) => s.conversation_id === conversation.id);
+      let session = AiAgentRepository.getConversationSessionByConversationId(conversation.id);
 
-      if (session && session.session_status === 'HANDOVER') {
+      // HANDOVER RULE: If handover is required, stop AI auto-responses
+      if (session && (session.handover_required || session.current_stage === 'HANDOVER' || session.session_status === 'HANDOVER')) {
         console.log(`[AI_AGENT_START] Session for conversation "${conversation.id}" is in HANDOVER mode. Skipping AI Agent response.`);
         return null;
       }
 
-      // 2. Service Matching & FAQ Matching
-      let matchedService: AiService | undefined = undefined;
-      let matchedFaq: AiFaq | undefined = undefined;
+      // Check explicit human handover request
+      if (
+        lowerContent.includes('talk to human') ||
+        lowerContent.includes('agent please') ||
+        lowerContent.includes('human agent') ||
+        lowerContent.includes('customer care') ||
+        lowerContent.includes('call me')
+      ) {
+        const handoverText = settings.handover_message || 'Thank you for sharing the details.\nOur team will contact you shortly.';
+        
+        AiAgentRepository.saveConversationSession({
+          conversation_id: conversation.id,
+          customer_phone: conversation.contactNumber,
+          current_service: session?.current_service || 'General Inquiry',
+          current_stage: 'HANDOVER',
+          collected_fields_json: session?.collected_fields_json || {},
+          lead_score: session?.lead_score || 50,
+          handover_required: true,
+        });
 
-      // Service Keyword Matching
+        const outbound = await WhatsAppService.sendOutboundMessageAsync({
+          conversationId: conversation.id,
+          senderId: 'AI_SALES_AGENT',
+          senderName: 'AI Sales Agent',
+          content: handoverText,
+        });
+        return outbound;
+      }
+
+      // 2. Service Matching Check
+      let newlyMatchedService: AiService | undefined = undefined;
       for (const srv of activeServices) {
         const sName = srv.service_name.toLowerCase();
         if (
           lowerContent.includes(sName) ||
-          sName.includes(lowerContent) ||
           (lowerContent.includes('gst') && sName.includes('gst')) ||
           (lowerContent.includes('trademark') && sName.includes('trademark')) ||
           ((lowerContent.includes('pvt') || lowerContent.includes('private limited') || lowerContent.includes('incorporation')) && sName.includes('private limited')) ||
           ((lowerContent.includes('itr') || lowerContent.includes('income tax')) && sName.includes('income tax'))
         ) {
-          matchedService = srv;
+          newlyMatchedService = srv;
           console.log(`[AI_AGENT_SERVICE_MATCH] Matched Service: "${srv.service_name}" (ID: ${srv.id}, Price: ₹${srv.price}, Timeline: ${srv.timeline})`);
           break;
         }
       }
 
-      // FAQ Keyword / Query Matching
-      for (const faq of activeFaqs) {
-        const fQ = faq.question.toLowerCase();
-        const keywords = lowerContent.split(/\s+/).filter((w) => w.length > 3);
-        const keywordMatches = keywords.filter((kw) => fQ.includes(kw)).length;
+      // SESSION CONTEXT EVALUATION
+      let currentService = newlyMatchedService?.service_name || session?.current_service || '';
+      let currentStage = session?.current_stage || 'START';
+      let collectedData: Record<string, any> = { ...(session?.collected_fields_json || {}) };
 
-        if (fQ.includes(lowerContent) || lowerContent.includes(fQ) || keywordMatches >= 2) {
-          matchedFaq = faq;
-          console.log(`[AI_AGENT_FAQ_MATCH] Matched FAQ Question: "${faq.question}" (ID: ${faq.id})`);
-          if (!matchedService && faq.service_id) {
-            matchedService = activeServices.find((s) => s.id === faq.service_id);
-            if (matchedService) {
-              console.log(`[AI_AGENT_SERVICE_MATCH] Matched Service via FAQ Link: "${matchedService.service_name}" (ID: ${matchedService.id})`);
-            }
-          }
-          break;
-        }
-      }
-
-      // If matchedService is set but no matchedFaq was directly found, check if there are associated FAQs for the service and log the first match
-      if (matchedService && !matchedFaq) {
-        const associatedFaqs = activeFaqs.filter((f) => f.service_id === matchedService!.id);
-        if (associatedFaqs.length > 0) {
-          matchedFaq = associatedFaqs[0];
-          console.log(`[AI_AGENT_FAQ_MATCH] Matched FAQ for Service "${matchedService.service_name}": "${matchedFaq.question}" (ID: ${matchedFaq.id})`);
-        }
-      }
-
-      // 3. Response Generation
       let responseText = '';
 
-      if (matchedService) {
-        const serviceFaqs = activeFaqs.filter((f) => f.service_id === matchedService!.id);
-        const serviceForm = activeForms.find((f) => f.service_id === matchedService!.id);
-        const serviceFields = serviceForm ? allFields.filter((f) => f.form_id === serviceForm.id) : [];
+      // CASE A: User explicitly mentioned a Service (or switching service)
+      if (newlyMatchedService && (!session || newlyMatchedService.service_name !== session.current_service)) {
+        currentService = newlyMatchedService.service_name;
+        currentStage = 'SERVICE_DISCUSSION';
 
-        const docsList = Array.isArray(matchedService.required_documents)
-          ? matchedService.required_documents.join(', ')
-          : String(matchedService.required_documents || 'PAN Card, Aadhaar Card, Address Proof');
+        const serviceFaqs = activeFaqs.filter((f) => f.service_id === newlyMatchedService!.id);
+        const docsList = Array.isArray(newlyMatchedService.required_documents)
+          ? newlyMatchedService.required_documents.join(', ')
+          : String(newlyMatchedService.required_documents || 'PAN Card, Aadhaar Card, Address Proof');
 
-        responseText += `📋 *${matchedService.service_name}*\n\n`;
-        responseText += `• *Price:* ₹${matchedService.price}\n`;
-        responseText += `• *Timeline:* ${matchedService.timeline}\n`;
+        responseText += `📋 *${newlyMatchedService.service_name}*\n\n`;
+        responseText += `• *Price:* ₹${newlyMatchedService.price}\n`;
+        responseText += `• *Timeline:* ${newlyMatchedService.timeline}\n`;
         responseText += `• *Required Documents:* ${docsList}\n\n`;
-        responseText += `${matchedService.description}\n\n`;
+        responseText += `${newlyMatchedService.description}\n\n`;
 
         if (serviceFaqs.length > 0) {
           responseText += `💡 *Frequently Asked Questions:*\n`;
@@ -143,32 +143,138 @@ export class AiSalesAgentEngine {
           responseText += `\n`;
         }
 
-        if (serviceFields.length > 0) {
-          responseText += `To get started with your ${matchedService.service_name}, please reply with the following details:\n`;
-          serviceFields.forEach((field, idx) => {
-            responseText += `${idx + 1}. ${field.field_label}${field.required ? ' *' : ''}\n`;
-          });
-        } else {
-          responseText += `Would you like our executive to initiate your ${matchedService.service_name} filing today?`;
-        }
+        responseText += `Would you like to start your ${newlyMatchedService.service_name} today? Reply *YES* or share your Name to proceed.`;
 
-        // Save conversation session
+        // Save session state
         AiAgentRepository.saveConversationSession({
           conversation_id: conversation.id,
-          customer_number: conversation.contactNumber,
-          service_detected: matchedService.service_name,
-          current_step: 'COLLECTING',
-          collected_data: session ? session.collected_data : {},
-          session_status: 'ACTIVE',
+          customer_phone: conversation.contactNumber,
+          current_service: currentService,
+          current_stage: currentStage,
+          collected_fields_json: collectedData,
+          lead_score: 50,
+          handover_required: false,
         });
 
-      } else if (matchedFaq) {
-        responseText += `💡 *FAQ: ${matchedFaq.question}*\n\n`;
-        responseText += `${matchedFaq.answer}\n\n`;
-        responseText += `How else can I assist you with your tax, GST, or business compliance needs today?`;
+      } 
+      // CASE B: Contextual Query or Lead Collection within an existing session
+      else if (session && currentService) {
+        const matchedServiceObj = activeServices.find((s) => s.service_name === currentService);
+
+        // Check if message is a query (e.g. "Kitna din lagega?", "Price kya hai?")
+        const isTimelineQuery = lowerContent.includes('din') || lowerContent.includes('time') || lowerContent.includes('days') || lowerContent.includes('duration') || lowerContent.includes('lag');
+        const isPriceQuery = lowerContent.includes('price') || lowerContent.includes('cost') || lowerContent.includes('charge') || lowerContent.includes('fee') || lowerContent.includes('kitna');
+        const isDocQuery = lowerContent.includes('doc') || lowerContent.includes('kagaz') || lowerContent.includes('paper') || lowerContent.includes('requirement');
+
+        // FAQ Match Check
+        let matchedFaq: AiFaq | undefined = undefined;
+        for (const faq of activeFaqs) {
+          const fQ = faq.question.toLowerCase();
+          if (fQ.includes(lowerContent) || lowerContent.includes(fQ.substring(0, 15))) {
+            matchedFaq = faq;
+            break;
+          }
+        }
+
+        if (isTimelineQuery && matchedServiceObj) {
+          responseText = `${matchedServiceObj.service_name} normally *${matchedServiceObj.timeline}* me complete ho jata hai.\n\nWould you like to proceed with the filing?`;
+        } else if (isPriceQuery && matchedServiceObj) {
+          responseText = `${matchedServiceObj.service_name} standard package price is *₹${matchedServiceObj.price}*.\n\nWould you like to proceed?`;
+        } else if (isDocQuery && matchedServiceObj) {
+          const docsList = Array.isArray(matchedServiceObj.required_documents)
+            ? matchedServiceObj.required_documents.join(', ')
+            : String(matchedServiceObj.required_documents);
+          responseText = `Required Documents for ${matchedServiceObj.service_name}:\n• ${docsList}\n\nWould you like to start?`;
+        } else if (matchedFaq) {
+          responseText = `💡 *${matchedFaq.question}*\n\n${matchedFaq.answer}\n\nWould you like to proceed with your ${currentService}?`;
+        } else {
+          // LEAD COLLECTION STAGE TRANSITIONS
+          const isAffirmative = lowerContent === 'yes' || lowerContent === 'ha' || lowerContent === 'haan' || lowerContent.includes('start') || lowerContent.includes('proceed') || lowerContent.includes('apply');
+
+          if (currentStage === 'SERVICE_DISCUSSION' || isAffirmative) {
+            currentStage = 'COLLECTING_NAME';
+            responseText = `Great! Let's get started with your ${currentService}.\n\n*Stage 1/6:* Please reply with your *Full Name*:`;
+
+          } else if (currentStage === 'COLLECTING_NAME') {
+            collectedData.name = rawContent;
+            currentStage = 'COLLECTING_MOBILE';
+            responseText = `Thank you, ${rawContent}! 👍\n\n*Stage 2/6:* Please provide your 10-digit *Mobile Number* (or reply 'SAME' to use ${conversation.contactNumber}):`;
+
+          } else if (currentStage === 'COLLECTING_MOBILE') {
+            collectedData.mobile = lowerContent === 'same' ? conversation.contactNumber : rawContent;
+            currentStage = 'COLLECTING_EMAIL';
+            responseText = `Got it! 📱\n\n*Stage 3/6:* Please enter your *Email Address*:`;
+
+          } else if (currentStage === 'COLLECTING_EMAIL') {
+            collectedData.email = rawContent;
+            currentStage = 'COLLECTING_STATE';
+            responseText = `Thank you! 📧\n\n*Stage 4/6:* Which *State* is your business located in?`;
+
+          } else if (currentStage === 'COLLECTING_STATE') {
+            collectedData.state = rawContent;
+            currentStage = 'COLLECTING_BUSINESS_TYPE';
+            responseText = `Duly noted! 📍\n\n*Stage 5/6:* What is your *Business Type*? (e.g., Proprietorship, Partnership, Pvt Ltd, LLP):`;
+
+          } else if (currentStage === 'COLLECTING_BUSINESS_TYPE') {
+            collectedData.business_type = rawContent;
+            currentStage = 'COLLECTING_TURNOVER';
+            responseText = `Almost done! 💼\n\n*Stage 6/6:* What is your estimated *Annual Turnover*? (e.g., Below 20 Lakhs, 20-40 Lakhs, Above 40 Lakhs):`;
+
+          } else if (currentStage === 'COLLECTING_TURNOVER') {
+            collectedData.turnover = rawContent;
+            currentStage = 'HANDOVER';
+
+            // AUTO LEAD CREATION
+            const newQualifiedLead = AiAgentRepository.addQualifiedLead({
+              conversation_id: conversation.id,
+              customer_name: collectedData.name || conversation.customerName || 'WhatsApp Customer',
+              mobile: collectedData.mobile || conversation.contactNumber,
+              email: collectedData.email || 'N/A',
+              service_name: currentService,
+              lead_summary: `Service: ${currentService} | State: ${collectedData.state || 'N/A'} | Type: ${collectedData.business_type || 'N/A'} | Turnover: ${collectedData.turnover || 'N/A'}`,
+              collected_data: collectedData,
+              status: 'PENDING_FOLLOWUP',
+              assigned_to: 'Unassigned',
+            });
+
+            console.log(`[AI_AGENT_LEAD_CREATED] Successfully created Qualified Lead ID "${newQualifiedLead.id}" with status PENDING_FOLLOWUP`);
+
+            responseText = `Thank you for sharing the details. 🙏\nOur team will contact you shortly.`;
+
+            // Save updated session state as HANDOVER
+            AiAgentRepository.saveConversationSession({
+              conversation_id: conversation.id,
+              customer_phone: conversation.contactNumber,
+              current_service: currentService,
+              current_stage: 'HANDOVER',
+              collected_fields_json: collectedData,
+              lead_score: 90,
+              handover_required: true,
+            });
+
+            const outbound = await WhatsAppService.sendOutboundMessageAsync({
+              conversationId: conversation.id,
+              senderId: 'AI_SALES_AGENT',
+              senderName: 'AI Sales Agent',
+              content: responseText,
+            });
+            return outbound;
+          }
+        }
+
+        // Save active session state
+        AiAgentRepository.saveConversationSession({
+          conversation_id: conversation.id,
+          customer_phone: conversation.contactNumber,
+          current_service: currentService,
+          current_stage: currentStage,
+          collected_fields_json: collectedData,
+          lead_score: 60,
+          handover_required: false,
+        });
 
       } else {
-        // Fallback / Greeting / General query
+        // CASE C: General Greeting / Fallback
         responseText += `Hello! 👋 Welcome to Efilingg AI Sales Concierge.\n\n`;
         responseText += `I can help you with pricing, requirements, and filing for our services:\n\n`;
 

@@ -831,6 +831,7 @@ export class AiAgentRepository {
       current_stage: s.current_stage || s.current_step || 'SERVICE_DISCUSSION',
       collected_fields_json: s.collected_fields_json || s.collected_data || {},
       handover_required: typeof s.handover_required === 'boolean' ? s.handover_required : s.session_status === 'HANDOVER',
+      language: s.language || 'EN',
     }));
   }
 
@@ -857,6 +858,7 @@ export class AiAgentRepository {
       lead_score: sessionData.lead_score ?? 50,
       handover_required: sessionData.handover_required ?? false,
       session_status: sessionData.handover_required ? ('HANDOVER' as const) : ('ACTIVE' as const),
+      language: sessionData.language || (existingIdx !== -1 ? sessions[existingIdx].language : 'EN') || 'EN',
     };
 
     if (existingIdx !== -1) {

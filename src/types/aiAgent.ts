@@ -100,6 +100,7 @@ export interface AiConversationSession {
   lead_score?: number;
   handover_required: boolean;
   session_status?: AiSessionStatus;
+  language?: 'EN' | 'HI' | string;
   created_at: string;
   updated_at: string;
 }

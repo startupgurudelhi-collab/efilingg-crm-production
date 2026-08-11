@@ -51,6 +51,7 @@ import {
 import { Employee, Lead, FollowUp, Proposal, ActivityLog, LeadStage, EmployeeRole, TeamLeaderMapping, LeaveRequest, HistoricalPayroll, ResignationRequest } from '../types';
 import ServicesManager from './ServicesManager';
 import ProposalTemplateEditor from './ProposalTemplateEditor';
+import AiSalesAgentContainer from './aiAgent/AiSalesAgentContainer';
 import {
   Users,
   Briefcase,
@@ -120,7 +121,7 @@ export default function AdminDashboard({
   const [logs, setLogs] = useState<ActivityLog[]>([]);
 
   // Local Views Tab
-  const [viewTab, setViewTab] = useState<'analytics' | 'employees' | 'leads' | 'proposals' | 'logs' | 'backup' | 'services' | 'templates' | 'payroll' | 'ai_sales_inbox' | 'whatsapp_webhook'>('ai_sales_inbox');
+  const [viewTab, setViewTab] = useState<'analytics' | 'employees' | 'leads' | 'proposals' | 'logs' | 'backup' | 'services' | 'templates' | 'payroll' | 'ai_sales_inbox' | 'whatsapp_webhook' | 'ai_sales_agent'>('ai_sales_agent');
 
   // Search & Filter leads state
   const [searchQuery, setSearchQuery] = useState('');
@@ -999,6 +1000,14 @@ export default function AdminDashboard({
             </button>
           </FeatureFlagGuard>
           <button
+            onClick={() => setViewTab('ai_sales_agent')}
+            className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-emerald-500/30 font-bold ${
+              viewTab === 'ai_sales_agent' ? 'bg-emerald-600 text-white' : 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50'
+            }`}
+          >
+            🧠 AI Sales Agent
+          </button>
+          <button
             onClick={() => setViewTab('whatsapp_webhook')}
             className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-emerald-500/30 font-bold ${
               viewTab === 'whatsapp_webhook' ? 'bg-emerald-600 text-white' : 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50'
@@ -1083,6 +1092,16 @@ export default function AdminDashboard({
             currentUserName={loggedInUser?.name || 'Administrator'}
           />
         </FeatureFlagGuard>
+      )}
+
+      {/* ==============================================================
+          TAB: AI SALES AGENT V1 FOUNDATION
+          ============================================================== */}
+      {viewTab === 'ai_sales_agent' && (
+        <AiSalesAgentContainer
+          currentUserId={currentUserId}
+          currentUserName={loggedInUser?.name || 'Administrator'}
+        />
       )}
 
       {/* ==============================================================

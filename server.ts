@@ -15,11 +15,14 @@ import AdmZip from 'adm-zip';
 import { serverFeatureFlagManager } from './src/server/featureFlags';
 import { eventBus, deadLetterQueue, eventRegistry } from './src/lib/eventBus';
 import { block1Router } from './src/lib/block1/router';
+import { getMessages as getBlock1Messages } from './src/lib/block1/db';
 import { WhatsAppService } from './src/lib/block1/WhatsAppService';
+import { WhatsAppMediaService } from './src/lib/block1/WhatsAppMediaService';
 import { WhatsAppProviderFactory } from './src/lib/block1/WhatsAppProviderFactory';
 import { registerServerPersistHandler, crmMemoryStore } from './src/lib/db';
 import { block2Router } from './src/lib/block2/router';
 import { block3Router } from './src/lib/block3/router';
+import { aiAgentRouter } from './src/lib/aiAgent/router';
 
 // Enable Block 1, Block 2 & Block 3 feature flags by default on server start
 serverFeatureFlagManager.setOverride('ENABLE_WHATSAPP_INGESTION', true);
@@ -47,6 +50,9 @@ app.use('/api', block2Router);
 
 // Mount Block 3 Enterprise Router (Meta Click-to-WhatsApp Tracking, State Machine, Prompts, Notifications, Hardening, Observability)
 app.use('/api/v2/block3', block3Router);
+
+// Mount AI Sales Agent V1 Foundation Router
+app.use('/api/v2/ai-agent', aiAgentRouter);
 
 // --- POSTGRESQL INITIALIZATION & POOL ---
 let pool: pg.Pool | null = null;
@@ -1745,41 +1751,163 @@ app.get('/api/extension/download-zip', (req, res) => {
   }
 });
 
-// --- SMART SEARCH COMPLIANCE CHATBOT API ---
+// --- FILE STORAGE & SERVING PIPELINE ---
 
-const MEDIA_DIR = path.join(process.cwd(), 'uploads', 'whatsapp_media');
-if (!fs.existsSync(MEDIA_DIR)) {
-  fs.mkdirSync(MEDIA_DIR, { recursive: true });
+const ROOT_UPLOADS_DIR = path.join(process.cwd(), 'uploads');
+const PUBLIC_UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
+
+if (!fs.existsSync(ROOT_UPLOADS_DIR)) {
+  fs.mkdirSync(ROOT_UPLOADS_DIR, { recursive: true });
 }
-app.use('/uploads/whatsapp_media', express.static(MEDIA_DIR, {
-  setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.svg')) {
-      res.setHeader('Content-Type', 'image/svg+xml');
-    } else if (filePath.endsWith('.png')) {
-      res.setHeader('Content-Type', 'image/png');
-    } else if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) {
-      res.setHeader('Content-Type', 'image/jpeg');
-    } else if (filePath.endsWith('.webp')) {
-      res.setHeader('Content-Type', 'image/webp');
-    }
-  }
-}));
+if (!fs.existsSync(PUBLIC_UPLOADS_DIR)) {
+  fs.mkdirSync(PUBLIC_UPLOADS_DIR, { recursive: true });
+}
 
-// Catch-all 404 handler for whatsapp media directory to prevent falling through to SPA index.html
-app.use('/uploads/whatsapp_media', (req, res) => {
-  res.status(404).setHeader('Content-Type', 'application/json').json({
-    success: false,
-    error: 'WhatsApp media file not found or media download failed.',
-    path: req.path,
-    media_status: 'download_failed',
-  });
+// Create test.txt for diagnostic verification
+const TEST_TXT_PATH = path.join(ROOT_UPLOADS_DIR, 'test.txt');
+if (!fs.existsSync(TEST_TXT_PATH)) {
+  fs.writeFileSync(TEST_TXT_PATH, 'Efilingg CRM File Server Verification Test OK', 'utf-8');
+}
+
+function getMimeTypeFromExt(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case '.xlsx': return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    case '.xls': return 'application/vnd.ms-excel';
+    case '.pdf': return 'application/pdf';
+    case '.png': return 'image/png';
+    case '.jpg':
+    case '.jpeg': return 'image/jpeg';
+    case '.webp': return 'image/webp';
+    case '.gif': return 'image/gif';
+    case '.ogg': return 'audio/ogg';
+    case '.mp3': return 'audio/mpeg';
+    case '.wav': return 'audio/wav';
+    case '.mp4': return 'video/mp4';
+    case '.txt': return 'text/plain';
+    case '.json': return 'application/json';
+    case '.csv': return 'text/csv';
+    case '.doc': return 'application/msword';
+    case '.docx': return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    case '.zip': return 'application/zip';
+    default: return 'application/octet-stream';
+  }
+}
+
+// Explicit file serving route for /uploads/* registered BEFORE SPA fallback and Vite middleware
+app.get('/uploads/*', async (req, res) => {
+  try {
+    const relativePath = req.path.replace(/^\/uploads\/?/, '');
+    const safePath = path.normalize(relativePath).replace(/^(\.\.[\/\\])+/, '');
+
+    // Check primary ROOT_UPLOADS_DIR first, then PUBLIC_UPLOADS_DIR
+    let targetPath = path.join(ROOT_UPLOADS_DIR, safePath);
+    let exists = fs.existsSync(targetPath) && fs.statSync(targetPath).isFile();
+
+    if (!exists) {
+      const altPath = path.join(PUBLIC_UPLOADS_DIR, safePath);
+      if (fs.existsSync(altPath) && fs.statSync(altPath).isFile()) {
+        targetPath = altPath;
+        exists = true;
+      }
+    }
+
+    const stats = exists ? fs.statSync(targetPath) : null;
+    const contentType = exists ? getMimeTypeFromExt(targetPath) : 'unknown';
+    const contentLength = stats ? stats.size : 0;
+
+    console.log(`[FILE REQUEST]`);
+    console.log(`path: ${req.path}`);
+    console.log(`exists: ${exists}`);
+    console.log(`contentType: ${contentType}`);
+    console.log(`contentLength: ${contentLength}`);
+
+    if (exists) {
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', contentLength);
+      return res.sendFile(targetPath, (err) => {
+        if (err && !res.headersSent) {
+          console.error(`[FILE REQUEST ERROR] Failed sending ${targetPath}:`, err);
+          return res.status(500).json({ error: 'Error serving file' });
+        }
+      });
+    }
+
+    // Missing file on server -> Attempt Media Rehydration
+    console.log(`[FILE MISSING] File ${req.path} not found on server storage. Attempting media rehydration...`);
+
+    let targetMediaId = '';
+    const baseName = path.basename(safePath);
+    const mediaIdMatch = baseName.match(/^(\d{10,25})_/);
+
+    if (mediaIdMatch) {
+      targetMediaId = mediaIdMatch[1];
+    } else {
+      // Search in db messages for attachment with matching url or whatsappMediaId
+      try {
+        const messages = getBlock1Messages();
+        for (const msg of messages) {
+          if (msg.attachments && msg.attachments.length > 0) {
+            for (const att of msg.attachments) {
+              if (
+                att.whatsappMediaId ||
+                att.url === req.path ||
+                (att.fileName && baseName.includes(att.fileName))
+              ) {
+                if (att.whatsappMediaId) {
+                  targetMediaId = att.whatsappMediaId;
+                  break;
+                }
+              }
+            }
+          }
+          if (targetMediaId) break;
+        }
+      } catch (dbErr) {
+        console.warn(`[FILE REHYDRATION] Error querying messages DB:`, dbErr);
+      }
+    }
+
+    if (targetMediaId) {
+      console.log(`[MEDIA REHYDRATION] Found media_id "${targetMediaId}" for ${req.path}. Contacting Meta Cloud API...`);
+      try {
+        const record = await WhatsAppMediaService.downloadAndCacheMedia({
+          mediaId: targetMediaId,
+          filename: baseName,
+        });
+
+        if (record && record.storage_path && fs.existsSync(record.storage_path)) {
+          const rehydratedStats = fs.statSync(record.storage_path);
+          const rehydratedContentType = getMimeTypeFromExt(record.storage_path);
+          console.log(`[MEDIA REHYDRATION SUCCESS] Restored ${record.storage_path} (${rehydratedStats.size} bytes). Serving binary file.`);
+          res.setHeader('Content-Type', rehydratedContentType);
+          res.setHeader('Content-Length', rehydratedStats.size);
+          return res.sendFile(record.storage_path);
+        } else {
+          console.warn(`[MEDIA REHYDRATION FAILED] Could not restore media_id "${targetMediaId}": ${record?.fallback_reason || 'Download failed'}`);
+        }
+      } catch (rehydrErr: any) {
+        console.error(`[MEDIA REHYDRATION EXCEPTION] Exception rehydrating media_id "${targetMediaId}":`, rehydrErr);
+      }
+    }
+
+    // Missing file on server and cannot be rehydrated -> Return 404 JSON error
+    // NEVER fall through to React SPA index.html!
+    console.warn(`[FILE REQUEST FAILED] File ${req.path} missing and unrecoverable. Returning 404.`);
+    return res.status(404).json({
+      error: 'File not found on server',
+      path: req.path,
+      rehydrationAttempted: Boolean(targetMediaId),
+      message: 'The requested file does not exist on server storage and could not be recovered.',
+    });
+  } catch (err: any) {
+    console.error(`[FILE REQUEST EXCEPTION] Error processing /uploads request:`, err);
+    return res.status(500).json({ error: 'Server file handling error', message: err.message });
+  }
 });
 
-const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
-app.use('/uploads', express.static(UPLOADS_DIR));
+app.use('/uploads', express.static(ROOT_UPLOADS_DIR));
+app.use('/uploads', express.static(PUBLIC_UPLOADS_DIR));
 
 app.post('/api/chat/upload', (req, res) => {
   try {
@@ -1791,7 +1919,7 @@ app.post('/api/chat/upload', (req, res) => {
     const cleanedBase64 = base64Data.replace(/^data:.*?;base64,/, '');
     const buffer = Buffer.from(cleanedBase64, 'base64');
     const safeFilename = `${Date.now()}-${filename.replace(/[^a-zA-Z0-9.\-_]/g, '_')}`;
-    const filePath = path.join(UPLOADS_DIR, safeFilename);
+    const filePath = path.join(ROOT_UPLOADS_DIR, safeFilename);
 
     fs.writeFileSync(filePath, buffer);
 

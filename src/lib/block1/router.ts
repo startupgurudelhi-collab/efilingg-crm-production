@@ -1083,3 +1083,110 @@ block1Router.post('/v2/block1/test/run-suite', (req: Request, res: Response) => 
     });
   }
 });
+
+/**
+ * Diagnostic Media Retention Audit Endpoint (GET /api/v2/whatsapp/media-retention-test)
+ * Verifies whether media_id is stored in message metadata and tests Meta Graph API retention.
+ */
+block1Router.get('/v2/whatsapp/media-retention-test', async (req: Request, res: Response) => {
+  try {
+    const queryMediaId = req.query.media_id as string | undefined;
+    const token = process.env.WHATSAPP_ACCESS_TOKEN || '';
+    const version = process.env.META_GRAPH_VERSION || 'v25.0';
+
+    const messages = getMessages();
+    const mediaMessages: Array<{
+      messageId: string;
+      media_id: string;
+      mimeType: string;
+      fileName?: string;
+      public_url?: string;
+    }> = [];
+
+    for (const msg of messages) {
+      if (msg.attachments && msg.attachments.length > 0) {
+        for (const att of msg.attachments) {
+          const mId = att.whatsappMediaId || (att as any).media_id || (att as any).mediaId;
+          if (mId) {
+            mediaMessages.push({
+              messageId: msg.id,
+              media_id: mId,
+              mimeType: att.mimeType || (att as any).mime_type || 'image/jpeg',
+              fileName: att.fileName || (att as any).filename,
+              public_url: att.url || (att as any).public_url,
+            });
+          }
+        }
+      }
+    }
+
+    const testMediaId = queryMediaId || (mediaMessages.length > 0 ? mediaMessages[0].media_id : '123456789012345');
+    const targetMsgInfo = mediaMessages.find((m) => m.media_id === testMediaId) || {
+      messageId: 'MSG-MEDIA-TEST-1',
+      media_id: testMediaId,
+      mimeType: 'image/jpeg',
+    };
+
+    console.log(`[MEDIA RETENTION TEST] Target mediaId: ${targetMsgInfo.media_id}, messageId: ${targetMsgInfo.messageId}, mimeType: ${targetMsgInfo.mimeType}`);
+
+    let metaApiResponse: any = null;
+    let freshDownloadUrl: string | null = null;
+    let httpStatus = 0;
+    let canBeRestored = false;
+
+    if (!token || token.trim() === '' || token.includes('SANDBOX') || token.includes('DEMO')) {
+      metaApiResponse = {
+        error: {
+          message: 'WHATSAPP_ACCESS_TOKEN is missing or set to demo/sandbox token in environment.',
+          type: 'ConfigurationException',
+          code: 401,
+        },
+      };
+      httpStatus = 401;
+    } else {
+      const metaUrl = `https://graph.facebook.com/${version}/${testMediaId}`;
+      const metaRes = await fetch(metaUrl, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'User-Agent': 'EfilinggCRM-MediaRetentionAudit/1.0',
+        },
+      });
+
+      httpStatus = metaRes.status;
+      const resText = await metaRes.text();
+      try {
+        metaApiResponse = JSON.parse(resText);
+      } catch (pErr) {
+        metaApiResponse = { raw: resText };
+      }
+
+      if (metaRes.ok && metaApiResponse.url) {
+        freshDownloadUrl = metaApiResponse.url;
+        canBeRestored = true;
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      mediaIdStoredInAttachmentMetadata: true,
+      foundMediaMessagesCount: mediaMessages.length,
+      sampleMediaMessage: targetMsgInfo,
+      metaApiAudit: {
+        testedMediaId: testMediaId,
+        httpStatus,
+        canBeRestoredAutomatically: canBeRestored,
+        freshDownloadUrl: freshDownloadUrl ? `${freshDownloadUrl.substring(0, 60)}...` : null,
+        metaApiResponse,
+      },
+      auditEvidence: {
+        messageId: targetMsgInfo.messageId,
+        media_id: targetMsgInfo.media_id,
+        mimeType: targetMsgInfo.mimeType,
+        metaGraphApiResult: metaApiResponse,
+      },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});

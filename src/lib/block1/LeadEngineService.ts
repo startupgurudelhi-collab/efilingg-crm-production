@@ -31,6 +31,7 @@ import {
   addTimelineEntry,
 } from './db';
 import { eventBus } from '../eventBus';
+import { AiSalesAgentEngine } from '../aiAgent/AiSalesAgentEngine';
 
 export interface IngestInboundMessageOptions {
   channel: ChannelType;
@@ -306,6 +307,13 @@ export class LeadEngineService {
     saveMessage(message);
     console.log(`[WHATSAPP MESSAGE SAVED] Saved message ID "${message.id}" (WhatsApp WAMID: "${message.whatsappMessageId || 'N/A'}") for conversation "${conversation.id}" from sender "${normPhone}"`);
     console.log(`[Diagnostic 7/9] Message Inserted | ID: ${message.id} | ConvID: ${conversation.id} | Direction: INBOUND | Content: "${message.content}"`);
+
+    // AI Sales Agent Engine Invocation Trigger
+    if (message.direction === 'INBOUND') {
+      AiSalesAgentEngine.processMessage(conversation, message).catch((aiErr) => {
+        console.error(`[AI_AGENT_ERROR] Failed to execute AI Sales Agent for message ID "${message.id}":`, aiErr);
+      });
+    }
 
     // 8. EventBus Emit
     addTimelineEntry(

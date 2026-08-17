@@ -359,7 +359,12 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
       } else {
         success = false;
         errorCode = parsedResponse?.error?.code || httpStatusCode;
-        errorMessage = parsedResponse?.error?.message || `Meta API HTTP ${httpStatusCode}`;
+        const rawMsg = parsedResponse?.error?.message || `Meta API HTTP ${httpStatusCode}`;
+        if (rawMsg.includes('API access blocked') || errorCode === 200 || parsedResponse?.error?.type === 'OAuthException') {
+          errorMessage = `API access blocked by Meta (Code ${errorCode}): WHATSAPP_ACCESS_TOKEN expired/invalid, or Meta WABA account restricted. Generate a new Permanent System User Token in Meta Business Manager.`;
+        } else {
+          errorMessage = rawMsg;
+        }
       }
     } catch (err: any) {
       httpStatusCode = 500;

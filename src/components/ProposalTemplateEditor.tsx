@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getProposalTemplate, saveProposalTemplate } from '../lib/db';
+import { waitForPendingPushes, verifyDatabaseReadback } from '../lib/postgresSync';
 import { ProposalTemplate } from '../types';
 import { 
   Sliders, 
@@ -17,7 +18,8 @@ import {
   Trash2, 
   Info,
   Layers,
-  FileText
+  FileText,
+  Loader2
 } from 'lucide-react';
 
 interface ProposalTemplateEditorProps {
@@ -29,6 +31,7 @@ export default function ProposalTemplateEditor({ currentUserId, onRefreshData }:
   const [template, setTemplate] = useState<ProposalTemplate | null>(null);
   const [activeSegment, setActiveSegment] = useState<'branding' | 'value' | 'workflow' | 'footer'>('branding');
   const [alert, setAlert] = useState<{ type: 'success' | 'err'; message: string } | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setTemplate(getProposalTemplate());
@@ -36,7 +39,7 @@ export default function ProposalTemplateEditor({ currentUserId, onRefreshData }:
 
   const triggerAlert = (type: 'success' | 'err', message: string) => {
     setAlert({ type, message });
-    setTimeout(() => setAlert(null), 400);
+    setTimeout(() => setAlert(null), 4000);
   };
 
   if (!template) {
@@ -97,12 +100,22 @@ export default function ProposalTemplateEditor({ currentUserId, onRefreshData }:
     handleUpdateField('termsAndConditions', updatedTerms);
   };
 
-  // Save changes
-  const handleSave = () => {
-    saveProposalTemplate(template, currentUserId);
-    triggerAlert('success', 'Master Proposal Template updated! All live corporate proposal sheets will draw from these custom layouts.');
-    if (onRefreshData) {
-      onRefreshData();
+  // Save changes with fully awaited database commit
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      saveProposalTemplate(template, currentUserId);
+      await waitForPendingPushes(8000);
+      await verifyDatabaseReadback('efilingg_crm_proposal_template', JSON.stringify(template));
+
+      triggerAlert('success', 'Master Proposal Template updated and verified in database! All live corporate proposal sheets will draw from these custom layouts.');
+      if (onRefreshData) {
+        onRefreshData();
+      }
+    } catch (err: any) {
+      triggerAlert('err', `Failed to save template: ${err.message || 'Database error'}`);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -125,11 +138,21 @@ export default function ProposalTemplateEditor({ currentUserId, onRefreshData }:
 
         <button
           onClick={handleSave}
+          disabled={isSaving}
           id="btn-save-template"
-          className="flex items-center justify-center space-x-2 py-2.5 px-6 bg-violet-650 hover:bg-violet-600 dark:bg-violet-600 dark:hover:bg-violet-500 text-white font-bold text-xs rounded-xl cursor-pointer transition-all shadow-sm active:scale-95"
+          className="flex items-center justify-center space-x-2 py-2.5 px-6 bg-violet-650 hover:bg-violet-600 dark:bg-violet-600 dark:hover:bg-violet-500 text-white font-bold text-xs rounded-xl cursor-pointer transition-all shadow-sm active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          <Save className="h-4.5 w-4.5" />
-          <span>Save Master Design</span>
+          {isSaving ? (
+            <>
+              <Loader2 className="h-4.5 w-4.5 animate-spin" />
+              <span>Saving Master Design...</span>
+            </>
+          ) : (
+            <>
+              <Save className="h-4.5 w-4.5" />
+              <span>Save Master Design</span>
+            </>
+          )}
         </button>
       </div>
 

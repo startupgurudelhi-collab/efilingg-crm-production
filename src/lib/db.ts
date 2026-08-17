@@ -191,11 +191,11 @@ export const getStorageString = (key: string): string | null => {
   }
 };
 
-export const setStorageString = (key: string, val: string) => {
+export const setStorageString = async (key: string, val: string): Promise<boolean> => {
   try {
     if (typeof window !== 'undefined' && (key.includes('_theme') || key.includes('_is_fresh_load') || key === 'efilingg_crm_session' || key.includes('good_practice_shown_'))) {
       localStorage.setItem(key, val);
-      return;
+      return true;
     }
     crmMemoryStore[key] = val;
 
@@ -206,12 +206,12 @@ export const setStorageString = (key: string, val: string) => {
     }
 
     if (typeof window !== 'undefined') {
-      pushToPostgres(key, val).catch((err) => {
-        console.warn(`PostgreSQL database push failed for key ${key}:`, err);
-      });
+      return await pushToPostgres(key, val);
     }
+    return true;
   } catch (e) {
     console.error('In-memory cache update failed', e);
+    return false;
   }
 };
 
@@ -1913,11 +1913,21 @@ export function loginEmployee(email: string, passwordDigits: string): Employee |
 
 // DYNAMIC SERVICES CRUD
 export function getCustomServices(): CustomService[] {
-  return JSON.parse(getStorageString(KEY_SERVICES) || '[]');
+  const raw = getStorageString(KEY_SERVICES) || '[]';
+  try {
+    const parsed = JSON.parse(raw);
+    console.log(`[SERVICE_LOAD] Loaded ${Array.isArray(parsed) ? parsed.length : 0} services from storage key "${KEY_SERVICES}".`);
+    return parsed;
+  } catch (e) {
+    console.error(`[SERVICE_LOAD] Failed parsing services from "${KEY_SERVICES}":`, e);
+    return [];
+  }
 }
 
-export function saveCustomServices(services: CustomService[]) {
-  setStorageString(KEY_SERVICES, JSON.stringify(services));
+export function saveCustomServices(services: CustomService[]): Promise<boolean> {
+  const serialized = JSON.stringify(services);
+  console.log(`[SERVICE_SAVE_REQUEST] Saving ${services.length} services to key "${KEY_SERVICES}". Payload size: ${serialized.length} bytes.`);
+  return setStorageString(KEY_SERVICES, serialized);
 }
 
 export function addCustomService(service: Omit<CustomService, 'id'>, triggerByUserId: string): CustomService {
@@ -1928,7 +1938,35 @@ export function addCustomService(service: Omit<CustomService, 'id'>, triggerByUs
     id: idValue
   };
   services.push(newService);
+  console.log(`[SERVICE_SAVE_REQUEST] Adding new service ID: ${newService.id}, Name: "${newService.name}". Total services count: ${services.length}.`);
   saveCustomServices(services);
+
+  const user = getEmployeeById(triggerByUserId);
+  writeActivityLog(
+    triggerByUserId,
+    user?.name || 'User',
+    user?.role || 'employee',
+    'Service Created',
+    `Created dynamic service ${newService.name} under category ${newService.category} (Fee: ₹${newService.price})`
+  );
+
+  return newService;
+}
+
+export async function addCustomServiceAsync(service: Omit<CustomService, 'id'>, triggerByUserId: string): Promise<CustomService> {
+  const services = getCustomServices();
+  const idValue = `SRV-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+  const newService: CustomService = {
+    ...service,
+    id: idValue
+  };
+  services.push(newService);
+  console.log(`[SERVICE_COMMIT_START] [addCustomServiceAsync] Adding new service ID: ${newService.id}, Name: "${newService.name}".`);
+  
+  const pushSuccess = await saveCustomServices(services);
+  if (!pushSuccess) {
+    console.warn(`[SERVICE_COMMIT_FAILED] [addCustomServiceAsync] Remote database push returned false.`);
+  }
 
   const user = getEmployeeById(triggerByUserId);
   writeActivityLog(
@@ -1949,6 +1987,7 @@ export function updateCustomService(id: string, updates: Partial<CustomService>,
     const old = services[idx];
     const updated = { ...old, ...updates };
     services[idx] = updated;
+    console.log(`[SERVICE_SAVE_REQUEST] Updating service ID: ${id}, Name: "${updated.name}".`);
     saveCustomServices(services);
 
     const user = getEmployeeById(triggerByUserId);
@@ -1959,6 +1998,36 @@ export function updateCustomService(id: string, updates: Partial<CustomService>,
       'Service Updated',
       `Updated details of dynamic service ${updated.name}`
     );
+  } else {
+    console.warn(`[SERVICE_SAVE_REQUEST] Service ID ${id} not found for update.`);
+  }
+}
+
+export async function updateCustomServiceAsync(id: string, updates: Partial<CustomService>, triggerByUserId: string): Promise<boolean> {
+  const services = getCustomServices();
+  const idx = services.findIndex((s) => s.id === id);
+  if (idx !== -1) {
+    const old = services[idx];
+    const updated = { ...old, ...updates };
+    services[idx] = updated;
+    console.log(`[SERVICE_COMMIT_START] [updateCustomServiceAsync] Updating service ID: ${id}, Name: "${updated.name}".`);
+    const pushSuccess = await saveCustomServices(services);
+    if (!pushSuccess) {
+      console.warn(`[SERVICE_COMMIT_FAILED] [updateCustomServiceAsync] Remote database push returned false.`);
+    }
+
+    const user = getEmployeeById(triggerByUserId);
+    writeActivityLog(
+      triggerByUserId,
+      user?.name || 'User',
+      user?.role || 'employee',
+      'Service Updated',
+      `Updated details of dynamic service ${updated.name}`
+    );
+    return pushSuccess;
+  } else {
+    console.warn(`[SERVICE_COMMIT_FAILED] Service ID ${id} not found for update.`);
+    return false;
   }
 }
 
@@ -1968,6 +2037,7 @@ export function deleteCustomService(id: string, triggerByUserId: string) {
   if (idx !== -1) {
     const old = services[idx];
     services.splice(idx, 1);
+    console.log(`[SERVICE_SAVE_REQUEST] Deleting service ID: ${id}, Name: "${old.name}". Remaining count: ${services.length}.`);
     saveCustomServices(services);
 
     const user = getEmployeeById(triggerByUserId);
@@ -1979,6 +2049,28 @@ export function deleteCustomService(id: string, triggerByUserId: string) {
       `Deleted dynamic service option ${old.name}`
     );
   }
+}
+
+export async function deleteCustomServiceAsync(id: string, triggerByUserId: string): Promise<boolean> {
+  const services = getCustomServices();
+  const idx = services.findIndex((s) => s.id === id);
+  if (idx !== -1) {
+    const old = services[idx];
+    services.splice(idx, 1);
+    console.log(`[SERVICE_COMMIT_START] [deleteCustomServiceAsync] Deleting service ID: ${id}, Name: "${old.name}".`);
+    const pushSuccess = await saveCustomServices(services);
+
+    const user = getEmployeeById(triggerByUserId);
+    writeActivityLog(
+      triggerByUserId,
+      user?.name || 'User',
+      user?.role || 'employee',
+      'Service Deleted',
+      `Deleted dynamic service option ${old.name}`
+    );
+    return pushSuccess;
+  }
+  return false;
 }
 
 // MASTER PROPOSAL TEMPLATE ACTIONS

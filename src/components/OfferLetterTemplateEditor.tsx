@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getOfferLetterTemplate, saveOfferLetterTemplate } from '../lib/db';
+import { waitForPendingPushes, verifyDatabaseReadback } from '../lib/postgresSync';
 import { OfferLetterTemplate } from '../types';
 import { 
   Building2, 
@@ -12,17 +13,18 @@ import {
   Eye, 
   Plus, 
   Trash2, 
-  Info,
-  Layers,
-  FileText,
-  Sliders,
-  Sparkles,
-  Phone,
-  Mail,
-  Globe,
-  Settings,
-  PenTool,
-  Award
+  Info, 
+  Layers, 
+  FileText, 
+  Sliders, 
+  Sparkles, 
+  Phone, 
+  Mail, 
+  Globe, 
+  Settings, 
+  PenTool, 
+  Award,
+  Loader2
 } from 'lucide-react';
 import EFilinggLogo from './EFilinggLogo';
 
@@ -35,6 +37,7 @@ export default function OfferLetterTemplateEditor({ currentUserId, onRefreshData
   const [template, setTemplate] = useState<OfferLetterTemplate | null>(null);
   const [activeSegment, setActiveSegment] = useState<'branding' | 'paragraphs' | 'terms' | 'signatory'>('branding');
   const [alert, setAlert] = useState<{ type: 'success' | 'err'; message: string } | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setTemplate(getOfferLetterTemplate());
@@ -89,10 +92,20 @@ export default function OfferLetterTemplateEditor({ currentUserId, onRefreshData
     handleUpdateField('termsAndConditions', updatedTerms);
   };
 
-  const handleSave = () => {
-    saveOfferLetterTemplate(template, currentUserId);
-    triggerAlert('success', 'Offer Letter Template changes saved successfully!');
-    if (onRefreshData) onRefreshData();
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      saveOfferLetterTemplate(template, currentUserId);
+      await waitForPendingPushes(8000);
+      await verifyDatabaseReadback('efilingg_crm_offer_letter_template', JSON.stringify(template));
+
+      triggerAlert('success', 'Offer Letter Template changes saved and verified in database!');
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      triggerAlert('err', `Failed to save template: ${err.message || 'Database error'}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -115,10 +128,20 @@ export default function OfferLetterTemplateEditor({ currentUserId, onRefreshData
 
         <button
           onClick={handleSave}
-          className="flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-6 rounded-2xl transition duration-150 shadow-md shadow-indigo-200 dark:shadow-none cursor-pointer text-xs"
+          disabled={isSaving}
+          className="flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-6 rounded-2xl transition duration-150 shadow-md shadow-indigo-200 dark:shadow-none cursor-pointer text-xs disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          <Save className="h-4 w-4" />
-          <span>Save Changes</span>
+          {isSaving ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Saving Changes...</span>
+            </>
+          ) : (
+            <>
+              <Save className="h-4 w-4" />
+              <span>Save Changes</span>
+            </>
+          )}
         </button>
       </div>
 

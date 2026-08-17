@@ -4,7 +4,14 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { getCustomServices, addCustomService, updateCustomService, deleteCustomService } from '../lib/db';
+import { 
+  getCustomServices, 
+  addCustomServiceAsync, 
+  updateCustomServiceAsync, 
+  deleteCustomServiceAsync,
+  saveCustomServices 
+} from '../lib/db';
+import { waitForPendingPushes, verifyDatabaseReadback } from '../lib/postgresSync';
 import ConfirmModal from './v2/ConfirmModal';
 import { CustomService } from '../types';
 import { 
@@ -22,7 +29,8 @@ import {
   Tag, 
   Info,
   X,
-  PlusCircle
+  PlusCircle,
+  Loader2
 } from 'lucide-react';
 
 interface ServicesManagerProps {
@@ -90,6 +98,11 @@ export default function ServicesManager({ currentUserId, currentUserRole, onRefr
   // Status message
   const [alertMsg, setAlertMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Persistence transaction state
+  const [isSaving, setIsSaving] = useState(false);
+  const [savingStep, setSavingStep] = useState<string>('');
+  const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
+
   // Reusable custom confirm modal state
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -108,7 +121,9 @@ export default function ServicesManager({ currentUserId, currentUserRole, onRefr
   }, []);
 
   const loadServices = () => {
-    setServices(getCustomServices());
+    console.log('[SERVICE_LOAD] ServicesManager loading active services catalog...');
+    const list = getCustomServices();
+    setServices(list);
   };
 
   const triggerAlert = (type: 'success' | 'error', text: string) => {
@@ -158,18 +173,36 @@ export default function ServicesManager({ currentUserId, currentUserRole, onRefr
     setIsFormOpen(true);
   };
 
-  // Delete Service
+  // Delete Service with fully awaited commit flow
   const handleDelete = (id: string) => {
     setConfirmModal({
       isOpen: true,
       title: 'Remove Compliance Service',
       message: 'Are you holding consent to remove this compliance service from the catalog? This action is permanent.',
-      onConfirm: () => {
-        deleteCustomService(id, currentUserId);
-        loadServices();
-        if (onRefreshData) onRefreshData();
-        triggerAlert('success', 'Service option eliminated successfully!');
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      onConfirm: async () => {
+        setIsDeletingId(id);
+        console.log(`[SERVICE_COMMIT_START] [handleDelete] Removing service ID: ${id}`);
+        try {
+          await deleteCustomServiceAsync(id, currentUserId);
+          await waitForPendingPushes(8000);
+
+          const currentServices = getCustomServices();
+          const readback = await verifyDatabaseReadback('efilingg_crm_services', JSON.stringify(currentServices));
+          if (!readback.verified) {
+            console.error(`[SERVICE_COMMIT_FAILED] Readback failed on delete:`, readback.error);
+          }
+
+          console.log(`[SERVICE_COMMIT_SUCCESS] Service removed and verified in database.`);
+          loadServices();
+          if (onRefreshData) onRefreshData();
+          triggerAlert('success', 'Service option eliminated successfully!');
+        } catch (err: any) {
+          console.error(`[SERVICE_COMMIT_FAILED] Delete exception:`, err);
+          triggerAlert('error', `Failed to delete service: ${err.message || 'Database error'}`);
+        } finally {
+          setIsDeletingId(null);
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        }
       }
     });
   };
@@ -216,8 +249,8 @@ export default function ServicesManager({ currentUserId, currentUserRole, onRefr
     }
   };
 
-  // Save Service handler
-  const handleSaveService = (e: React.FormEvent) => {
+  // Fully awaited Save Service handler with Database Commit & Readback Verification
+  const handleSaveService = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       triggerAlert('error', 'Please define a valid service name.');
@@ -237,26 +270,46 @@ export default function ServicesManager({ currentUserId, currentUserRole, onRefr
       priceBreakup: priceBreakup.length > 0 ? priceBreakup : undefined
     };
 
-    if (editingId) {
-      updateCustomService(editingId, payload, currentUserId);
-      triggerAlert('success', 'Service updated successfully!');
-    } else {
-      addCustomService(payload, currentUserId);
-      triggerAlert('success', 'New service added successfully to live catalog!');
-      setTimeout(async () => {
-        try {
-          const { waitForPendingPushes } = await import('../lib/postgresSync');
-          await waitForPendingPushes();
-        } catch (e) {
-          console.warn('Failed to wait for pending pushes in ServicesManager:', e);
-        }
-        window.location.reload();
-      }, 1000);
-    }
+    setIsSaving(true);
+    setSavingStep('Writing changes to database...');
+    console.log(`[SERVICE_COMMIT_START] Submitting service form. Mode: ${editingId ? `EDIT (${editingId})` : 'CREATE'}. Name: "${payload.name}".`);
 
-    setIsFormOpen(false);
-    loadServices();
-    if (onRefreshData) onRefreshData();
+    try {
+      if (editingId) {
+        await updateCustomServiceAsync(editingId, payload, currentUserId);
+      } else {
+        await addCustomServiceAsync(payload, currentUserId);
+      }
+
+      setSavingStep('Waiting for database commit...');
+      await waitForPendingPushes(10000);
+
+      setSavingStep('Verifying database readback...');
+      const currentServices = getCustomServices();
+      const readbackResult = await verifyDatabaseReadback('efilingg_crm_services', JSON.stringify(currentServices));
+
+      if (!readbackResult.verified) {
+        console.error(`[SERVICE_COMMIT_FAILED] Verification readback failed: ${readbackResult.error}`);
+        triggerAlert('error', `Database commit verification failed: ${readbackResult.error || 'Readback mismatch'}. Changes remain in editor.`);
+        setIsSaving(false);
+        setSavingStep('');
+        return;
+      }
+
+      console.log(`[SERVICE_COMMIT_SUCCESS] Service transaction committed and verified in PostgreSQL.`);
+      triggerAlert('success', editingId ? 'Service updated successfully!' : 'Service saved successfully!');
+
+      // Close modal only on verified success
+      setIsFormOpen(false);
+      loadServices();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      console.error(`[SERVICE_COMMIT_FAILED] Exception during service save:`, err);
+      triggerAlert('error', `Failed to save service: ${err.message || 'Database error'}. Modal remains open.`);
+    } finally {
+      setIsSaving(false);
+      setSavingStep('');
+    }
   };
 
   // Filtering services lists
@@ -883,16 +936,26 @@ export default function ServicesManager({ currentUserId, currentUserRole, onRefr
               <div className="flex items-center justify-end space-x-3.5 pt-4 border-t border-slate-150 dark:border-slate-850">
                 <button
                   type="button"
+                  disabled={isSaving}
                   onClick={() => setIsFormOpen(false)}
-                  className="py-2.5 px-5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-705 dark:text-slate-300 font-bold rounded-xl transition-all cursor-pointer"
+                  className="py-2.5 px-5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-705 dark:text-slate-300 font-bold rounded-xl transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="py-2.5 px-6 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-extrabold rounded-xl transition-all shadow-md cursor-pointer"
+                  disabled={isSaving}
+                  id="btn-submit-service"
+                  className="py-2.5 px-6 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-extrabold rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed flex items-center space-x-2"
                 >
-                  {editingId ? 'Save Changes' : 'Publish Service Option'}
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>{savingStep || 'Saving to Database...'}</span>
+                    </>
+                  ) : (
+                    <span>{editingId ? 'Save Changes' : 'Publish Service Option'}</span>
+                  )}
                 </button>
               </div>
 

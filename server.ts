@@ -1442,6 +1442,9 @@ app.post('/api/postgres/push', async (req, res) => {
     await createPreWriteSnapshot(key, client);
 
     // 4. Write
+    if (key === 'efilingg_crm_services') {
+      console.log(`[SERVICE_DB_WRITE] Executing SQL INSERT/UPDATE into crm_store for key "${key}". Payload size: ${value.length} bytes.`);
+    }
     const query = `
       INSERT INTO crm_store (key, value, updated_at)
       VALUES ($1, $2, NOW())
@@ -1452,7 +1455,13 @@ app.post('/api/postgres/push', async (req, res) => {
     // 5. Verification: Read-back check to verify exact equivalency
     const verifyRes = await client.query('SELECT value FROM crm_store WHERE key = $1', [key]);
     if (verifyRes.rows.length === 0 || verifyRes.rows[0].value !== value) {
+      if (key === 'efilingg_crm_services') {
+        console.error(`[SERVICE_DB_WRITE_FAILED] Readback mismatch on "${key}".`);
+      }
       throw new Error(`Integrity Verification Failed: Written value for "${key}" did not match the input payload upon read-back verification.`);
+    }
+    if (key === 'efilingg_crm_services') {
+      console.log(`[SERVICE_DB_READBACK] Readback verification successful for key "${key}". Value length: ${verifyRes.rows[0].value.length} bytes.`);
     }
 
     // 6. COMMIT

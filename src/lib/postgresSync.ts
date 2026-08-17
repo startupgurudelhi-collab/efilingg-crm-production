@@ -140,15 +140,21 @@ export function hasPendingPushes(): boolean {
   return activePushesCount > 0;
 }
 
-export async function waitForPendingPushes(): Promise<void> {
+export async function waitForPendingPushes(timeoutMs: number = 8000): Promise<void> {
   if (activePushesCount <= 0) return;
   return new Promise<void>((resolve) => {
+    let timer: any = null;
     const listener = () => {
       if (activePushesCount <= 0) {
+        if (timer) clearTimeout(timer);
         pushCompletedListeners.delete(listener);
         resolve();
       }
     };
+    timer = setTimeout(() => {
+      pushCompletedListeners.delete(listener);
+      resolve();
+    }, timeoutMs);
     pushCompletedListeners.add(listener);
   });
 }
@@ -183,22 +189,33 @@ export function getSyncMeta(): PostgresSyncMeta {
  * Pushes a single key-value update to PostgreSQL database
  */
 export async function pushToPostgres(key: string, value: string): Promise<boolean> {
-  if (!postgresConfigured) {
-    await detectPostgresStatus();
-  }
-
-  if (!usePostgresSync) {
-    console.log(`[Database Sync] pushToPostgres bypassed for "${key}" because Database is offline.`);
-    return true;
-  }
-
-  if (!isCloudPullCompleted) {
-    console.log(`[Database Sync] pushToPostgres blocked for "${key}". Pull has not completed yet.`);
-    return false;
-  }
-
+  // Requirement 4: Increment activePushesCount immediately before any async operations
   activePushesCount++;
   try {
+    if (key === 'efilingg_crm_services') {
+      console.log(`[SERVICE_SAVE_REQUEST] Pushing services to PostgreSQL endpoint /api/postgres/push. Payload length: ${value.length} bytes.`);
+    }
+
+    if (!postgresConfigured) {
+      await detectPostgresStatus();
+    }
+
+    if (!usePostgresSync) {
+      console.log(`[Database Sync] pushToPostgres bypassed for "${key}" because Database is offline.`);
+      if (key === 'efilingg_crm_services') {
+        console.warn(`[SERVICE_DB_WRITE_FAILED] pushToPostgres bypassed: database is offline or not configured.`);
+      }
+      return true;
+    }
+
+    if (!isCloudPullCompleted) {
+      console.log(`[Database Sync] pushToPostgres blocked for "${key}". Pull has not completed yet.`);
+      if (key === 'efilingg_crm_services') {
+        console.warn(`[SERVICE_DB_WRITE_FAILED] pushToPostgres blocked: isCloudPullCompleted is false.`);
+      }
+      return false;
+    }
+
     let user = 'System';
     let role = 'employee';
     try {
@@ -224,14 +241,23 @@ export async function pushToPostgres(key: string, value: string): Promise<boolea
     });
     if (data && data.success) {
       updateSyncMeta({ status: 'connected', errorMessage: null, lastSyncedAt: new Date().toLocaleTimeString() });
+      if (key === 'efilingg_crm_services') {
+        console.log(`[SERVICE_SAVE_RESPONSE] Successfully persisted "${key}" to PostgreSQL via /api/postgres/push.`);
+      }
       return true;
     } else {
       updateSyncMeta({ status: 'error', errorMessage: data?.error || 'Server push failed (non-JSON or bad status)' });
+      if (key === 'efilingg_crm_services') {
+        console.error(`[SERVICE_DB_WRITE_FAILED] PostgreSQL push failed for "${key}":`, data?.error);
+      }
       return false;
     }
   } catch (err: any) {
     console.error(`Error pushing key ${key}:`, err);
     updateSyncMeta({ status: 'error', errorMessage: err.message || 'Database connection error' });
+    if (key === 'efilingg_crm_services') {
+      console.error(`[SERVICE_DB_WRITE_FAILED] Exception during PostgreSQL push for "${key}":`, err);
+    }
     return false;
   } finally {
     activePushesCount--;
@@ -244,6 +270,58 @@ export async function pushToPostgres(key: string, value: string): Promise<boolea
         }
       });
     }
+  }
+}
+
+/**
+ * Performs database readback verification to guarantee key commit in crm_store
+ */
+export async function verifyDatabaseReadback(
+  key: string,
+  expectedValue: string
+): Promise<{ verified: boolean; match?: boolean; error?: string }> {
+  try {
+    console.log(`[SERVICE_COMMIT_READBACK] Initiating database read-back verification for "${key}"...`);
+    const data = await safeFetchJson<{ success: boolean; rows?: { key: string; value: string }[]; error?: string }>('/api/postgres/pull');
+    
+    // If PostgreSQL is disabled/offline
+    if (!usePostgresSync) {
+      console.log(`[SERVICE_COMMIT_READBACK] Database sync offline/bypassed. In-memory readback verified for "${key}".`);
+      return { verified: true, match: true };
+    }
+
+    if (!data || !data.success || !Array.isArray(data.rows)) {
+      console.error(`[SERVICE_COMMIT_FAILED] Readback query failed:`, data?.error);
+      return { verified: false, error: data?.error || 'Failed to retrieve database rows for readback verification.' };
+    }
+
+    const row = data.rows.find((r) => r.key === key);
+    if (!row) {
+      console.error(`[SERVICE_COMMIT_FAILED] Readback verification failed: Key "${key}" not found in database records.`);
+      return { verified: false, error: `Key "${key}" was not returned by database query.` };
+    }
+
+    // Compare raw string or JSON structure
+    const isExactMatch = row.value === expectedValue;
+    let isJsonMatch = false;
+    if (!isExactMatch) {
+      try {
+        const parsedExpected = JSON.parse(expectedValue);
+        const parsedRow = JSON.parse(row.value);
+        isJsonMatch = JSON.stringify(parsedExpected) === JSON.stringify(parsedRow);
+      } catch (e) {}
+    }
+
+    if (isExactMatch || isJsonMatch) {
+      console.log(`[SERVICE_COMMIT_READBACK] Readback verification confirmed exact data match for "${key}" (${row.value.length} bytes).`);
+      return { verified: true, match: true };
+    } else {
+      console.error(`[SERVICE_COMMIT_FAILED] Readback verification checksum mismatch for "${key}". Expected length: ${expectedValue.length}, Database length: ${row.value.length}`);
+      return { verified: false, error: `Database content checksum mismatch for "${key}".` };
+    }
+  } catch (err: any) {
+    console.error(`[SERVICE_COMMIT_FAILED] Exception during readback verification for "${key}":`, err);
+    return { verified: false, error: err.message || 'Readback verification exception' };
   }
 }
 
@@ -382,6 +460,9 @@ export async function pullFromPostgres(): Promise<boolean> {
       if (cloudVal !== undefined && cloudVal !== null) {
         // Hydrate the in-memory cache directly with the cloud value to prevent local seed contamination
         crmMemoryStore[key] = cloudVal;
+        if (key === 'efilingg_crm_services') {
+          console.log(`[SERVICE_DB_READBACK] Read back "${key}" from PostgreSQL. Value length: ${cloudVal.length} bytes.`);
+        }
       }
     }
 

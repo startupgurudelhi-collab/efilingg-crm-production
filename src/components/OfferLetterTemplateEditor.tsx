@@ -97,7 +97,7 @@ export default function OfferLetterTemplateEditor({ currentUserId, onRefreshData
     try {
       saveOfferLetterTemplate(template, currentUserId);
       await waitForPendingPushes(8000);
-      await verifyDatabaseReadback('efilingg_crm_offer_letter_template', JSON.stringify(template));
+      await verifyDatabaseReadback('efilingg_crm_offerlettertemplate', JSON.stringify(template));
 
       triggerAlert('success', 'Offer Letter Template changes saved and verified in database!');
       if (onRefreshData) onRefreshData();

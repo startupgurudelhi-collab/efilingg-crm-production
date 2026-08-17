@@ -87,6 +87,7 @@ import {
   RotateCcw
 } from 'lucide-react';
 import ImportExportWizard from './ImportExportWizard';
+import RecoveryCenter from './RecoveryCenter';
 import OfferLetterTemplateEditor from './OfferLetterTemplateEditor';
 import OfferLetterModal from './OfferLetterModal';
 import EditEmployeeModal from './EditEmployeeModal';
@@ -121,7 +122,7 @@ export default function AdminDashboard({
   const [logs, setLogs] = useState<ActivityLog[]>([]);
 
   // Local Views Tab
-  const [viewTab, setViewTab] = useState<'analytics' | 'employees' | 'leads' | 'proposals' | 'logs' | 'backup' | 'services' | 'templates' | 'payroll' | 'ai_sales_inbox' | 'whatsapp_webhook' | 'ai_sales_agent'>('ai_sales_agent');
+  const [viewTab, setViewTab] = useState<'analytics' | 'employees' | 'leads' | 'proposals' | 'logs' | 'backup' | 'recovery_center' | 'services' | 'templates' | 'payroll' | 'ai_sales_inbox' | 'whatsapp_webhook' | 'ai_sales_agent'>('ai_sales_agent');
 
   // Search & Filter leads state
   const [searchQuery, setSearchQuery] = useState('');
@@ -1031,6 +1032,16 @@ export default function AdminDashboard({
               }`}
             >
               Security Audit Logs
+            </button>
+          )}
+          {!isTeamLeader && (
+            <button
+              onClick={() => setViewTab('recovery_center')}
+              className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-indigo-500/40 font-bold ${
+                viewTab === 'recovery_center' ? 'bg-indigo-600 text-white' : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50'
+              }`}
+            >
+              🛡️ Recovery Center
             </button>
           )}
           {!isTeamLeader && (
@@ -3470,7 +3481,14 @@ export default function AdminDashboard({
       )}
 
       {/* ==============================================================
-          TAB: DISASTER STORAGE INDEX
+          TAB: ENTERPRISE RECOVERY CENTER & SNAPSHOTS (PHASE 5)
+          ============================================================== */}
+      {viewTab === 'recovery_center' && (
+        <RecoveryCenter currentUserId={currentUserId} onRefreshData={onRefreshData} />
+      )}
+
+      {/* ==============================================================
+          TAB: DISASTER STORAGE INDEX & BACKUP TOOLS
           ============================================================== */}
       {viewTab === 'backup' && (
         <ImportExportWizard currentUserId={currentUserId} onRefreshData={onRefreshData} />

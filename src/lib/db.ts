@@ -611,8 +611,7 @@ export function getEmployees(): Employee[] {
   const rawList = JSON.parse(getStorageString(KEY_EMPLOYEES) || '[]');
   const list = rawList.filter((e: any) => e && e.id !== 'EMP-NEHA2026' && e.id !== 'EMP-HELPDESK' && e.id !== 'EMP-61LMU');
   if (rawList.length !== list.length) {
-    localStorage.setItem(KEY_EMPLOYEES, JSON.stringify(list));
-    pushToPostgres(KEY_EMPLOYEES, JSON.stringify(list)).catch(() => {});
+    setStorageString(KEY_EMPLOYEES, JSON.stringify(list));
   }
   let updated = false;
   const processed = list.map((e: any) => {
@@ -2309,8 +2308,7 @@ export function getAttendances(): Attendance[] {
   }
 
   if (rawList.length !== list.length || modified) {
-    localStorage.setItem(KEY_ATTENDANCE, JSON.stringify(list));
-    pushToPostgres(KEY_ATTENDANCE, JSON.stringify(list)).catch(() => {});
+    setStorageString(KEY_ATTENDANCE, JSON.stringify(list));
   }
   return list;
 }
@@ -2338,8 +2336,7 @@ export function getTLMappings(): TeamLeaderMapping[] {
     return true;
   });
   if (rawList.length !== list.length) {
-    localStorage.setItem(KEY_TL_MAPPINGS, JSON.stringify(list));
-    pushToPostgres(KEY_TL_MAPPINGS, JSON.stringify(list)).catch(() => {});
+    setStorageString(KEY_TL_MAPPINGS, JSON.stringify(list));
   }
   return list;
 }

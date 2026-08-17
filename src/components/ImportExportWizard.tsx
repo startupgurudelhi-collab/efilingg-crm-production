@@ -5,9 +5,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { bulkImportLeads, generateBackupData, restoreBackupData, getLeads, getFollowUps, getEmployees, getActivityLogs, getStorageString, formatLeadMobileNumberForExport } from '../lib/db';
-import { Upload, Download, FileSpreadsheet, ServerCrash, CheckCircle2, AlertCircle, FileText, Database, Shield, Radio, Code, Clipboard, Check } from 'lucide-react';
+import { Upload, Download, FileSpreadsheet, ServerCrash, CheckCircle2, AlertCircle, FileText, Database, Shield, Radio, Code, Clipboard, Check, History } from 'lucide-react';
 import { LeadStage } from '../types';
 import { subscribeToSync, pullFromPostgres, pushToPostgres, SYNC_KEYS, getSyncMeta, detectPostgresStatus } from '../lib/postgresSync';
+import RecoveryCenter from './RecoveryCenter';
 
 interface ImportExportWizardProps {
   currentUserId: string;
@@ -15,6 +16,7 @@ interface ImportExportWizardProps {
 }
 
 export default function ImportExportWizard({ currentUserId, onRefreshData }: ImportExportWizardProps) {
+  const [activeTab, setActiveTab] = useState<'recovery' | 'tools'>('recovery');
   const csvContent = ''; // Defined dynamically if needed, as state below:
   const [actualCsvContent, setCsvContent] = useState('');
   const [importResults, setImportResults] = useState<{ success: number; failed: number } | null>(null);
@@ -312,21 +314,56 @@ Rahul Roy,8823456711,rahul@royco.in,Roy Logistics,Company Registration,LinkedIn 
 
   return (
     <div className="space-y-8">
-      {/* Messages */}
-      {errorMessage && (
-        <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 text-sm font-medium flex items-center space-x-2">
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          <span>{errorMessage}</span>
-        </div>
-      )}
-      {successMessage && (
-        <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900 text-emerald-600 dark:text-emerald-400 text-sm font-medium flex items-center space-x-2">
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-          <span>{successMessage}</span>
-        </div>
+      {/* Top Level Sub-Tab Navigation */}
+      <div className="flex bg-slate-100 dark:bg-slate-950 p-1.5 rounded-2xl w-fit border border-slate-200/60 dark:border-slate-800">
+        <button
+          onClick={() => setActiveTab('recovery')}
+          className={`flex items-center space-x-2 py-2 px-5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+            activeTab === 'recovery'
+              ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+              : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+          }`}
+        >
+          <Shield className="h-4 w-4 text-indigo-500" />
+          <span>Point-in-Time Recovery Center & Snapshots</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('tools')}
+          className={`flex items-center space-x-2 py-2 px-5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+            activeTab === 'tools'
+              ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+              : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+          }`}
+        >
+          <FileSpreadsheet className="h-4 w-4 text-emerald-500" />
+          <span>Bulk CSV / Excel & JSON Backup Tools</span>
+        </button>
+      </div>
+
+      {/* RENDER VIEW 1: RECOVERY CENTER */}
+      {activeTab === 'recovery' && (
+        <RecoveryCenter currentUserId={currentUserId} onRefreshData={onRefreshData} />
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {/* RENDER VIEW 2: BULK IMPORT & LEGACY EXPORT TOOLS */}
+      {activeTab === 'tools' && (
+        <div className="space-y-8">
+          {/* Messages */}
+          {errorMessage && (
+            <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 text-sm font-medium flex items-center space-x-2">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+          {successMessage && (
+            <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900 text-emerald-600 dark:text-emerald-400 text-sm font-medium flex items-center space-x-2">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              <span>{successMessage}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         {/* CSV Excel Bulk Import Card */}
         <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
@@ -590,6 +627,8 @@ Rahul Roy,8823456711,rahul@royco.in,Roy Logistics,Company Registration,LinkedIn 
 
         </div>
       </div>
+      </div>
+      )}
     </div>
   );
 }

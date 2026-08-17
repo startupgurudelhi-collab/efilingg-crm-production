@@ -106,7 +106,7 @@ export default function ProposalTemplateEditor({ currentUserId, onRefreshData }:
     try {
       saveProposalTemplate(template, currentUserId);
       await waitForPendingPushes(8000);
-      await verifyDatabaseReadback('efilingg_crm_proposal_template', JSON.stringify(template));
+      await verifyDatabaseReadback('efilingg_crm_proposaltemplate', JSON.stringify(template));
 
       triggerAlert('success', 'Master Proposal Template updated and verified in database! All live corporate proposal sheets will draw from these custom layouts.');
       if (onRefreshData) {

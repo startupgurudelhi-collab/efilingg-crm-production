@@ -421,6 +421,12 @@ function mergeArraysCloudWins<T extends { id?: string; teamLeaderId?: string }>(
  * Pulls all keys from PostgreSQL crm_store table and restores them to active in-memory cache
  */
 export async function pullFromPostgres(): Promise<boolean> {
+  // If active writes are currently in flight, postpone pulling to prevent stale overwrites of memory state
+  if (activePushesCount > 0) {
+    console.log(`[Database Sync] pullFromPostgres postponed because ${activePushesCount} write(s) are currently in flight.`);
+    return true;
+  }
+
   if (!postgresConfigured) {
     await detectPostgresStatus();
   }

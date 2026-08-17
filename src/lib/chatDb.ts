@@ -13,8 +13,7 @@ import {
   ChatAttachment
 } from '../types/chat';
 import { Employee } from '../types';
-import { getEmployees, getISTISOString, crmMemoryStore } from './db';
-import { pushToPostgres } from './postgresSync';
+import { getEmployees, getISTISOString, crmMemoryStore, setStorageString } from './db';
 
 const STORAGE_PREFIX = 'efilingg_crm_';
 const KEYS = {
@@ -43,12 +42,7 @@ function getChatStorageItem(key: string): string | null {
 }
 
 function setChatStorageItem(key: string, value: string) {
-  crmMemoryStore[key] = value;
-  try {
-    localStorage.setItem(key, value);
-  } catch (e) {
-    console.error('[localStorage set failed]', e);
-  }
+  setStorageString(key, value);
 }
 
 // --- INITIAL DATA SEEDING & RESOLVING ---
@@ -136,7 +130,6 @@ function getConversationsRaw(): ChatConversation[] {
 function saveConversationsRaw(conversations: ChatConversation[]) {
   const value = JSON.stringify(conversations);
   setChatStorageItem(KEYS.conversations, value);
-  pushToPostgres(KEYS.conversations, value);
 }
 
 export function getConversations(userId: string): ChatConversation[] {
@@ -250,7 +243,6 @@ export function getAllMessagesRaw(): ChatMessage[] {
 export function saveAllMessagesRaw(messages: ChatMessage[]) {
   const value = JSON.stringify(messages);
   setChatStorageItem(KEYS.messages, value);
-  pushToPostgres(KEYS.messages, value);
 }
 
 export function addMessage(
@@ -400,7 +392,6 @@ export function addAnnouncement(
   all.unshift(announcement); // latest first
   const value = JSON.stringify(all);
   setChatStorageItem(KEYS.announcements, value);
-  pushToPostgres(KEYS.announcements, value);
 
   // Alert all active CRM employees immediately in Notification desk
   addChatNotification(
@@ -425,7 +416,6 @@ export function acknowledgeAnnouncement(announcementId: string, userId: string):
     item.seenBy.push(userId);
     const value = JSON.stringify(all);
     setChatStorageItem(KEYS.announcements, value);
-    pushToPostgres(KEYS.announcements, value);
 
     const employee = getEmployees().find(e => e.id === userId);
     addChatAuditLog(userId, employee?.name || 'Teammate', 'acknowledge_announcement', announcementId, 'Read the policy bulletin');
@@ -473,7 +463,6 @@ export function createChatTask(
   all.push(newTask);
   const value = JSON.stringify(all);
   setChatStorageItem(KEYS.tasks, value);
-  pushToPostgres(KEYS.tasks, value);
 
   // Link inside discussion message
   const allMessages = getAllMessagesRaw();
@@ -505,7 +494,6 @@ export function toggleChatTaskStatus(taskId: string, userId: string): boolean {
   task.status = task.status === 'pending' ? 'completed' : 'pending';
   const value = JSON.stringify(all);
   setChatStorageItem(KEYS.tasks, value);
-  pushToPostgres(KEYS.tasks, value);
 
   const employee = getEmployees().find(e => e.id === userId);
   addChatAuditLog(
@@ -555,7 +543,6 @@ export function addChatNotification(
 
     all.push(newNotif);
     setChatStorageItem(KEYS.notifications, JSON.stringify(all));
-    pushToPostgres(KEYS.notifications, JSON.stringify(all));
     return newNotif;
   } catch (e) {
     return {
@@ -580,7 +567,6 @@ export function markChatNotificationsRead(userId: string) {
 
     if (changed) {
       setChatStorageItem(KEYS.notifications, JSON.stringify(all));
-      pushToPostgres(KEYS.notifications, JSON.stringify(all));
     }
   } catch (e) {}
 }
@@ -621,7 +607,6 @@ export function addChatAuditLog(
     // Limit to 500 audit logs to avoid massive sizes
     const trimmed = all.slice(0, 500);
     setChatStorageItem(KEYS.logs, JSON.stringify(trimmed));
-    pushToPostgres(KEYS.logs, JSON.stringify(trimmed));
   } catch (e) {}
 }
 

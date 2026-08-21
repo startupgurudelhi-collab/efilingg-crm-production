@@ -10,13 +10,19 @@ import {
   clearSession,
   createLead,
   getEmployeeById,
-  getEmployees
+  getEmployees,
+  getLeads,
+  getFollowUps,
+  getProposals
 } from './lib/db';
+import { getV2Tasks } from './lib/v2_db';
 import { Employee, Lead, Proposal } from './types';
 import LoginForm from './components/LoginForm';
 import AdminDashboard from './components/AdminDashboard';
 import EmployeeDashboard from './components/EmployeeDashboard';
 import OperationManagementDashboard from './components/v2/OperationManagementDashboard';
+import MasterExecutiveLanding from './components/MasterExecutiveLanding';
+import ExecutiveSidebar, { NavigationTarget } from './components/ExecutiveSidebar';
 import LeadModal from './components/LeadModal';
 import ProposalBuilder from './components/ProposalBuilder';
 import ProposalPdf from './components/ProposalPdf';
@@ -26,14 +32,28 @@ import WhatsAppIncomingMessagePopup from './components/WhatsAppIncomingMessagePo
 import TeamConnectWidget from './components/TeamConnectWidget';
 import { ThemeProvider, useTheme } from './components/ThemeContext';
 import { FeatureFlagProvider } from './lib/featureFlags';
-import { LogOut, User, Sun, Moon, Sparkles, Building2, Shield, Eye, Database, ListTodo, FileText, Lightbulb, CalendarDays, CheckCircle2, X } from 'lucide-react';
+import { 
+  LogOut, User, Sun, Moon, Sparkles, Building2, Shield, Eye, Database, 
+  ListTodo, FileText, Lightbulb, CalendarDays, CheckCircle2, X, Menu, 
+  ChevronRight, ArrowLeft, Home, Layers, TrendingUp, DollarSign
+} from 'lucide-react';
 import EFilinggLogo from './components/EFilinggLogo';
+import ConflictResolutionModal from './components/ConflictResolutionModal';
+import { subscribeToConcurrencyConflicts } from './lib/concurrencyControl';
+import { ConcurrencyConflict } from './types';
 
 function AppContent() {
   const [sessionUser, setSessionUser] = useState<Employee | null>(null);
   const [triggerRefresh, setTriggerRefresh] = useState(0);
   const [showGoodPracticeModal, setShowGoodPracticeModal] = useState(false);
-  const [selectedDepartmentView, setSelectedDepartmentView] = useState<'sales' | 'ops'>('sales');
+  
+  // Executive Navigation State for Master Admin & Team Leader
+  const [adminNavTarget, setAdminNavTarget] = useState<NavigationTarget>('landing');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
+
+  // Concurrency Conflict Modal State
+  const [activeConflict, setActiveConflict] = useState<ConcurrencyConflict<any> | null>(null);
 
   // Overlay portaling states
   const [activeLeadId, setActiveLeadId] = useState<string | null>(null);
@@ -99,9 +119,15 @@ function AppContent() {
       }
     }, 30000);
 
+    // Concurrency conflict subscription
+    const unsubscribeConflicts = subscribeToConcurrencyConflicts((conflict) => {
+      setActiveConflict(conflict);
+    });
+
     return () => {
       active = false;
       clearInterval(interval);
+      unsubscribeConflicts();
     };
   }, []);
 
@@ -181,26 +207,195 @@ function AppContent() {
     }
   };
 
+  // Navigation helpers for Executive Dashboard
+  const getModuleForTarget = (target: NavigationTarget): 'landing' | 'sales' | 'ops' | 'settings' | 'hr' => {
+    if (target.startsWith('sales_')) return 'sales';
+    if (target.startsWith('ops_')) return 'ops';
+    if (target.startsWith('settings_')) return 'settings';
+    if (target.startsWith('hr_') || target.startsWith('tl_')) return 'hr';
+    return 'landing';
+  };
+
+  const getAdminDashboardTab = (target: NavigationTarget): string => {
+    switch (target) {
+      case 'sales_dashboard': return 'analytics';
+      case 'sales_leads': return 'leads';
+      case 'sales_followups': return 'leads';
+      case 'sales_proposals': return 'proposals';
+      case 'sales_ai_inbox': return 'ai_sales_inbox';
+      case 'sales_ai_agent': return 'ai_sales_agent';
+      case 'settings_recovery': return 'recovery_center';
+      case 'settings_ai': return 'ai_sales_agent';
+      case 'settings_whatsapp': return 'whatsapp_webhook';
+      case 'settings_audit': return 'logs';
+      case 'settings_security': return 'logs';
+      case 'settings_backup': return 'backup';
+      case 'hr_employees': return 'employees';
+      case 'hr_payroll': return 'payroll';
+      case 'hr_attendance': return 'payroll';
+      case 'hr_leaves': return 'payroll';
+      case 'hr_services': return 'services';
+      case 'hr_templates': return 'templates';
+      case 'tl_my_attendance': return 'my_attendance';
+      default: return 'analytics';
+    }
+  };
+
+  const getAdminDashboardPayrollSubTab = (target: NavigationTarget): 'calc' | 'history' | 'attendance' | 'leaves' | undefined => {
+    if (target === 'hr_attendance') return 'attendance';
+    if (target === 'hr_leaves') return 'leaves';
+    if (target === 'hr_payroll') return 'calc';
+    return undefined;
+  };
+
+  const getAdminDashboardCategoryFilter = (target: NavigationTarget): 'ALL' | 'INTRESTED' | 'FOLLOWUP PENDING' | 'FINAL DISPOSED' | 'CONVERTED' | undefined => {
+    if (target === 'sales_followups') return 'FOLLOWUP PENDING';
+    if (target === 'sales_leads') return 'ALL';
+    return undefined;
+  };
+
+  const getOpsDashboardSegment = (target: NavigationTarget): 'dashboard' | 'masters' | 'gst' | 'mca' | 'itr' | 'dockets' | 'mapping' => {
+    switch (target) {
+      case 'ops_dashboard': return 'dashboard';
+      case 'ops_gst': return 'gst';
+      case 'ops_itr': return 'itr';
+      case 'ops_mca': return 'mca';
+      case 'ops_tasks': return 'dockets';
+      case 'ops_clients': return 'mapping';
+      default: return 'dashboard';
+    }
+  };
+
+  const getBreadcrumbs = (target: NavigationTarget) => {
+    switch (target) {
+      case 'sales_dashboard': return { group: 'Sales & Marketing', title: 'Sales Performance & Analytics' };
+      case 'sales_leads': return { group: 'Sales & Marketing', title: 'Leads Pipeline Management' };
+      case 'sales_followups': return { group: 'Sales & Marketing', title: 'Pending Followups & Client Calls' };
+      case 'sales_proposals': return { group: 'Sales & Marketing', title: 'Proposals, Quotations & Estimates' };
+      case 'sales_ai_inbox': return { group: 'Sales & Marketing', title: 'AI Sales Inbox & Automated Chats' };
+      case 'sales_ai_agent': return { group: 'Sales & Marketing', title: 'AI Sales Agent Telemetry' };
+      
+      // Operations & Accordion Navigation Targets
+      case 'ops_dashboard': return { group: 'Operation Management', title: 'Operations Command Center (Mission Control)' };
+      case 'ops_tasks_my': return { group: 'Operation Management', title: 'Task Command Center · My Assigned Tasks' };
+      case 'ops_tasks_team': return { group: 'Operation Management', title: 'Task Command Center · Team Queue' };
+      case 'ops_tasks_assigned': return { group: 'Operation Management', title: 'Task Command Center · Assigned Tasks' };
+      case 'ops_tasks_duetoday': return { group: 'Operation Management', title: 'Task Command Center · Due Today' };
+      case 'ops_tasks_overdue': return { group: 'Operation Management', title: 'Task Command Center · Overdue Tasks' };
+      case 'ops_tasks_completed': return { group: 'Operation Management', title: 'Task Command Center · Completed Archive' };
+      
+      case 'ops_gst_dashboard': return { group: 'Operation Management', title: 'GST Compliance · Filing Dashboard' };
+      case 'ops_gst_clients': return { group: 'Operation Management', title: 'GST Compliance · Client Master' };
+      case 'ops_gst_gstr1': return { group: 'Operation Management', title: 'GST Compliance · GSTR-1 Monthly' };
+      case 'ops_gst_gstr3b': return { group: 'Operation Management', title: 'GST Compliance · GSTR-3B Monthly' };
+      case 'ops_gst_quarterly': return { group: 'Operation Management', title: 'GST Compliance · Quarterly Returns' };
+      case 'ops_gst_notices': return { group: 'Operation Management', title: 'GST Compliance · Notices & Scrutiny' };
+      case 'ops_gst_reports': return { group: 'Operation Management', title: 'GST Compliance · Reports & MIS' };
+
+      case 'ops_itr_dashboard': return { group: 'Operation Management', title: 'Income Tax · ITR Clearance Dashboard' };
+      case 'ops_itr_individual': return { group: 'Operation Management', title: 'Income Tax · Individual ITR Desk' };
+      case 'ops_itr_business': return { group: 'Operation Management', title: 'Income Tax · Business & Corporate ITR' };
+      case 'ops_itr_audit': return { group: 'Operation Management', title: 'Income Tax · Tax Audit Form 3CD' };
+      case 'ops_itr_notices': return { group: 'Operation Management', title: 'Income Tax · Notice Cases & Rectification' };
+
+      case 'ops_mca_dashboard': return { group: 'Operation Management', title: 'MCA & ROC · Company Dashboard' };
+      case 'ops_mca_roc': return { group: 'Operation Management', title: 'MCA & ROC · ROC Statutory Forms' };
+      case 'ops_mca_llp': return { group: 'Operation Management', title: 'MCA & ROC · LLP Statutory Filings' };
+      case 'ops_mca_kyc': return { group: 'Operation Management', title: 'MCA & ROC · Director KYC Desk' };
+      case 'ops_mca_aoc4': return { group: 'Operation Management', title: 'MCA & ROC · Financials AOC-4' };
+      case 'ops_mca_mgt7': return { group: 'Operation Management', title: 'MCA & ROC · Annual Return MGT-7' };
+      case 'ops_mca_inc20a': return { group: 'Operation Management', title: 'MCA & ROC · Commencement INC-20A' };
+
+      case 'ops_trust_dashboard': return { group: 'Operation Management', title: 'Trust & NGO · Exemption Dashboard' };
+      case 'ops_trust_12a': return { group: 'Operation Management', title: 'Trust & NGO · Section 12A Certification' };
+      case 'ops_trust_80g': return { group: 'Operation Management', title: 'Trust & NGO · Section 80G Exemption' };
+      case 'ops_trust_10b': return { group: 'Operation Management', title: 'Trust & NGO · Form 10B Audit' };
+      case 'ops_trust_10bb': return { group: 'Operation Management', title: 'Trust & NGO · Form 10BB Audit' };
+
+      case 'ops_dsc_active': return { group: 'Operation Management', title: 'DSC Management · Active Digital Signatures' };
+      case 'ops_dsc_renewal': return { group: 'Operation Management', title: 'DSC Management · Renewal Due (< 30 Days)' };
+      case 'ops_dsc_expired': return { group: 'Operation Management', title: 'DSC Management · Expired Tokens' };
+
+      case 'ops_license_fssai': return { group: 'Operation Management', title: 'Licenses · FSSAI Food License' };
+      case 'ops_license_msme': return { group: 'Operation Management', title: 'Licenses · MSME / Udyam' };
+      case 'ops_license_iec': return { group: 'Operation Management', title: 'Licenses · Import Export Code (IEC)' };
+      case 'ops_license_trade': return { group: 'Operation Management', title: 'Licenses · Municipal Trade License' };
+      case 'ops_license_labour': return { group: 'Operation Management', title: 'Licenses · Labour Law Registrations' };
+
+      case 'ops_clients_master': return { group: 'Operation Management', title: 'Client Master · Central Directory' };
+      case 'ops_clients_allocation': return { group: 'Operation Management', title: 'Client Master · Allocation Desk' };
+      case 'ops_clients_mapping': return { group: 'Operation Management', title: 'Client Master · Service Mapping' };
+
+      case 'ops_gst': return { group: 'Operation Management', title: 'GST Monthly & Quarterly Filings' };
+      case 'ops_itr': return { group: 'Operation Management', title: 'ITR Direct Tax Clearance' };
+      case 'ops_mca': return { group: 'Operation Management', title: 'MCA & ROC Compliance Records' };
+      case 'ops_tasks': return { group: 'Operation Management', title: 'Workflow Tasks & Client Delivery' };
+      case 'ops_clients': return { group: 'Operation Management', title: 'Client Master & Service Mapping' };
+
+      case 'settings_recovery': return { group: 'Settings & Control', title: 'Recovery Center & Snapshot Vault' };
+      case 'settings_ai': return { group: 'Settings & Control', title: 'AI Automation & Inference Settings' };
+      case 'settings_whatsapp': return { group: 'Settings & Control', title: 'WhatsApp Webhook & API Gateway' };
+      case 'settings_audit': return { group: 'Settings & Control', title: 'Security Audit Logs' };
+      case 'settings_security': return { group: 'Settings & Control', title: 'Security Telemetry & Health' };
+      case 'settings_backup': return { group: 'Settings & Control', title: 'Data Imports, Backups & Recovery' };
+      case 'hr_employees': return { group: 'HR & Workforce', title: 'Employees Directory & Roster' };
+      case 'hr_payroll': return { group: 'HR & Workforce', title: 'Payroll Control & Salary Approvals' };
+      case 'hr_attendance': return { group: 'HR & Workforce', title: 'Attendance Audit & Logs' };
+      case 'hr_leaves': return { group: 'HR & Workforce', title: 'Leave Requests & Approvals' };
+      case 'hr_services': return { group: 'HR & Workforce', title: 'Service Catalogue & Pricing' };
+      case 'hr_templates': return { group: 'HR & Workforce', title: 'Proposal & Offer Letter Designer' };
+      case 'tl_my_attendance': return { group: 'HR & Workforce', title: 'My Punch & Calendar' };
+      default: return { group: 'Executive Command Center', title: 'Executive Overview' };
+    }
+  };
+
+  const handleNavigateModule = (module: 'sales' | 'ops' | 'settings' | 'hr', specificTab?: string) => {
+    if (module === 'sales') {
+      setAdminNavTarget(specificTab === 'leads' ? 'sales_leads' : specificTab === 'followups' ? 'sales_followups' : specificTab === 'proposals' ? 'sales_proposals' : 'sales_dashboard');
+    } else if (module === 'ops') {
+      setAdminNavTarget(specificTab === 'gst' ? 'ops_gst' : specificTab === 'itr' ? 'ops_itr' : specificTab === 'mca' ? 'ops_mca' : specificTab === 'tasks' ? 'ops_tasks' : specificTab === 'clients' ? 'ops_clients' : 'ops_dashboard');
+    } else if (module === 'settings') {
+      setAdminNavTarget(specificTab === 'recovery_center' ? 'settings_recovery' : specificTab === 'ai' ? 'settings_ai' : specificTab === 'whatsapp' ? 'settings_whatsapp' : specificTab === 'audit' ? 'settings_audit' : specificTab === 'backup' ? 'settings_backup' : 'settings_recovery');
+    } else if (module === 'hr') {
+      setAdminNavTarget(specificTab === 'employees' ? 'hr_employees' : specificTab === 'payroll' ? 'hr_payroll' : specificTab === 'attendance' ? 'hr_attendance' : specificTab === 'leaves' ? 'hr_leaves' : specificTab === 'services' ? 'hr_services' : specificTab === 'templates' ? 'hr_templates' : 'hr_employees');
+    }
+  };
+
   // Login Gate
   if (!sessionUser) {
     return <LoginForm onLoginSuccess={handleLoginSuccess} syncStatus={syncStatus} />;
   }
+
+  const isMasterOrTL = sessionUser.role === 'admin' || sessionUser.role === 'team_leader';
+  const isOpsTarget = adminNavTarget.startsWith('ops_');
+  const breadcrumbInfo = getBreadcrumbs(adminNavTarget);
 
   return (
     <FeatureFlagProvider user={sessionUser}>
       <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
       
       {/* Premium Navigation Header */}
-      <header className="sticky top-0 z-40 w-full bg-white dark:bg-slate-900 border-b border-slate-150 dark:border-slate-850 shadow-xs px-6 py-2 flex items-center justify-between">
-        <div className="flex items-center space-x-1.5 animate-fade-in">
-          <EFilinggLogo variant={theme === 'dark' ? 'dark' : 'color'} size="md" className="-ml-3" />
+      <header className="sticky top-0 z-40 w-full bg-white dark:bg-slate-900 border-b border-slate-150 dark:border-slate-850 shadow-xs px-4 sm:px-6 py-2 flex items-center justify-between">
+        <div className="flex items-center space-x-2 animate-fade-in">
+          {/* Mobile sidebar hamburger */}
+          {isMasterOrTL && (
+            <button
+              onClick={() => setIsSidebarMobileOpen(true)}
+              className="md:hidden p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 transition-colors cursor-pointer"
+              title="Open Navigation Menu"
+            >
+              <Menu className="h-4.5 w-4.5" />
+            </button>
+          )}
+
+          <EFilinggLogo variant={theme === 'dark' ? 'dark' : 'color'} size="md" className="-ml-1 sm:-ml-3" />
           <span className="text-xs font-semibold uppercase tracking-widest text-emerald-600 font-mono bg-emerald-500/10 p-1 py-0.5 rounded-md hidden sm:inline">CRM</span>
           
           {/* PostgreSQL VPS Live Sync Status indicator */}
           <button
             onClick={handleVerifyVpsConnection}
             title="Click to force check VPS connection status and synchronize workspace data manually."
-            className="hidden md:flex items-center space-x-1.5 px-3 py-1 bg-slate-100 dark:bg-slate-950 hover:bg-slate-200 dark:hover:bg-slate-900 rounded-full border border-slate-200 dark:border-slate-800 text-[9px] font-mono leading-none cursor-pointer transition-colors"
+            className="hidden lg:flex items-center space-x-1.5 px-3 py-1 bg-slate-100 dark:bg-slate-950 hover:bg-slate-200 dark:hover:bg-slate-900 rounded-full border border-slate-200 dark:border-slate-800 text-[9px] font-mono leading-none cursor-pointer transition-colors"
           >
             {syncStatus === 'syncing' ? (
               <>
@@ -232,7 +427,7 @@ function AppContent() {
         </div>
 
         {/* Action Widgets */}
-        <div className="flex items-center space-x-3 text-xs">
+        <div className="flex items-center space-x-2 sm:space-x-3 text-xs">
           
           {/* User profile card badge */}
           <div className="hidden sm:flex items-center space-x-2 bg-slate-100 dark:bg-slate-950 p-1.5 px-3 rounded-xl border border-slate-205 dark:border-slate-850">
@@ -263,7 +458,7 @@ function AppContent() {
           {/* Signout key */}
           <button
             onClick={handleLogout}
-            className="flex items-center space-x-1.5 py-2.5 px-4 rounded-xl border border-rose-250 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-rose-600 transition-all font-bold cursor-pointer"
+            className="flex items-center space-x-1.5 py-2.5 px-3 sm:px-4 rounded-xl border border-rose-250 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-rose-600 transition-all font-bold cursor-pointer"
             title="Sign out"
           >
             <LogOut className="h-4 w-4" />
@@ -273,78 +468,132 @@ function AppContent() {
         </div>
       </header>
 
-      {/* Main Core View Area */}
-      <main className="flex-1 p-6 md:p-8 max-w-7xl mx-auto w-full">
-        {sessionUser.role === 'admin' || sessionUser.role === 'team_leader' ? (
-          <div className="space-y-6">
-            
-            {/* Dynamic Segmented Department Switcher */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <button
-                  onClick={() => setSelectedDepartmentView('sales')}
-                  className={`px-4 py-2 rounded-2xl text-[10.5px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-                    selectedDepartmentView === 'sales'
-                      ? 'bg-emerald-600 text-white shadow-md'
-                      : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  💼 SALES & MARKETING COMPLIANCE
-                </button>
-                <button
-                  onClick={() => setSelectedDepartmentView('ops')}
-                  className={`px-4 py-2 rounded-2xl text-[10.5px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-                    selectedDepartmentView === 'ops'
-                      ? 'bg-indigo-600 text-white shadow-md'
-                      : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  ⚙️ OPERATION MANAGEMENT SYSTEM
-                </button>
-              </div>
-              <div className="text-[9.5px] font-black font-mono uppercase tracking-widest text-slate-400">
-                🛡️ LEVEL AUTHORITY: {sessionUser.role.toUpperCase()}
-              </div>
-            </div>
-
-            {selectedDepartmentView === 'sales' ? (
-              <AdminDashboard
-                currentUserId={sessionUser.id}
-                onRefreshData={handleRefreshAllData}
-                triggerRefresh={triggerRefresh}
-                onTriggerLeadDetail={(id) => {
-                  if (id === null) {
-                    setIsCreatingLead(true);
-                  } else {
-                    setActiveLeadId(id);
-                  }
-                }}
-                onTriggerProposalPreview={(p) => setActiveProposalPreview(p)}
-                onTriggerProposalDraft={() => setIsCreatingProposal(true)}
+      {/* Main Core View Area with Sidebar for Admin / Team Leader */}
+      <div className="flex-1 flex w-full">
+        {isMasterOrTL ? (
+          <>
+            {/* Enterprise Isolated Left Sidebar (Only visible when inside a module) */}
+            {adminNavTarget !== 'landing' && (
+              <ExecutiveSidebar
+                activeModule={getModuleForTarget(adminNavTarget)}
+                currentTab={adminNavTarget}
+                onSelectTab={(target) => setAdminNavTarget(target)}
+                onBackToLanding={() => setAdminNavTarget('landing')}
+                sessionUser={sessionUser}
+                isCollapsed={isSidebarCollapsed}
+                onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
+                isOpenMobile={isSidebarMobileOpen}
+                onCloseMobile={() => setIsSidebarMobileOpen(false)}
+                leadCount={getLeads().length}
+                followupCount={getFollowUps().filter((f) => f.status === 'pending').length}
+                proposalCount={getProposals().length}
+                opsPendingCount={getV2Tasks().filter((t) => t.status === 'pending').length}
+                employeeCount={getEmployees().length}
               />
-            ) : (
-              <OperationManagementDashboard />
             )}
-          </div>
+
+            {/* Content Viewport */}
+            <main className={`flex-1 min-w-0 w-full ${isOpsTarget ? 'p-2 sm:p-4 lg:p-5 max-w-none' : 'p-4 sm:p-6 md:p-8 max-w-7xl mx-auto'}`}>
+              {adminNavTarget === 'landing' ? (
+                <MasterExecutiveLanding
+                  sessionUser={sessionUser}
+                  employees={getEmployees()}
+                  leads={getLeads()}
+                  followups={getFollowUps()}
+                  proposals={getProposals()}
+                  syncStatus={syncStatus}
+                  onNavigateModule={handleNavigateModule}
+                  onRefreshData={handleRefreshAllData}
+                  onTriggerLeadDetail={(id) => {
+                    if (id === null) {
+                      setIsCreatingLead(true);
+                    } else {
+                      setActiveLeadId(id);
+                    }
+                  }}
+                  onTriggerProposalDraft={() => setIsCreatingProposal(true)}
+                />
+              ) : (
+                <div className="space-y-4 animate-fade-in">
+                  {/* Modern Executive Breadcrumbs & Context Bar */}
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs">
+                    <div className="flex items-center space-x-2 text-xs">
+                      <button
+                        onClick={() => setAdminNavTarget('landing')}
+                        className="inline-flex items-center space-x-1.5 font-bold text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
+                      >
+                        <Home className="h-3.5 w-3.5" />
+                        <span>Command Center</span>
+                      </button>
+                      <ChevronRight className="h-3 w-3 text-slate-400" />
+                      <span className="font-semibold text-slate-400">{breadcrumbInfo.group}</span>
+                      <ChevronRight className="h-3 w-3 text-slate-400" />
+                      <span className="font-bold text-slate-900 dark:text-white truncate">{breadcrumbInfo.title}</span>
+                    </div>
+
+                    <button
+                      onClick={() => setAdminNavTarget('landing')}
+                      className="inline-flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all self-start sm:self-auto cursor-pointer shrink-0"
+                    >
+                      <ArrowLeft className="h-3.5 w-3.5" />
+                      <span>Back to Overview</span>
+                    </button>
+                  </div>
+
+                  {/* Active Isolated Workspace Rendering */}
+                  {isOpsTarget ? (
+                    <OperationManagementDashboard
+                      initialSegment={getOpsDashboardSegment(adminNavTarget)}
+                      activeNavTarget={adminNavTarget}
+                      onNavigateTarget={(target) => setAdminNavTarget(target as any)}
+                    />
+                  ) : (
+                    <AdminDashboard
+                      currentUserId={sessionUser.id}
+                      onRefreshData={handleRefreshAllData}
+                      triggerRefresh={triggerRefresh}
+                      activeTabOverride={getAdminDashboardTab(adminNavTarget)}
+                      hideTabBar={true}
+                      activePayrollSubTab={getAdminDashboardPayrollSubTab(adminNavTarget)}
+                      activeCategoryFilter={getAdminDashboardCategoryFilter(adminNavTarget)}
+                      onTriggerLeadDetail={(id) => {
+                        if (id === null) {
+                          setIsCreatingLead(true);
+                        } else {
+                          setActiveLeadId(id);
+                        }
+                      }}
+                      onTriggerProposalPreview={(p) => setActiveProposalPreview(p)}
+                      onTriggerProposalDraft={() => setIsCreatingProposal(true)}
+                    />
+                  )}
+                </div>
+              )}
+            </main>
+          </>
         ) : sessionUser.department === 'OPERATION MANAGEMENT' ? (
-          <OperationManagementDashboard />
+          <main className="flex-1 p-6 md:p-8 max-w-7xl mx-auto w-full">
+            <OperationManagementDashboard />
+          </main>
         ) : (
-          <EmployeeDashboard
-            currentUserId={sessionUser.id}
-            triggerRefresh={triggerRefresh}
-            onRefreshData={handleRefreshAllData}
-            onTriggerLeadDetail={(id) => {
-              if (id === null) {
-                setIsCreatingLead(true);
-              } else {
-                setActiveLeadId(id);
-              }
-            }}
-            onTriggerProposalPreview={(p) => setActiveProposalPreview(p)}
-            onTriggerProposalDraft={() => setIsCreatingProposal(true)}
-          />
+          <main className="flex-1 p-6 md:p-8 max-w-7xl mx-auto w-full">
+            <EmployeeDashboard
+              currentUserId={sessionUser.id}
+              triggerRefresh={triggerRefresh}
+              onRefreshData={handleRefreshAllData}
+              onTriggerLeadDetail={(id) => {
+                if (id === null) {
+                  setIsCreatingLead(true);
+                } else {
+                  setActiveLeadId(id);
+                }
+              }}
+              onTriggerProposalPreview={(p) => setActiveProposalPreview(p)}
+              onTriggerProposalDraft={() => setIsCreatingProposal(true)}
+            />
+          </main>
         )}
-      </main>
+      </div>
 
       {/* ==============================================================
           PORTALS OVERLAYS: modals management
@@ -468,6 +717,17 @@ function AppContent() {
         <TeamConnectWidget currentUser={sessionUser} />
       )}
       <WhatsAppIncomingMessagePopup />
+
+      {/* Optimistic Concurrency Control Conflict Resolution Dialog */}
+      {activeConflict && (
+        <ConflictResolutionModal
+          conflict={activeConflict}
+          onClose={() => {
+            setActiveConflict(null);
+            handleRefreshAllData();
+          }}
+        />
+      )}
 
       {/* Simple Footer and operational information */}
       <footer className="py-6 border-t border-slate-150 dark:border-slate-850 text-center text-xs text-slate-450 dark:text-slate-550 flex flex-col sm:flex-row items-center justify-between px-8 bg-white dark:bg-slate-900 mt-12 gap-2 print:hidden">

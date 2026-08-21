@@ -104,6 +104,11 @@ interface AdminDashboardProps {
   onTriggerLeadDetail: (id: string | null) => void;
   onTriggerProposalPreview: (prop: Proposal) => void;
   onTriggerProposalDraft?: () => void;
+  activeTabOverride?: string;
+  onTabChange?: (tab: string) => void;
+  hideTabBar?: boolean;
+  activePayrollSubTab?: 'calc' | 'history' | 'attendance' | 'leaves';
+  activeCategoryFilter?: 'ALL' | 'INTRESTED' | 'FOLLOWUP PENDING' | 'FINAL DISPOSED' | 'CONVERTED';
 }
 
 export default function AdminDashboard({
@@ -112,7 +117,12 @@ export default function AdminDashboard({
   triggerRefresh,
   onTriggerLeadDetail,
   onTriggerProposalPreview,
-  onTriggerProposalDraft
+  onTriggerProposalDraft,
+  activeTabOverride,
+  onTabChange,
+  hideTabBar = false,
+  activePayrollSubTab,
+  activeCategoryFilter
 }: AdminDashboardProps) {
   // DB States
   const [rawEmployees, setEmployees] = useState<Employee[]>([]);
@@ -122,7 +132,28 @@ export default function AdminDashboard({
   const [logs, setLogs] = useState<ActivityLog[]>([]);
 
   // Local Views Tab
-  const [viewTab, setViewTab] = useState<'analytics' | 'employees' | 'leads' | 'proposals' | 'logs' | 'backup' | 'recovery_center' | 'services' | 'templates' | 'payroll' | 'ai_sales_inbox' | 'whatsapp_webhook' | 'ai_sales_agent'>('ai_sales_agent');
+  const [viewTab, setViewTab] = useState<'analytics' | 'employees' | 'leads' | 'proposals' | 'logs' | 'backup' | 'recovery_center' | 'services' | 'templates' | 'payroll' | 'ai_sales_inbox' | 'whatsapp_webhook' | 'ai_sales_agent' | 'my_attendance'>('analytics');
+
+  useEffect(() => {
+    if (activeTabOverride) {
+      const validTabs = ['analytics', 'employees', 'leads', 'proposals', 'logs', 'backup', 'recovery_center', 'services', 'templates', 'payroll', 'ai_sales_inbox', 'whatsapp_webhook', 'ai_sales_agent', 'my_attendance'];
+      if (validTabs.includes(activeTabOverride)) {
+        setViewTab(activeTabOverride as any);
+      }
+    }
+  }, [activeTabOverride]);
+
+  useEffect(() => {
+    if (activePayrollSubTab) {
+      setPayrollSubTab(activePayrollSubTab);
+    }
+  }, [activePayrollSubTab]);
+
+  useEffect(() => {
+    if (activeCategoryFilter) {
+      setCategoryFilter(activeCategoryFilter);
+    }
+  }, [activeCategoryFilter]);
 
   // Search & Filter leads state
   const [searchQuery, setSearchQuery] = useState('');
@@ -949,149 +980,151 @@ export default function AdminDashboard({
   return (
     <div className="space-y-6">
       
-      {/* Upper Navigation Tabs */}
-      <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-150 dark:border-slate-800">
-        <div className="flex items-center space-x-2">
-          <div className="h-8 w-8 bg-slate-100 dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-xl flex items-center justify-center text-slate-800 dark:text-slate-100">
-            <Shield className="h-4.5 w-4.5 text-emerald-500" />
+      {/* Upper Navigation Tabs (Hidden in isolated module mode) */}
+      {!hideTabBar && (
+        <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-150 dark:border-slate-800">
+          <div className="flex items-center space-x-2">
+            <div className="h-8 w-8 bg-slate-100 dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-xl flex items-center justify-center text-slate-800 dark:text-slate-100">
+              <Shield className="h-4.5 w-4.5 text-emerald-500" />
+            </div>
+            <div>
+              <h2 className="text-sm font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider font-mono">
+                {isTeamLeader ? 'Team Leader Control Unit' : 'Master Admin Control Unit'}
+              </h2>
+              <p className="text-[10px] text-slate-450">
+                {isTeamLeader ? `Assigned employees tracking and compliance supervision` : 'Complete enterprise analytics and reassignment capability'}
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-sm font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider font-mono">
-              {isTeamLeader ? 'Team Leader Control Unit' : 'Master Admin Control Unit'}
-            </h2>
-            <p className="text-[10px] text-slate-450">
-              {isTeamLeader ? `Assigned employees tracking and compliance supervision` : 'Complete enterprise analytics and reassignment capability'}
-            </p>
-          </div>
-        </div>
 
-        <div className="flex items-center space-x-1.5 overflow-x-auto select-none">
-          <button
-            onClick={() => setViewTab('analytics')}
-            className={`px-4 py-2 text-xs font-semibold rounded-xl ${
-              viewTab === 'analytics' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-slate-505 hover:bg-slate-50'
-            }`}
-          >
-            Dashboard Analytics
-          </button>
-          <button
-            onClick={() => setViewTab('employees')}
-            className={`px-4 py-2 text-xs font-semibold rounded-xl ${
-              viewTab === 'employees' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-slate-505 hover:bg-slate-50'
-            }`}
-          >
-            Manage Employees ({totalEmployees})
-          </button>
-          <button
-            onClick={() => setViewTab('leads')}
-            className={`px-4 py-2 text-xs font-semibold rounded-xl ${
-              viewTab === 'leads' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-slate-505 hover:bg-slate-50'
-            }`}
-          >
-            All Leads ({totalLeads})
-          </button>
-          <FeatureFlagGuard flagKey="ENABLE_AI_SALES_WORKSPACE">
+          <div className="flex items-center space-x-1.5 overflow-x-auto select-none">
             <button
-              onClick={() => setViewTab('ai_sales_inbox')}
-              className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-indigo-500/30 font-bold ${
-                viewTab === 'ai_sales_inbox' ? 'bg-indigo-600 text-white' : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50'
-              }`}
-            >
-              🤖 AI Sales Inbox
-            </button>
-          </FeatureFlagGuard>
-          <button
-            onClick={() => setViewTab('ai_sales_agent')}
-            className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-emerald-500/30 font-bold ${
-              viewTab === 'ai_sales_agent' ? 'bg-emerald-600 text-white' : 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50'
-            }`}
-          >
-            🧠 AI Sales Agent
-          </button>
-          <button
-            onClick={() => setViewTab('whatsapp_webhook')}
-            className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-emerald-500/30 font-bold ${
-              viewTab === 'whatsapp_webhook' ? 'bg-emerald-600 text-white' : 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50'
-            }`}
-          >
-            ⚡ WhatsApp Webhooks
-          </button>
-          <button
-            onClick={() => setViewTab('proposals')}
-            className={`px-4 py-2 text-xs font-semibold rounded-xl ${
-              viewTab === 'proposals' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-slate-505 hover:bg-slate-50'
-            }`}
-          >
-            Proposals ({proposals.length})
-          </button>
-          {!isTeamLeader && (
-            <button
-              onClick={() => setViewTab('logs')}
+              onClick={() => setViewTab('analytics')}
               className={`px-4 py-2 text-xs font-semibold rounded-xl ${
-                viewTab === 'logs' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-slate-505 hover:bg-slate-50'
+                viewTab === 'analytics' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-slate-505 hover:bg-slate-50'
               }`}
             >
-              Security Audit Logs
+              Dashboard Analytics
             </button>
-          )}
-          {!isTeamLeader && (
             <button
-              onClick={() => setViewTab('recovery_center')}
-              className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-indigo-500/40 font-bold ${
-                viewTab === 'recovery_center' ? 'bg-indigo-600 text-white' : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50'
-              }`}
-            >
-              🛡️ Recovery Center
-            </button>
-          )}
-          {!isTeamLeader && (
-            <button
-              onClick={() => setViewTab('backup')}
+              onClick={() => setViewTab('employees')}
               className={`px-4 py-2 text-xs font-semibold rounded-xl ${
-                viewTab === 'backup' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-slate-505 hover:bg-slate-50'
+                viewTab === 'employees' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-slate-505 hover:bg-slate-50'
               }`}
             >
-              Imports & Recovery
+              Manage Employees ({totalEmployees})
             </button>
-          )}
-          <button
-            onClick={() => setViewTab('services')}
-            className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ${
-              viewTab === 'services' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-slate-505 hover:bg-slate-50'
-            }`}
-          >
-            Services Catalog
-          </button>
-          {!isTeamLeader && (
             <button
-              onClick={() => setViewTab('templates')}
+              onClick={() => setViewTab('leads')}
+              className={`px-4 py-2 text-xs font-semibold rounded-xl ${
+                viewTab === 'leads' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-slate-505 hover:bg-slate-50'
+              }`}
+            >
+              All Leads ({totalLeads})
+            </button>
+            <FeatureFlagGuard flagKey="ENABLE_AI_SALES_WORKSPACE">
+              <button
+                onClick={() => setViewTab('ai_sales_inbox')}
+                className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-indigo-500/30 font-bold ${
+                  viewTab === 'ai_sales_inbox' ? 'bg-indigo-600 text-white' : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50'
+                }`}
+              >
+                🤖 AI Sales Inbox
+              </button>
+            </FeatureFlagGuard>
+            <button
+              onClick={() => setViewTab('ai_sales_agent')}
+              className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-emerald-500/30 font-bold ${
+                viewTab === 'ai_sales_agent' ? 'bg-emerald-600 text-white' : 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50'
+              }`}
+            >
+              🧠 AI Sales Agent
+            </button>
+            <button
+              onClick={() => setViewTab('whatsapp_webhook')}
+              className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-emerald-500/30 font-bold ${
+                viewTab === 'whatsapp_webhook' ? 'bg-emerald-600 text-white' : 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50'
+              }`}
+            >
+              ⚡ WhatsApp Webhooks
+            </button>
+            <button
+              onClick={() => setViewTab('proposals')}
+              className={`px-4 py-2 text-xs font-semibold rounded-xl ${
+                viewTab === 'proposals' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-slate-505 hover:bg-slate-50'
+              }`}
+            >
+              Proposals ({proposals.length})
+            </button>
+            {!isTeamLeader && (
+              <button
+                onClick={() => setViewTab('logs')}
+                className={`px-4 py-2 text-xs font-semibold rounded-xl ${
+                  viewTab === 'logs' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-slate-505 hover:bg-slate-50'
+                }`}
+              >
+                Security Audit Logs
+              </button>
+            )}
+            {!isTeamLeader && (
+              <button
+                onClick={() => setViewTab('recovery_center')}
+                className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-indigo-500/40 font-bold ${
+                  viewTab === 'recovery_center' ? 'bg-indigo-600 text-white' : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50'
+                }`}
+              >
+                🛡️ Recovery Center
+              </button>
+            )}
+            {!isTeamLeader && (
+              <button
+                onClick={() => setViewTab('backup')}
+                className={`px-4 py-2 text-xs font-semibold rounded-xl ${
+                  viewTab === 'backup' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-slate-505 hover:bg-slate-50'
+                }`}
+              >
+                Imports & Recovery
+              </button>
+            )}
+            <button
+              onClick={() => setViewTab('services')}
               className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ${
-                viewTab === 'templates' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-slate-505 hover:bg-slate-50'
+                viewTab === 'services' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-slate-505 hover:bg-slate-50'
               }`}
             >
-              Proposal Designer
+              Services Catalog
             </button>
-          )}
-          <button
-            onClick={() => setViewTab('payroll')}
-            className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-emerald-500/30 ${
-              viewTab === 'payroll' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-emerald-600 hover:bg-emerald-50/50 dark:hover:bg-slate-950 pr-5'
-            }`}
-          >
-            Payroll & Approvals 💰
-          </button>
-          {isTeamLeader && (
+            {!isTeamLeader && (
+              <button
+                onClick={() => setViewTab('templates')}
+                className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ${
+                  viewTab === 'templates' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-slate-505 hover:bg-slate-50'
+                }`}
+              >
+                Proposal Designer
+              </button>
+            )}
             <button
-              onClick={() => setViewTab('my_attendance')}
-              className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-amber-500/30 ${
-                viewTab === 'my_attendance' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-amber-600 hover:bg-amber-50/50 dark:hover:bg-slate-950 pr-5'
+              onClick={() => setViewTab('payroll')}
+              className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-emerald-500/30 ${
+                viewTab === 'payroll' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-emerald-600 hover:bg-emerald-50/50 dark:hover:bg-slate-950 pr-5'
               }`}
             >
-              My Punch & Calendar ⏱️
+              Payroll & Approvals 💰
             </button>
-          )}
+            {isTeamLeader && (
+              <button
+                onClick={() => setViewTab('my_attendance')}
+                className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-amber-500/30 ${
+                  viewTab === 'my_attendance' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-amber-600 hover:bg-amber-50/50 dark:hover:bg-slate-950 pr-5'
+                }`}
+              >
+                My Punch & Calendar ⏱️
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ==============================================================
           TAB: AI SALES INBOX (Sprint 1.3 - Block 2)

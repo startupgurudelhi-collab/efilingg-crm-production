@@ -6,7 +6,13 @@
 export type EmployeeRole = 'admin' | 'employee' | 'team_leader';
 export type EmployeeStatus = 'active' | 'disabled';
 
-export interface Employee {
+export interface VersionedRecord {
+  version?: number;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface Employee extends VersionedRecord {
   id: string;
   name: string;
   email: string;
@@ -63,7 +69,7 @@ export const LEAD_STAGES: LeadStage[] = [
   'Closed Won'
 ];
 
-export interface Lead {
+export interface Lead extends VersionedRecord {
   id: string;
   customerName: string;
   mobile: string;
@@ -148,7 +154,7 @@ export interface Notification {
   createdAt: string;
 }
 
-export interface CustomService {
+export interface CustomService extends VersionedRecord {
   id: string;
   name: string;
   category: string;
@@ -162,7 +168,7 @@ export interface CustomService {
   employeeIncentive?: number; // Service-specific employee incentive amount
 }
 
-export interface ProposalTemplate {
+export interface ProposalTemplate extends VersionedRecord {
   companyName: string;
   tagline: string;
   logoText: string;
@@ -327,7 +333,7 @@ export const PREDEFINED_PRICING: Record<string, { price: number; code: string; s
   }
 };
 
-export interface OfferLetterTemplate {
+export interface OfferLetterTemplate extends VersionedRecord {
   companyName: string;
   contactNumber: string;
   email: string;
@@ -346,7 +352,7 @@ export interface OfferLetterTemplate {
   termsAndConditions: string[];
 }
 
-export interface Attendance {
+export interface Attendance extends VersionedRecord {
   id: string;
   employeeId: string;
   date: string; // YYYY-MM-DD
@@ -432,5 +438,55 @@ export interface ResignationRequest {
   actedAt?: string; // date-time
   rejectionReason?: string;
 }
+
+export type ConcurrencyEntityType = 
+  | 'Service' 
+  | 'Lead' 
+  | 'Employee' 
+  | 'ProposalTemplate' 
+  | 'OfferLetterTemplate' 
+  | 'Attendance';
+
+export interface FieldDifference {
+  field: string;
+  label: string;
+  localValue: any;
+  remoteValue: any;
+  baseValue?: any;
+}
+
+export interface ConcurrencyConflict<T = any> {
+  entityType: ConcurrencyEntityType;
+  entityId: string;
+  entityName: string;
+  localDraft: T;
+  remoteRecord: T;
+  localVersion: number;
+  remoteVersion: number;
+  remoteUpdatedAt?: string;
+  remoteUpdatedBy?: string;
+  differences: FieldDifference[];
+  onReloadLatest: () => void | Promise<void>;
+  onForceOverwrite: () => void | Promise<void>;
+  onMergeChanges: (mergedRecord: T) => void | Promise<void>;
+  onCancel?: () => void;
+}
+
+export interface ConcurrencyAuditEntry {
+  id: string;
+  timestamp: string;
+  action: 'WRITE_CONFLICT_DETECTED' | 'WRITE_CONFLICT_OVERWRITE_FORCED' | 'WRITE_CONFLICT_MERGED' | 'WRITE_CONFLICT_RELOADED';
+  entityType: ConcurrencyEntityType;
+  entityId: string;
+  entityName?: string;
+  localVersion: number;
+  remoteVersion: number;
+  userId: string;
+  userName: string;
+  userRole: string;
+  details?: string;
+  resolvedFields?: string[];
+}
+
 
 

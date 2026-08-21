@@ -19,7 +19,7 @@ import {
   deleteV2McaClient,
   deleteV2McaClients
 } from '../../lib/v2_db';
-import { getCurrentSession } from '../../lib/db';
+import { getCurrentSession, setStorageString } from '../../lib/db';
 import ConfirmModal from './ConfirmModal';
 import { 
   Building2, Users, Receipt, Calendar, Plus, Download, UploadCloud, Search, Check, AlertTriangle, ShieldAlert,
@@ -360,7 +360,7 @@ export default function V2MCA({
       return c;
     });
     setClients(updated);
-    localStorage.setItem('efilingg_crm_v2_mca_clients', JSON.stringify(updated));
+    setStorageString('efilingg_crm_v2_mca_clients', JSON.stringify(updated));
   };
 
   const handleUpdateDirectorKycStatus = (clientId: string, directorIndex: number, newStatus: 'Pending' | 'Pending with CA' | 'Approved') => {
@@ -378,7 +378,7 @@ export default function V2MCA({
       return c;
     });
     setClients(updated);
-    localStorage.setItem('efilingg_crm_v2_mca_clients', JSON.stringify(updated));
+    setStorageString('efilingg_crm_v2_mca_clients', JSON.stringify(updated));
   };
 
   const handleExportRocReport = () => {

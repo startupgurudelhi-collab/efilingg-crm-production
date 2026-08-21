@@ -35,7 +35,7 @@ import {
   getV2TaxAuditOverrides,
   saveV2TaxAuditOverride
 } from '../../lib/v2_db';
-import { getCurrentSession } from '../../lib/db';
+import { getCurrentSession, setStorageString } from '../../lib/db';
 import { 
   Plus, Search, Download, AlertTriangle, CheckCircle, ShieldCheck, HelpCircle, FileText, Calendar, KeyRound, Award, HeartHandshake,
   Users, X, Edit2, UserCheck, Eye, EyeOff, Trash, Trash2, Edit
@@ -201,7 +201,7 @@ export default function V2ITR({
       list[idx].itrStatus = newStatus;
       setItrClients(list);
       // Save
-      localStorage.setItem('efilingg_crm_v2_itr_clients', JSON.stringify(list));
+      setStorageString('efilingg_crm_v2_itr_clients', JSON.stringify(list));
     }
   };
 

@@ -22,9 +22,17 @@ import {
   TeamLeaderMapping,
   HistoricalPayroll,
   LeaveRequest,
-  ResignationRequest
+  ResignationRequest,
+  ConcurrencyConflict
 } from '../types';
 import { pushToPostgres } from './postgresSync';
+import { 
+  stampVersion, 
+  checkOptimisticConflict, 
+  logConcurrencyAudit, 
+  normalizeVersion, 
+  triggerConcurrencyConflictUI 
+} from './concurrencyControl';
 
 // IST Date Utilities for Delhi, India Time zone compatibility
 export function getISTDateString(): string {
@@ -748,7 +756,17 @@ export function writeActivityAuditLog(audit: EmployeeAuditLogs): void {
 }
 
 export function saveEmployees(employees: Employee[]) {
-  setStorageString(KEY_EMPLOYEES, JSON.stringify(employees));
+  // Ensure every employee record maintains version, updatedAt, and updatedBy
+  const normalized = employees.map(emp => {
+    if (!emp) return emp;
+    return {
+      ...emp,
+      version: normalizeVersion(emp),
+      updatedAt: emp.updatedAt || new Date().toISOString(),
+      updatedBy: emp.updatedBy || 'EMP-ADMIN'
+    };
+  });
+  setStorageString(KEY_EMPLOYEES, JSON.stringify(normalized));
 }
 
 export function createEmployee(emp: Omit<Employee, 'id' | 'joinedDate'>, adminUserId: string): Employee {
@@ -779,7 +797,10 @@ export function createEmployee(emp: Omit<Employee, 'id' | 'joinedDate'>, adminUs
       allowances: emp.allowances ?? 3500,
       otherFixedAllowance: emp.otherFixedAllowance ?? 1500,
       incentivePerConversion: emp.incentivePerConversion ?? 500,
-      attendanceDays: emp.attendanceDays ?? 26
+      attendanceDays: emp.attendanceDays ?? 26,
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      updatedBy: adminUserId || 'EMP-ADMIN'
     };
     employees.push(newEmp);
     saveEmployees(employees);
@@ -811,7 +832,12 @@ export function createEmployee(emp: Omit<Employee, 'id' | 'joinedDate'>, adminUs
   }
 }
 
-export function updateEmployee(id: string, updates: Partial<Employee>, adminUserId: string) {
+export function updateEmployee(
+  id: string, 
+  updates: Partial<Employee>, 
+  adminUserId: string,
+  options?: { forceOverwrite?: boolean; expectedVersion?: number }
+) {
   // Rule 4: Create backup snapshot before changing
   createDBBackupSnapshot();
 
@@ -828,6 +854,91 @@ export function updateEmployee(id: string, updates: Partial<Employee>, adminUser
 
     const old = employees[idx];
 
+    // Optimistic Concurrency Control Check
+    if (!options?.forceOverwrite && updates.version !== undefined) {
+      const conflictResult = checkOptimisticConflict(
+        { ...old, ...filteredUpdates, version: updates.version },
+        old,
+        'Employee',
+        id,
+        old.name
+      );
+
+      if (conflictResult.hasConflict) {
+        logConcurrencyAudit({
+          action: 'WRITE_CONFLICT_DETECTED',
+          entityType: 'Employee',
+          entityId: id,
+          entityName: old.name,
+          localVersion: conflictResult.localVersion,
+          remoteVersion: conflictResult.remoteVersion,
+          userId: adminUserId,
+          userName: getEmployeeById(adminUserId)?.name || 'Admin',
+          userRole: 'admin',
+          details: `Concurrent write conflict on Employee ${old.name} (${id}). Fields: ${conflictResult.differences.map(d => d.field).join(', ')}`
+        });
+
+        triggerConcurrencyConflictUI({
+          entityType: 'Employee',
+          entityId: id,
+          entityName: old.name,
+          localDraft: { ...old, ...filteredUpdates, version: updates.version },
+          remoteRecord: old,
+          localVersion: conflictResult.localVersion,
+          remoteVersion: conflictResult.remoteVersion,
+          remoteUpdatedAt: old.updatedAt,
+          remoteUpdatedBy: old.updatedBy,
+          differences: conflictResult.differences,
+          onReloadLatest: () => {
+            logConcurrencyAudit({
+              action: 'WRITE_CONFLICT_RELOADED',
+              entityType: 'Employee',
+              entityId: id,
+              entityName: old.name,
+              localVersion: conflictResult.localVersion,
+              remoteVersion: conflictResult.remoteVersion,
+              userId: adminUserId,
+              userName: getEmployeeById(adminUserId)?.name || 'Admin',
+              userRole: 'admin',
+              details: `Reloaded latest live version v${conflictResult.remoteVersion} for Employee ${old.name}`
+            });
+          },
+          onForceOverwrite: () => {
+            updateEmployee(id, filteredUpdates, adminUserId, { forceOverwrite: true });
+            logConcurrencyAudit({
+              action: 'WRITE_CONFLICT_OVERWRITE_FORCED',
+              entityType: 'Employee',
+              entityId: id,
+              entityName: old.name,
+              localVersion: conflictResult.localVersion,
+              remoteVersion: conflictResult.remoteVersion,
+              userId: adminUserId,
+              userName: getEmployeeById(adminUserId)?.name || 'Admin',
+              userRole: 'admin',
+              details: `Forced overwrite applied for Employee ${old.name} advancing to v${conflictResult.remoteVersion + 1}`
+            });
+          },
+          onMergeChanges: (mergedRecord) => {
+            updateEmployee(id, mergedRecord, adminUserId, { forceOverwrite: true });
+            logConcurrencyAudit({
+              action: 'WRITE_CONFLICT_MERGED',
+              entityType: 'Employee',
+              entityId: id,
+              entityName: old.name,
+              localVersion: conflictResult.localVersion,
+              remoteVersion: conflictResult.remoteVersion,
+              userId: adminUserId,
+              userName: getEmployeeById(adminUserId)?.name || 'Admin',
+              userRole: 'admin',
+              details: `Interactive merge resolved and saved for Employee ${old.name}`
+            });
+          }
+        });
+
+        throw new Error(`Concurrent modification detected for Employee ${old.name} (v${conflictResult.localVersion} vs live v${conflictResult.remoteVersion}). Save blocked.`);
+      }
+    }
+
     // Rule 5: Duplicate Protection
     if (filteredUpdates.email) {
       const emailToTrim = filteredUpdates.email.toLowerCase().trim();
@@ -837,7 +948,12 @@ export function updateEmployee(id: string, updates: Partial<Employee>, adminUser
       }
     }
 
-    const updated = { ...old, ...filteredUpdates };
+    const updated = stampVersion(
+      { ...old, ...filteredUpdates },
+      old,
+      adminUserId
+    );
+
     employees[idx] = updated;
     saveEmployees(employees);
 
@@ -847,7 +963,7 @@ export function updateEmployee(id: string, updates: Partial<Employee>, adminUser
       adminUser?.name || 'Admin',
       adminUser?.role || 'admin',
       'Employee Updated',
-      `Updated employee ${updated.name}.`
+      `Updated employee ${updated.name} (v${updated.version}).`
     );
 
     // Rule 6: Audit logs
@@ -899,7 +1015,16 @@ export function getLeads(): Lead[] {
 }
 
 export function saveLeads(leads: Lead[]) {
-  setStorageString(KEY_LEADS, JSON.stringify(leads));
+  const normalized = leads.map(l => {
+    if (!l) return l;
+    return {
+      ...l,
+      version: normalizeVersion(l),
+      updatedAt: l.updatedAt || new Date().toISOString(),
+      updatedBy: l.updatedBy || 'EMP-ADMIN'
+    };
+  });
+  setStorageString(KEY_LEADS, JSON.stringify(normalized));
 }
 
 export function createLead(leadData: Omit<Lead, 'id' | 'creationDate'> & { creationDate?: string }, triggerByUserId: string): Lead {
@@ -953,7 +1078,10 @@ export function createLead(leadData: Omit<Lead, 'id' | 'creationDate'> & { creat
   const newLead: Lead = {
     ...leadData,
     id: idValue,
-    creationDate: finalCreationDate
+    creationDate: finalCreationDate,
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    updatedBy: triggerByUserId || 'EMP-ADMIN'
   };
 
   const triggerUser = getEmployeeById(triggerByUserId);
@@ -1018,13 +1146,104 @@ export function createLead(leadData: Omit<Lead, 'id' | 'creationDate'> & { creat
   return newLead;
 }
 
-export function updateLeadStage(leadId: string, newStage: LeadStage, triggerByUserId: string) {
+export function updateLeadStage(
+  leadId: string, 
+  newStage: LeadStage, 
+  triggerByUserId: string,
+  options?: { forceOverwrite?: boolean; expectedVersion?: number }
+) {
   const leads = getLeads();
   const idx = leads.findIndex((l) => l.id === leadId);
   if (idx !== -1) {
     const lead = leads[idx];
     const oldStage = lead.stage;
     if (oldStage !== newStage) {
+      // OCC Check
+      if (!options?.forceOverwrite && options?.expectedVersion !== undefined) {
+        const conflictResult = checkOptimisticConflict(
+          { ...lead, stage: newStage, version: options.expectedVersion },
+          lead,
+          'Lead',
+          leadId,
+          lead.customerName
+        );
+
+        if (conflictResult.hasConflict) {
+          const modifier = getEmployeeById(triggerByUserId);
+          logConcurrencyAudit({
+            action: 'WRITE_CONFLICT_DETECTED',
+            entityType: 'Lead',
+            entityId: leadId,
+            entityName: lead.customerName,
+            localVersion: conflictResult.localVersion,
+            remoteVersion: conflictResult.remoteVersion,
+            userId: triggerByUserId,
+            userName: modifier?.name || 'User',
+            userRole: modifier?.role || 'employee',
+            details: `Concurrent modification on Lead stage ${lead.customerName} (${leadId}). Stage changed remotely.`
+          });
+
+          triggerConcurrencyConflictUI({
+            entityType: 'Lead',
+            entityId: leadId,
+            entityName: lead.customerName,
+            localDraft: { ...lead, stage: newStage, version: options.expectedVersion },
+            remoteRecord: lead,
+            localVersion: conflictResult.localVersion,
+            remoteVersion: conflictResult.remoteVersion,
+            remoteUpdatedAt: lead.updatedAt,
+            remoteUpdatedBy: lead.updatedBy,
+            differences: conflictResult.differences,
+            onReloadLatest: () => {
+              logConcurrencyAudit({
+                action: 'WRITE_CONFLICT_RELOADED',
+                entityType: 'Lead',
+                entityId: leadId,
+                entityName: lead.customerName,
+                localVersion: conflictResult.localVersion,
+                remoteVersion: conflictResult.remoteVersion,
+                userId: triggerByUserId,
+                userName: modifier?.name || 'User',
+                userRole: modifier?.role || 'employee',
+                details: `Reloaded latest live version v${conflictResult.remoteVersion} for Lead ${lead.customerName}`
+              });
+            },
+            onForceOverwrite: () => {
+              updateLeadStage(leadId, newStage, triggerByUserId, { forceOverwrite: true });
+              logConcurrencyAudit({
+                action: 'WRITE_CONFLICT_OVERWRITE_FORCED',
+                entityType: 'Lead',
+                entityId: leadId,
+                entityName: lead.customerName,
+                localVersion: conflictResult.localVersion,
+                remoteVersion: conflictResult.remoteVersion,
+                userId: triggerByUserId,
+                userName: modifier?.name || 'User',
+                userRole: modifier?.role || 'employee',
+                details: `Forced overwrite stage for Lead ${lead.customerName}`
+              });
+            },
+            onMergeChanges: (mergedRecord) => {
+              updateLeadDetailsAndStage(leadId, mergedRecord, mergedRecord.stage || newStage, triggerByUserId, { forceOverwrite: true });
+              logConcurrencyAudit({
+                action: 'WRITE_CONFLICT_MERGED',
+                entityType: 'Lead',
+                entityId: leadId,
+                entityName: lead.customerName,
+                localVersion: conflictResult.localVersion,
+                remoteVersion: conflictResult.remoteVersion,
+                userId: triggerByUserId,
+                userName: modifier?.name || 'User',
+                userRole: modifier?.role || 'employee',
+                details: `Merged changes for Lead ${lead.customerName}`
+              });
+            }
+          });
+
+          throw new Error(`Concurrent modification detected on Lead ${lead.customerName}.`);
+        }
+      }
+
       lead.stage = newStage;
 
       const triggerUser = getEmployeeById(triggerByUserId);
@@ -1053,6 +1272,8 @@ export function updateLeadStage(leadId: string, newStage: LeadStage, triggerByUs
         }
       }
 
+      const stampedLead = stampVersion(lead, leads[idx], triggerByUserId);
+      leads[idx] = stampedLead;
       saveLeads(leads);
 
       // Record lead history
@@ -1097,12 +1318,108 @@ export function updateLeadStage(leadId: string, newStage: LeadStage, triggerByUs
   }
 }
 
-export function updateLeadDetails(leadId: string, updates: Partial<Lead>, triggerByUserId: string) {
+export function updateLeadDetails(
+  leadId: string, 
+  updates: Partial<Lead>, 
+  triggerByUserId: string,
+  options?: { forceOverwrite?: boolean }
+) {
   const leads = getLeads();
   const idx = leads.findIndex((l) => l.id === leadId);
   if (idx !== -1) {
     const oldLead = leads[idx];
-    const newLead = { ...oldLead, ...updates };
+
+    // Optimistic Concurrency Control Check
+    if (!options?.forceOverwrite && updates.version !== undefined) {
+      const conflictResult = checkOptimisticConflict(
+        { ...oldLead, ...updates, version: updates.version },
+        oldLead,
+        'Lead',
+        leadId,
+        oldLead.customerName
+      );
+
+      if (conflictResult.hasConflict) {
+        const modifier = getEmployeeById(triggerByUserId);
+        logConcurrencyAudit({
+          action: 'WRITE_CONFLICT_DETECTED',
+          entityType: 'Lead',
+          entityId: leadId,
+          entityName: oldLead.customerName,
+          localVersion: conflictResult.localVersion,
+          remoteVersion: conflictResult.remoteVersion,
+          userId: triggerByUserId,
+          userName: modifier?.name || 'User',
+          userRole: modifier?.role || 'employee',
+          details: `Concurrent write conflict on Lead ${oldLead.customerName} (${leadId}). Fields: ${conflictResult.differences.map(d => d.field).join(', ')}`
+        });
+
+        triggerConcurrencyConflictUI({
+          entityType: 'Lead',
+          entityId: leadId,
+          entityName: oldLead.customerName,
+          localDraft: { ...oldLead, ...updates, version: updates.version },
+          remoteRecord: oldLead,
+          localVersion: conflictResult.localVersion,
+          remoteVersion: conflictResult.remoteVersion,
+          remoteUpdatedAt: oldLead.updatedAt,
+          remoteUpdatedBy: oldLead.updatedBy,
+          differences: conflictResult.differences,
+          onReloadLatest: () => {
+            logConcurrencyAudit({
+              action: 'WRITE_CONFLICT_RELOADED',
+              entityType: 'Lead',
+              entityId: leadId,
+              entityName: oldLead.customerName,
+              localVersion: conflictResult.localVersion,
+              remoteVersion: conflictResult.remoteVersion,
+              userId: triggerByUserId,
+              userName: modifier?.name || 'User',
+              userRole: modifier?.role || 'employee',
+              details: `Reloaded latest live version v${conflictResult.remoteVersion} for Lead ${oldLead.customerName}`
+            });
+          },
+          onForceOverwrite: () => {
+            updateLeadDetails(leadId, updates, triggerByUserId, { forceOverwrite: true });
+            logConcurrencyAudit({
+              action: 'WRITE_CONFLICT_OVERWRITE_FORCED',
+              entityType: 'Lead',
+              entityId: leadId,
+              entityName: oldLead.customerName,
+              localVersion: conflictResult.localVersion,
+              remoteVersion: conflictResult.remoteVersion,
+              userId: triggerByUserId,
+              userName: modifier?.name || 'User',
+              userRole: modifier?.role || 'employee',
+              details: `Forced overwrite applied for Lead ${oldLead.customerName} advancing to v${conflictResult.remoteVersion + 1}`
+            });
+          },
+          onMergeChanges: (mergedRecord) => {
+            updateLeadDetails(leadId, mergedRecord, triggerByUserId, { forceOverwrite: true });
+            logConcurrencyAudit({
+              action: 'WRITE_CONFLICT_MERGED',
+              entityType: 'Lead',
+              entityId: leadId,
+              entityName: oldLead.customerName,
+              localVersion: conflictResult.localVersion,
+              remoteVersion: conflictResult.remoteVersion,
+              userId: triggerByUserId,
+              userName: modifier?.name || 'User',
+              userRole: modifier?.role || 'employee',
+              details: `Interactive merge resolved and saved for Lead ${oldLead.customerName}`
+            });
+          }
+        });
+
+        throw new Error(`Concurrent modification detected for Lead ${oldLead.customerName} (v${conflictResult.localVersion} vs live v${conflictResult.remoteVersion}). Save blocked.`);
+      }
+    }
+
+    const newLead = stampVersion(
+      { ...oldLead, ...updates },
+      oldLead,
+      triggerByUserId
+    );
 
     // Validate duplicate check on update
     const normalizeMobile = (num: string) => {
@@ -1132,7 +1449,7 @@ export function updateLeadDetails(leadId: string, updates: Partial<Lead>, trigge
     const creator = getEmployeeById(triggerByUserId);
     Object.keys(updates).forEach((k) => {
       const key = k as keyof Lead;
-      if (oldLead[key] !== updates[key] && key !== 'id' && key !== 'creationDate') {
+      if (oldLead[key] !== updates[key] && key !== 'id' && key !== 'creationDate' && key !== 'version' && key !== 'updatedAt' && key !== 'updatedBy') {
         writeLeadHistory({
           leadId,
           field: String(key),
@@ -1148,7 +1465,7 @@ export function updateLeadDetails(leadId: string, updates: Partial<Lead>, trigge
       creator?.name || 'User',
       creator?.role || 'employee',
       'Lead Updated',
-      `Updated profile details of lead ${oldLead.customerName} (${oldLead.id}).`
+      `Updated profile details of lead ${oldLead.customerName} (${oldLead.id}) [v${newLead.version}].`
     );
   }
 }
@@ -1157,13 +1474,100 @@ export function updateLeadDetailsAndStage(
   leadId: string, 
   details: Partial<Lead>, 
   newStage: LeadStage, 
-  triggerByUserId: string
+  triggerByUserId: string,
+  options?: { forceOverwrite?: boolean }
 ) {
   const leads = getLeads();
   const idx = leads.findIndex((l) => l.id === leadId);
   if (idx !== -1) {
     const lead = leads[idx];
     const oldStage = lead.stage;
+
+    // OCC Check
+    if (!options?.forceOverwrite && details.version !== undefined) {
+      const conflictResult = checkOptimisticConflict(
+        { ...lead, ...details, stage: newStage, version: details.version },
+        lead,
+        'Lead',
+        leadId,
+        lead.customerName
+      );
+
+      if (conflictResult.hasConflict) {
+        const modifier = getEmployeeById(triggerByUserId);
+        logConcurrencyAudit({
+          action: 'WRITE_CONFLICT_DETECTED',
+          entityType: 'Lead',
+          entityId: leadId,
+          entityName: lead.customerName,
+          localVersion: conflictResult.localVersion,
+          remoteVersion: conflictResult.remoteVersion,
+          userId: triggerByUserId,
+          userName: modifier?.name || 'User',
+          userRole: modifier?.role || 'employee',
+          details: `Concurrent write conflict on Lead ${lead.customerName} (${leadId}). Fields: ${conflictResult.differences.map(d => d.field).join(', ')}`
+        });
+
+        triggerConcurrencyConflictUI({
+          entityType: 'Lead',
+          entityId: leadId,
+          entityName: lead.customerName,
+          localDraft: { ...lead, ...details, stage: newStage, version: details.version },
+          remoteRecord: lead,
+          localVersion: conflictResult.localVersion,
+          remoteVersion: conflictResult.remoteVersion,
+          remoteUpdatedAt: lead.updatedAt,
+          remoteUpdatedBy: lead.updatedBy,
+          differences: conflictResult.differences,
+          onReloadLatest: () => {
+            logConcurrencyAudit({
+              action: 'WRITE_CONFLICT_RELOADED',
+              entityType: 'Lead',
+              entityId: leadId,
+              entityName: lead.customerName,
+              localVersion: conflictResult.localVersion,
+              remoteVersion: conflictResult.remoteVersion,
+              userId: triggerByUserId,
+              userName: modifier?.name || 'User',
+              userRole: modifier?.role || 'employee',
+              details: `Reloaded latest live version v${conflictResult.remoteVersion} for Lead ${lead.customerName}`
+            });
+          },
+          onForceOverwrite: () => {
+            updateLeadDetailsAndStage(leadId, details, newStage, triggerByUserId, { forceOverwrite: true });
+            logConcurrencyAudit({
+              action: 'WRITE_CONFLICT_OVERWRITE_FORCED',
+              entityType: 'Lead',
+              entityId: leadId,
+              entityName: lead.customerName,
+              localVersion: conflictResult.localVersion,
+              remoteVersion: conflictResult.remoteVersion,
+              userId: triggerByUserId,
+              userName: modifier?.name || 'User',
+              userRole: modifier?.role || 'employee',
+              details: `Forced overwrite applied for Lead ${lead.customerName} advancing to v${conflictResult.remoteVersion + 1}`
+            });
+          },
+          onMergeChanges: (mergedRecord) => {
+            updateLeadDetailsAndStage(leadId, mergedRecord, mergedRecord.stage || newStage, triggerByUserId, { forceOverwrite: true });
+            logConcurrencyAudit({
+              action: 'WRITE_CONFLICT_MERGED',
+              entityType: 'Lead',
+              entityId: leadId,
+              entityName: lead.customerName,
+              localVersion: conflictResult.localVersion,
+              remoteVersion: conflictResult.remoteVersion,
+              userId: triggerByUserId,
+              userName: modifier?.name || 'User',
+              userRole: modifier?.role || 'employee',
+              details: `Interactive merge resolved and saved for Lead ${lead.customerName}`
+            });
+          }
+        });
+
+        throw new Error(`Concurrent modification detected for Lead ${lead.customerName}.`);
+      }
+    }
     
     // Validate duplicate check on update details and stage
     const targetMobile = details.mobile !== undefined ? details.mobile : lead.mobile;
@@ -1196,7 +1600,7 @@ export function updateLeadDetailsAndStage(
     // 2. Filter updated fields and write history records
     Object.keys(details).forEach((k) => {
       const key = k as keyof Lead;
-      if (oldLeadDetails[key] !== details[key] && key !== 'id' && key !== 'creationDate') {
+      if (oldLeadDetails[key] !== details[key] && key !== 'id' && key !== 'creationDate' && key !== 'version' && key !== 'updatedAt' && key !== 'updatedBy') {
         writeLeadHistory({
           leadId,
           field: String(key),
@@ -1267,6 +1671,10 @@ export function updateLeadDetailsAndStage(
       }
     }
     
+    // Stamp version
+    const stampedLead = stampVersion(lead, oldLeadDetails, triggerByUserId);
+    leads[idx] = stampedLead;
+
     // Save to localStorage exactly once!
     saveLeads(leads);
   }
@@ -1924,7 +2332,16 @@ export function getCustomServices(): CustomService[] {
 }
 
 export function saveCustomServices(services: CustomService[]): Promise<boolean> {
-  const serialized = JSON.stringify(services);
+  const normalized = services.map(s => {
+    if (!s) return s;
+    return {
+      ...s,
+      version: normalizeVersion(s),
+      updatedAt: s.updatedAt || new Date().toISOString(),
+      updatedBy: s.updatedBy || 'EMP-ADMIN'
+    };
+  });
+  const serialized = JSON.stringify(normalized);
   console.log(`[SERVICE_SAVE_REQUEST] Saving ${services.length} services to key "${KEY_SERVICES}". Payload size: ${serialized.length} bytes.`);
   return setStorageString(KEY_SERVICES, serialized);
 }
@@ -1934,7 +2351,10 @@ export function addCustomService(service: Omit<CustomService, 'id'>, triggerByUs
   const idValue = `SRV-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
   const newService: CustomService = {
     ...service,
-    id: idValue
+    id: idValue,
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    updatedBy: triggerByUserId || 'EMP-ADMIN'
   };
   services.push(newService);
   console.log(`[SERVICE_SAVE_REQUEST] Adding new service ID: ${newService.id}, Name: "${newService.name}". Total services count: ${services.length}.`);
@@ -1957,7 +2377,10 @@ export async function addCustomServiceAsync(service: Omit<CustomService, 'id'>, 
   const idValue = `SRV-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
   const newService: CustomService = {
     ...service,
-    id: idValue
+    id: idValue,
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    updatedBy: triggerByUserId || 'EMP-ADMIN'
   };
   services.push(newService);
   console.log(`[SERVICE_COMMIT_START] [addCustomServiceAsync] Adding new service ID: ${newService.id}, Name: "${newService.name}".`);
@@ -1979,14 +2402,110 @@ export async function addCustomServiceAsync(service: Omit<CustomService, 'id'>, 
   return newService;
 }
 
-export function updateCustomService(id: string, updates: Partial<CustomService>, triggerByUserId: string) {
+export function updateCustomService(
+  id: string, 
+  updates: Partial<CustomService>, 
+  triggerByUserId: string,
+  options?: { forceOverwrite?: boolean }
+) {
   const services = getCustomServices();
   const idx = services.findIndex((s) => s.id === id);
   if (idx !== -1) {
     const old = services[idx];
-    const updated = { ...old, ...updates };
+
+    // Optimistic Concurrency Control
+    if (!options?.forceOverwrite && updates.version !== undefined) {
+      const conflictResult = checkOptimisticConflict(
+        { ...old, ...updates, version: updates.version },
+        old,
+        'Service',
+        id,
+        old.name
+      );
+
+      if (conflictResult.hasConflict) {
+        const modifier = getEmployeeById(triggerByUserId);
+        logConcurrencyAudit({
+          action: 'WRITE_CONFLICT_DETECTED',
+          entityType: 'Service',
+          entityId: id,
+          entityName: old.name,
+          localVersion: conflictResult.localVersion,
+          remoteVersion: conflictResult.remoteVersion,
+          userId: triggerByUserId,
+          userName: modifier?.name || 'User',
+          userRole: modifier?.role || 'employee',
+          details: `Concurrent write conflict on Service ${old.name} (${id}). Fields: ${conflictResult.differences.map(d => d.field).join(', ')}`
+        });
+
+        triggerConcurrencyConflictUI({
+          entityType: 'Service',
+          entityId: id,
+          entityName: old.name,
+          localDraft: { ...old, ...updates, version: updates.version },
+          remoteRecord: old,
+          localVersion: conflictResult.localVersion,
+          remoteVersion: conflictResult.remoteVersion,
+          remoteUpdatedAt: old.updatedAt,
+          remoteUpdatedBy: old.updatedBy,
+          differences: conflictResult.differences,
+          onReloadLatest: () => {
+            logConcurrencyAudit({
+              action: 'WRITE_CONFLICT_RELOADED',
+              entityType: 'Service',
+              entityId: id,
+              entityName: old.name,
+              localVersion: conflictResult.localVersion,
+              remoteVersion: conflictResult.remoteVersion,
+              userId: triggerByUserId,
+              userName: modifier?.name || 'User',
+              userRole: modifier?.role || 'employee',
+              details: `Reloaded latest live version v${conflictResult.remoteVersion} for Service ${old.name}`
+            });
+          },
+          onForceOverwrite: () => {
+            updateCustomService(id, updates, triggerByUserId, { forceOverwrite: true });
+            logConcurrencyAudit({
+              action: 'WRITE_CONFLICT_OVERWRITE_FORCED',
+              entityType: 'Service',
+              entityId: id,
+              entityName: old.name,
+              localVersion: conflictResult.localVersion,
+              remoteVersion: conflictResult.remoteVersion,
+              userId: triggerByUserId,
+              userName: modifier?.name || 'User',
+              userRole: modifier?.role || 'employee',
+              details: `Forced overwrite applied for Service ${old.name}`
+            });
+          },
+          onMergeChanges: (mergedRecord) => {
+            updateCustomService(id, mergedRecord, triggerByUserId, { forceOverwrite: true });
+            logConcurrencyAudit({
+              action: 'WRITE_CONFLICT_MERGED',
+              entityType: 'Service',
+              entityId: id,
+              entityName: old.name,
+              localVersion: conflictResult.localVersion,
+              remoteVersion: conflictResult.remoteVersion,
+              userId: triggerByUserId,
+              userName: modifier?.name || 'User',
+              userRole: modifier?.role || 'employee',
+              details: `Interactive merge resolved and saved for Service ${old.name}`
+            });
+          }
+        });
+
+        throw new Error(`Concurrent modification detected for Service ${old.name}. Save blocked.`);
+      }
+    }
+
+    const updated = stampVersion(
+      { ...old, ...updates },
+      old,
+      triggerByUserId
+    );
     services[idx] = updated;
-    console.log(`[SERVICE_SAVE_REQUEST] Updating service ID: ${id}, Name: "${updated.name}".`);
+    console.log(`[SERVICE_SAVE_REQUEST] Updating service ID: ${id}, Name: "${updated.name}" (v${updated.version}).`);
     saveCustomServices(services);
 
     const user = getEmployeeById(triggerByUserId);
@@ -1995,19 +2514,115 @@ export function updateCustomService(id: string, updates: Partial<CustomService>,
       user?.name || 'User',
       user?.role || 'employee',
       'Service Updated',
-      `Updated details of dynamic service ${updated.name}`
+      `Updated details of dynamic service ${updated.name} (v${updated.version})`
     );
   } else {
     console.warn(`[SERVICE_SAVE_REQUEST] Service ID ${id} not found for update.`);
   }
 }
 
-export async function updateCustomServiceAsync(id: string, updates: Partial<CustomService>, triggerByUserId: string): Promise<boolean> {
+export async function updateCustomServiceAsync(
+  id: string, 
+  updates: Partial<CustomService>, 
+  triggerByUserId: string,
+  options?: { forceOverwrite?: boolean }
+): Promise<boolean> {
   const services = getCustomServices();
   const idx = services.findIndex((s) => s.id === id);
   if (idx !== -1) {
     const old = services[idx];
-    const updated = { ...old, ...updates };
+
+    // Optimistic Concurrency Control
+    if (!options?.forceOverwrite && updates.version !== undefined) {
+      const conflictResult = checkOptimisticConflict(
+        { ...old, ...updates, version: updates.version },
+        old,
+        'Service',
+        id,
+        old.name
+      );
+
+      if (conflictResult.hasConflict) {
+        const modifier = getEmployeeById(triggerByUserId);
+        logConcurrencyAudit({
+          action: 'WRITE_CONFLICT_DETECTED',
+          entityType: 'Service',
+          entityId: id,
+          entityName: old.name,
+          localVersion: conflictResult.localVersion,
+          remoteVersion: conflictResult.remoteVersion,
+          userId: triggerByUserId,
+          userName: modifier?.name || 'User',
+          userRole: modifier?.role || 'employee',
+          details: `Concurrent write conflict on Service ${old.name} (${id}). Fields: ${conflictResult.differences.map(d => d.field).join(', ')}`
+        });
+
+        triggerConcurrencyConflictUI({
+          entityType: 'Service',
+          entityId: id,
+          entityName: old.name,
+          localDraft: { ...old, ...updates, version: updates.version },
+          remoteRecord: old,
+          localVersion: conflictResult.localVersion,
+          remoteVersion: conflictResult.remoteVersion,
+          remoteUpdatedAt: old.updatedAt,
+          remoteUpdatedBy: old.updatedBy,
+          differences: conflictResult.differences,
+          onReloadLatest: () => {
+            logConcurrencyAudit({
+              action: 'WRITE_CONFLICT_RELOADED',
+              entityType: 'Service',
+              entityId: id,
+              entityName: old.name,
+              localVersion: conflictResult.localVersion,
+              remoteVersion: conflictResult.remoteVersion,
+              userId: triggerByUserId,
+              userName: modifier?.name || 'User',
+              userRole: modifier?.role || 'employee',
+              details: `Reloaded latest live version v${conflictResult.remoteVersion} for Service ${old.name}`
+            });
+          },
+          onForceOverwrite: () => {
+            updateCustomServiceAsync(id, updates, triggerByUserId, { forceOverwrite: true });
+            logConcurrencyAudit({
+              action: 'WRITE_CONFLICT_OVERWRITE_FORCED',
+              entityType: 'Service',
+              entityId: id,
+              entityName: old.name,
+              localVersion: conflictResult.localVersion,
+              remoteVersion: conflictResult.remoteVersion,
+              userId: triggerByUserId,
+              userName: modifier?.name || 'User',
+              userRole: modifier?.role || 'employee',
+              details: `Forced overwrite applied for Service ${old.name}`
+            });
+          },
+          onMergeChanges: (mergedRecord) => {
+            updateCustomServiceAsync(id, mergedRecord, triggerByUserId, { forceOverwrite: true });
+            logConcurrencyAudit({
+              action: 'WRITE_CONFLICT_MERGED',
+              entityType: 'Service',
+              entityId: id,
+              entityName: old.name,
+              localVersion: conflictResult.localVersion,
+              remoteVersion: conflictResult.remoteVersion,
+              userId: triggerByUserId,
+              userName: modifier?.name || 'User',
+              userRole: modifier?.role || 'employee',
+              details: `Interactive merge resolved and saved for Service ${old.name}`
+            });
+          }
+        });
+
+        throw new Error(`Concurrent modification detected for Service ${old.name}. Save blocked.`);
+      }
+    }
+
+    const updated = stampVersion(
+      { ...old, ...updates },
+      old,
+      triggerByUserId
+    );
     services[idx] = updated;
     console.log(`[SERVICE_COMMIT_START] [updateCustomServiceAsync] Updating service ID: ${id}, Name: "${updated.name}".`);
     const pushSuccess = await saveCustomServices(services);
@@ -2021,7 +2636,7 @@ export async function updateCustomServiceAsync(id: string, updates: Partial<Cust
       user?.name || 'User',
       user?.role || 'employee',
       'Service Updated',
-      `Updated details of dynamic service ${updated.name}`
+      `Updated details of dynamic service ${updated.name} (v${updated.version})`
     );
     return pushSuccess;
   } else {
@@ -2074,11 +2689,108 @@ export async function deleteCustomServiceAsync(id: string, triggerByUserId: stri
 
 // MASTER PROPOSAL TEMPLATE ACTIONS
 export function getProposalTemplate(): ProposalTemplate {
-  return JSON.parse(getStorageString(KEY_PROPOSAL_TEMPLATE) || '{}');
+  const template = JSON.parse(getStorageString(KEY_PROPOSAL_TEMPLATE) || '{}');
+  if (template && !template.version) {
+    template.version = 1;
+    template.updatedAt = template.updatedAt || new Date().toISOString();
+    template.updatedBy = template.updatedBy || 'EMP-ADMIN';
+  }
+  return template;
 }
 
-export function saveProposalTemplate(template: ProposalTemplate, triggerByUserId: string) {
-  setStorageString(KEY_PROPOSAL_TEMPLATE, JSON.stringify(template));
+export function saveProposalTemplate(
+  template: ProposalTemplate, 
+  triggerByUserId: string,
+  options?: { forceOverwrite?: boolean }
+) {
+  const current = getProposalTemplate();
+  if (current && current.version && !options?.forceOverwrite && template.version !== undefined) {
+    const conflictResult = checkOptimisticConflict(
+      template,
+      current,
+      'ProposalTemplate',
+      'MASTER_PROPOSAL_TEMPLATE',
+      'Master Proposal Template'
+    );
+
+    if (conflictResult.hasConflict) {
+      const modifier = getEmployeeById(triggerByUserId);
+      logConcurrencyAudit({
+        action: 'WRITE_CONFLICT_DETECTED',
+        entityType: 'ProposalTemplate',
+        entityId: 'MASTER_PROPOSAL_TEMPLATE',
+        entityName: 'Master Proposal Template',
+        localVersion: conflictResult.localVersion,
+        remoteVersion: conflictResult.remoteVersion,
+        userId: triggerByUserId,
+        userName: modifier?.name || 'Admin',
+        userRole: modifier?.role || 'admin',
+        details: `Concurrent write conflict on Master Proposal Template. Fields: ${conflictResult.differences.map(d => d.field).join(', ')}`
+      });
+
+      triggerConcurrencyConflictUI({
+        entityType: 'ProposalTemplate',
+        entityId: 'MASTER_PROPOSAL_TEMPLATE',
+        entityName: 'Master Proposal Template',
+        localDraft: template,
+        remoteRecord: current,
+        localVersion: conflictResult.localVersion,
+        remoteVersion: conflictResult.remoteVersion,
+        remoteUpdatedAt: current.updatedAt,
+        remoteUpdatedBy: current.updatedBy,
+        differences: conflictResult.differences,
+        onReloadLatest: () => {
+          logConcurrencyAudit({
+            action: 'WRITE_CONFLICT_RELOADED',
+            entityType: 'ProposalTemplate',
+            entityId: 'MASTER_PROPOSAL_TEMPLATE',
+            entityName: 'Master Proposal Template',
+            localVersion: conflictResult.localVersion,
+            remoteVersion: conflictResult.remoteVersion,
+            userId: triggerByUserId,
+            userName: modifier?.name || 'Admin',
+            userRole: modifier?.role || 'admin',
+            details: `Reloaded latest live version v${conflictResult.remoteVersion} for Proposal Template`
+          });
+        },
+        onForceOverwrite: () => {
+          saveProposalTemplate(template, triggerByUserId, { forceOverwrite: true });
+          logConcurrencyAudit({
+            action: 'WRITE_CONFLICT_OVERWRITE_FORCED',
+            entityType: 'ProposalTemplate',
+            entityId: 'MASTER_PROPOSAL_TEMPLATE',
+            entityName: 'Master Proposal Template',
+            localVersion: conflictResult.localVersion,
+            remoteVersion: conflictResult.remoteVersion,
+            userId: triggerByUserId,
+            userName: modifier?.name || 'Admin',
+            userRole: modifier?.role || 'admin',
+            details: `Forced overwrite applied for Master Proposal Template`
+          });
+        },
+        onMergeChanges: (mergedRecord) => {
+          saveProposalTemplate(mergedRecord, triggerByUserId, { forceOverwrite: true });
+          logConcurrencyAudit({
+            action: 'WRITE_CONFLICT_MERGED',
+            entityType: 'ProposalTemplate',
+            entityId: 'MASTER_PROPOSAL_TEMPLATE',
+            entityName: 'Master Proposal Template',
+            localVersion: conflictResult.localVersion,
+            remoteVersion: conflictResult.remoteVersion,
+            userId: triggerByUserId,
+            userName: modifier?.name || 'Admin',
+            userRole: modifier?.role || 'admin',
+            details: `Interactive merge resolved and saved for Master Proposal Template`
+          });
+        }
+      });
+
+      throw new Error(`Concurrent modification detected for Master Proposal Template. Save blocked.`);
+    }
+  }
+
+  const stamped = stampVersion(template, current, triggerByUserId);
+  setStorageString(KEY_PROPOSAL_TEMPLATE, JSON.stringify(stamped));
 
   const user = getEmployeeById(triggerByUserId);
   writeActivityLog(
@@ -2086,7 +2798,7 @@ export function saveProposalTemplate(template: ProposalTemplate, triggerByUserId
     user?.name || 'Admin',
     user?.role || 'admin',
     'Proposal Template Edited',
-    `Master proposal template layout and body content updated.`
+    `Master proposal template layout and body content updated (v${stamped.version}).`
   );
 }
 
@@ -2128,6 +2840,12 @@ export function getOfferLetterTemplate(): OfferLetterTemplate {
         return term;
       });
     }
+    if (!template.version) {
+      template.version = 1;
+      template.updatedAt = template.updatedAt || new Date().toISOString();
+      template.updatedBy = template.updatedBy || 'EMP-ADMIN';
+      updated = true;
+    }
     if (updated) {
       setStorageString(KEY_OFFER_LETTER_TEMPLATE, JSON.stringify(template));
     }
@@ -2135,8 +2853,99 @@ export function getOfferLetterTemplate(): OfferLetterTemplate {
   return template;
 }
 
-export function saveOfferLetterTemplate(template: OfferLetterTemplate, triggerByUserId: string) {
-  setStorageString(KEY_OFFER_LETTER_TEMPLATE, JSON.stringify(template));
+export function saveOfferLetterTemplate(
+  template: OfferLetterTemplate, 
+  triggerByUserId: string,
+  options?: { forceOverwrite?: boolean }
+) {
+  const current = getOfferLetterTemplate();
+  if (current && current.version && !options?.forceOverwrite && template.version !== undefined) {
+    const conflictResult = checkOptimisticConflict(
+      template,
+      current,
+      'OfferLetterTemplate',
+      'MASTER_OFFER_LETTER_TEMPLATE',
+      'Master Offer Letter Template'
+    );
+
+    if (conflictResult.hasConflict) {
+      const modifier = getEmployeeById(triggerByUserId);
+      logConcurrencyAudit({
+        action: 'WRITE_CONFLICT_DETECTED',
+        entityType: 'OfferLetterTemplate',
+        entityId: 'MASTER_OFFER_LETTER_TEMPLATE',
+        entityName: 'Master Offer Letter Template',
+        localVersion: conflictResult.localVersion,
+        remoteVersion: conflictResult.remoteVersion,
+        userId: triggerByUserId,
+        userName: modifier?.name || 'Admin',
+        userRole: modifier?.role || 'admin',
+        details: `Concurrent write conflict on Master Offer Letter Template. Fields: ${conflictResult.differences.map(d => d.field).join(', ')}`
+      });
+
+      triggerConcurrencyConflictUI({
+        entityType: 'OfferLetterTemplate',
+        entityId: 'MASTER_OFFER_LETTER_TEMPLATE',
+        entityName: 'Master Offer Letter Template',
+        localDraft: template,
+        remoteRecord: current,
+        localVersion: conflictResult.localVersion,
+        remoteVersion: conflictResult.remoteVersion,
+        remoteUpdatedAt: current.updatedAt,
+        remoteUpdatedBy: current.updatedBy,
+        differences: conflictResult.differences,
+        onReloadLatest: () => {
+          logConcurrencyAudit({
+            action: 'WRITE_CONFLICT_RELOADED',
+            entityType: 'OfferLetterTemplate',
+            entityId: 'MASTER_OFFER_LETTER_TEMPLATE',
+            entityName: 'Master Offer Letter Template',
+            localVersion: conflictResult.localVersion,
+            remoteVersion: conflictResult.remoteVersion,
+            userId: triggerByUserId,
+            userName: modifier?.name || 'Admin',
+            userRole: modifier?.role || 'admin',
+            details: `Reloaded latest live version v${conflictResult.remoteVersion} for Offer Letter Template`
+          });
+        },
+        onForceOverwrite: () => {
+          saveOfferLetterTemplate(template, triggerByUserId, { forceOverwrite: true });
+          logConcurrencyAudit({
+            action: 'WRITE_CONFLICT_OVERWRITE_FORCED',
+            entityType: 'OfferLetterTemplate',
+            entityId: 'MASTER_OFFER_LETTER_TEMPLATE',
+            entityName: 'Master Offer Letter Template',
+            localVersion: conflictResult.localVersion,
+            remoteVersion: conflictResult.remoteVersion,
+            userId: triggerByUserId,
+            userName: modifier?.name || 'Admin',
+            userRole: modifier?.role || 'admin',
+            details: `Forced overwrite applied for Master Offer Letter Template`
+          });
+        },
+        onMergeChanges: (mergedRecord) => {
+          saveOfferLetterTemplate(mergedRecord, triggerByUserId, { forceOverwrite: true });
+          logConcurrencyAudit({
+            action: 'WRITE_CONFLICT_MERGED',
+            entityType: 'OfferLetterTemplate',
+            entityId: 'MASTER_OFFER_LETTER_TEMPLATE',
+            entityName: 'Master Offer Letter Template',
+            localVersion: conflictResult.localVersion,
+            remoteVersion: conflictResult.remoteVersion,
+            userId: triggerByUserId,
+            userName: modifier?.name || 'Admin',
+            userRole: modifier?.role || 'admin',
+            details: `Interactive merge resolved and saved for Master Offer Letter Template`
+          });
+        }
+      });
+
+      throw new Error(`Concurrent modification detected for Master Offer Letter Template. Save blocked.`);
+    }
+  }
+
+  const stamped = stampVersion(template, current, triggerByUserId);
+  setStorageString(KEY_OFFER_LETTER_TEMPLATE, JSON.stringify(stamped));
 
   const user = getEmployeeById(triggerByUserId);
   writeActivityLog(
@@ -2144,7 +2953,7 @@ export function saveOfferLetterTemplate(template: OfferLetterTemplate, triggerBy
     user?.name || 'Admin',
     user?.role || 'admin',
     'Offer Letter Template Edited',
-    `Master offer letter template updated by administrator.`
+    `Master offer letter template updated by administrator (v${stamped.version}).`
   );
 }
 
@@ -2314,7 +3123,16 @@ export function getAttendances(): Attendance[] {
 }
 
 export function saveAttendances(records: Attendance[]) {
-  setStorageString(KEY_ATTENDANCE, JSON.stringify(records));
+  const normalized = records.map(r => {
+    if (!r) return r;
+    return {
+      ...r,
+      version: normalizeVersion(r),
+      updatedAt: r.updatedAt || new Date().toISOString(),
+      updatedBy: r.updatedBy || 'EMP-ADMIN'
+    };
+  });
+  setStorageString(KEY_ATTENDANCE, JSON.stringify(normalized));
 }
 
 export function getAttendanceAudits(): AttendanceAuditLog[] {
@@ -2399,6 +3217,7 @@ export function employeePunchIn(employeeId: string): Attendance {
     record.actualCheckIn = currentFullTime;
     record.status = 'Present';
     record.deductSalary = false;
+    record = stampVersion(record, records[existingIdx], employeeId);
     records[existingIdx] = record;
   } else {
     record = {
@@ -2408,7 +3227,10 @@ export function employeePunchIn(employeeId: string): Attendance {
       checkIn: storedTime,
       actualCheckIn: currentFullTime,
       status: 'Present',
-      deductSalary: false
+      deductSalary: false,
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      updatedBy: employeeId
     };
     records.push(record);
   }
@@ -2453,6 +3275,7 @@ export function employeePunchOut(employeeId: string): Attendance {
       record.totalHours = parseFloat(diffHrs.toFixed(2));
     }
     
+    record = stampVersion(record, records[idx], employeeId);
     records[idx] = record;
   } else {
     record = {
@@ -2461,7 +3284,10 @@ export function employeePunchOut(employeeId: string): Attendance {
       date: currentDate,
       checkOut: currentTime,
       status: 'Present',
-      deductSalary: false
+      deductSalary: false,
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      updatedBy: employeeId
     };
     records.push(record);
   }
@@ -2484,7 +3310,8 @@ export function updateAttendanceManually(
   attendanceId: string, 
   updates: Partial<Omit<Attendance, 'id'>>, 
   modifiedByUserId: string, 
-  reason: string
+  reason: string,
+  options?: { forceOverwrite?: boolean }
 ) {
   if (!reason || reason.trim() === '') {
     throw new Error('Reason for change is mandatory to modify attendance logs.');
@@ -2497,6 +3324,93 @@ export function updateAttendanceManually(
   }
   
   const oldRecord = { ...records[idx] };
+
+  // Optimistic Concurrency Control Check
+  if (!options?.forceOverwrite && updates.version !== undefined) {
+    const conflictResult = checkOptimisticConflict(
+      { ...oldRecord, ...updates, version: updates.version },
+      oldRecord,
+      'Attendance',
+      attendanceId,
+      `Attendance (${oldRecord.date})`
+    );
+
+    if (conflictResult.hasConflict) {
+      const modifier = getEmployeeById(modifiedByUserId);
+      logConcurrencyAudit({
+        action: 'WRITE_CONFLICT_DETECTED',
+        entityType: 'Attendance',
+        entityId: attendanceId,
+        entityName: `Attendance Record ${oldRecord.date}`,
+        localVersion: conflictResult.localVersion,
+        remoteVersion: conflictResult.remoteVersion,
+        userId: modifiedByUserId,
+        userName: modifier?.name || 'User',
+        userRole: modifier?.role || 'employee',
+        details: `Concurrent write conflict on Attendance ${attendanceId} for ${oldRecord.date}. Fields: ${conflictResult.differences.map(d => d.field).join(', ')}`
+      });
+
+      triggerConcurrencyConflictUI({
+        entityType: 'Attendance',
+        entityId: attendanceId,
+        entityName: `Attendance (${oldRecord.date})`,
+        localDraft: { ...oldRecord, ...updates, version: updates.version },
+        remoteRecord: oldRecord,
+        localVersion: conflictResult.localVersion,
+        remoteVersion: conflictResult.remoteVersion,
+        remoteUpdatedAt: oldRecord.updatedAt,
+        remoteUpdatedBy: oldRecord.updatedBy,
+        differences: conflictResult.differences,
+        onReloadLatest: () => {
+          logConcurrencyAudit({
+            action: 'WRITE_CONFLICT_RELOADED',
+            entityType: 'Attendance',
+            entityId: attendanceId,
+            entityName: `Attendance Record ${oldRecord.date}`,
+            localVersion: conflictResult.localVersion,
+            remoteVersion: conflictResult.remoteVersion,
+            userId: modifiedByUserId,
+            userName: modifier?.name || 'User',
+            userRole: modifier?.role || 'employee',
+            details: `Reloaded latest live version v${conflictResult.remoteVersion} for Attendance ${attendanceId}`
+          });
+        },
+        onForceOverwrite: () => {
+          updateAttendanceManually(attendanceId, updates, modifiedByUserId, reason, { forceOverwrite: true });
+          logConcurrencyAudit({
+            action: 'WRITE_CONFLICT_OVERWRITE_FORCED',
+            entityType: 'Attendance',
+            entityId: attendanceId,
+            entityName: `Attendance Record ${oldRecord.date}`,
+            localVersion: conflictResult.localVersion,
+            remoteVersion: conflictResult.remoteVersion,
+            userId: modifiedByUserId,
+            userName: modifier?.name || 'User',
+            userRole: modifier?.role || 'employee',
+            details: `Forced overwrite applied for Attendance ${attendanceId}`
+          });
+        },
+        onMergeChanges: (mergedRecord) => {
+          updateAttendanceManually(attendanceId, mergedRecord, modifiedByUserId, reason, { forceOverwrite: true });
+          logConcurrencyAudit({
+            action: 'WRITE_CONFLICT_MERGED',
+            entityType: 'Attendance',
+            entityId: attendanceId,
+            entityName: `Attendance Record ${oldRecord.date}`,
+            localVersion: conflictResult.localVersion,
+            remoteVersion: conflictResult.remoteVersion,
+            userId: modifiedByUserId,
+            userName: modifier?.name || 'User',
+            userRole: modifier?.role || 'employee',
+            details: `Interactive merge resolved and saved for Attendance ${attendanceId}`
+          });
+        }
+      });
+
+      throw new Error(`Concurrent modification detected for Attendance record ${oldRecord.date}. Save blocked.`);
+    }
+  }
+
   const updatedRecord = { 
     ...oldRecord, 
     ...updates,
@@ -2512,7 +3426,8 @@ export function updateAttendanceManually(
     updatedRecord.totalHours = parseFloat(((outH + outM / 60) - (inH + inM / 60)).toFixed(2));
   }
   
-  records[idx] = updatedRecord;
+  const stampedRecord = stampVersion(updatedRecord, oldRecord, modifiedByUserId);
+  records[idx] = stampedRecord;
   saveAttendances(records);
   
   // Save Audit logs
@@ -2551,7 +3466,7 @@ export function updateAttendanceManually(
     modifier?.name || 'User',
     modifier?.role || 'employee',
     'Attendance Override Applied 📍',
-    `Modified attendance for Employee ID: ${oldRecord.employeeId} on date ${oldRecord.date}. Reason: ${reason}`
+    `Modified attendance for Employee ID: ${oldRecord.employeeId} on date ${oldRecord.date} (v${stampedRecord.version}). Reason: ${reason}`
   );
   
   // Notify

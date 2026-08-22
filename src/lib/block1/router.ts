@@ -133,25 +133,14 @@ block1Router.get('/v2/whatsapp/provider', (req: Request, res: Response) => {
 });
 
 /**
- * Dynamically Switch Active WhatsApp Provider (POST /api/v2/whatsapp/provider/switch)
+ * WhatsApp Provider Status Report (POST /api/v2/whatsapp/provider/switch)
  */
 block1Router.post('/v2/whatsapp/provider/switch', (req: Request, res: Response) => {
   try {
-    const { provider } = req.body;
-    if (!provider || !['meta', 'cpaas'].includes(String(provider).toLowerCase())) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid provider value. Must be "meta" or "cpaas".',
-      });
-    }
-
-    const targetProvider = String(provider).toLowerCase() as 'meta' | 'cpaas';
-    WhatsAppProviderFactory.setRuntimeProviderOverride(targetProvider);
-
     const updatedReport = WhatsAppProviderFactory.getStatusReport();
     return res.status(200).json({
       success: true,
-      message: `WhatsApp provider dynamically updated to ${targetProvider.toUpperCase()}.`,
+      message: `Active WhatsApp Provider: META_CLOUD_API (Official WhatsApp Business Cloud API)`,
       report: updatedReport,
     });
   } catch (err) {
@@ -291,17 +280,13 @@ block1Router.post('/v2/whatsapp/send-media', async (req: Request, res: Response)
  */
 block1Router.post('/v2/whatsapp/test-provider', async (req: Request, res: Response) => {
   try {
-    const targetProviderType = req.body.provider
-      ? (String(req.body.provider).toLowerCase() as 'meta' | 'cpaas')
-      : WhatsAppProviderFactory.getActiveProviderType();
-
-    const providerInstance = WhatsAppProviderFactory.getProvider(targetProviderType);
+    const providerInstance = WhatsAppProviderFactory.getProvider();
 
     const testMessage = await providerInstance.sendOutboundMessageAsync({
       conversationId: req.body.conversationId || 'CONV-TEST-PROVIDER',
       senderId: 'SYS_TESTER',
       senderName: 'Provider Test Suite',
-      content: `Provider Test Verification on ${providerInstance.getProviderName()} at ${new Date().toISOString()}`,
+      content: `Provider Test Verification on Meta WhatsApp Cloud API at ${new Date().toISOString()}`,
     });
 
     return res.status(200).json({

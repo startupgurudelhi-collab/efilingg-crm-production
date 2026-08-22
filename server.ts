@@ -322,9 +322,30 @@ async function syncAllStoredWebhookLogs(): Promise<void> {
     if (rawLogs) {
       const logs = JSON.parse(rawLogs);
       if (Array.isArray(logs) && logs.length > 0) {
-        console.log(`[Webhook Diagnostic Re-Sync] Processing ${logs.length} stored WhatsApp webhook logs for CRM sync...`);
+        // Filter out legacy CPaaS webhook logs
+        const validMetaLogs = logs.filter((logItem: any) => {
+          const p = logItem.payload || {};
+          const isCPaaS =
+            p.srno ||
+            p.wabaSrno ||
+            p.waba_srno ||
+            p.wabaNumber === '919217666839' ||
+            p.waba_number === '919217666839' ||
+            p.replyFrom ||
+            logItem.sender_number === '919217666839' ||
+            logItem.provider_name === 'LEGOMARK_CPAAS';
+          return !isCPaaS;
+        });
+
+        // Update previewStore to only keep clean Meta logs
+        if (validMetaLogs.length !== logs.length) {
+          savePreviewStore('efilingg_crm_whatsapp_webhook_logs', JSON.stringify(validMetaLogs));
+          console.log(`[Webhook Diagnostic Re-Sync] Purged ${logs.length - validMetaLogs.length} legacy CPaaS logs.`);
+        }
+
+        console.log(`[Webhook Diagnostic Re-Sync] Processing ${validMetaLogs.length} stored Meta WhatsApp webhook logs for CRM sync...`);
         // Process in chronological order (oldest to newest)
-        const sortedLogs = [...logs].reverse();
+        const sortedLogs = [...validMetaLogs].reverse();
         for (const logItem of sortedLogs) {
           if (logItem.payload) {
             console.log(`\n===================================================================`);
@@ -340,6 +361,51 @@ async function syncAllStoredWebhookLogs(): Promise<void> {
   }
 }
 
+function cleanLegacyCPaaSChats(): void {
+  try {
+    // 1. Clean conversations
+    const rawConvs = previewStore['efilingg_crm_conversations_v2'] || crmMemoryStore['efilingg_crm_conversations_v2'];
+    if (rawConvs) {
+      const convs = JSON.parse(rawConvs);
+      if (Array.isArray(convs)) {
+        const cleanedConvs = convs.filter((c: any) => {
+          const isCPaaS =
+            c.contactNumber === '919217666839' ||
+            c.wabaNumber === '919217666839' ||
+            c.srno === '51736254';
+          return !isCPaaS;
+        });
+        if (cleanedConvs.length !== convs.length) {
+          savePreviewStore('efilingg_crm_conversations_v2', JSON.stringify(cleanedConvs));
+          crmMemoryStore['efilingg_crm_conversations_v2'] = JSON.stringify(cleanedConvs);
+          console.log(`[CPaaS Cleanup] Removed ${convs.length - cleanedConvs.length} legacy CPaaS conversations.`);
+        }
+      }
+    }
+
+    // 2. Clean messages
+    const rawMsgs = previewStore['efilingg_crm_messages_v2'] || crmMemoryStore['efilingg_crm_messages_v2'];
+    if (rawMsgs) {
+      const msgs = JSON.parse(rawMsgs);
+      if (Array.isArray(msgs)) {
+        const cleanedMsgs = msgs.filter((m: any) => {
+          const isCPaaS =
+            m.senderId === '919217666839' ||
+            (m.content && typeof m.content === 'string' && m.content.includes('Legomark CPaaS'));
+          return !isCPaaS;
+        });
+        if (cleanedMsgs.length !== msgs.length) {
+          savePreviewStore('efilingg_crm_messages_v2', JSON.stringify(cleanedMsgs));
+          crmMemoryStore['efilingg_crm_messages_v2'] = JSON.stringify(cleanedMsgs);
+          console.log(`[CPaaS Cleanup] Removed ${msgs.length - cleanedMsgs.length} legacy CPaaS messages.`);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn('[CPaaS Cleanup Warning]:', err.message);
+  }
+}
+
 function initCrmStoreInMemory(): void {
   // 1. Populate crmMemoryStore from local preview store
   for (const [k, v] of Object.entries(previewStore)) {
@@ -347,6 +413,8 @@ function initCrmStoreInMemory(): void {
       crmMemoryStore[k] = v;
     }
   }
+
+  cleanLegacyCPaaSChats();
 
   // 2. Query PostgreSQL crm_store and populate memory + re-sync logs
   const p = getPostgresPool();
@@ -357,6 +425,7 @@ function initCrmStoreInMemory(): void {
         previewStore[row.key] = row.value;
       }
       console.log(`[CRM Memory Sync] Loaded ${res.rows.length} keys from PostgreSQL crm_store into server memory.`);
+      cleanLegacyCPaaSChats();
       syncAllStoredWebhookLogs();
     }).catch((err) => {
       console.warn('[CRM Memory Sync] Warning reading crm_store on startup:', err.message);
@@ -1131,6 +1200,23 @@ const handleWebhookIngestionExpress = async (req: any, res: any) => {
   const payload = req.body || {};
   console.log(`[WhatsApp Webhook V2] [${receivedTimestamp.toISOString()}] Received incoming webhook payload:`);
   console.log(JSON.stringify(payload, null, 2));
+
+  // Detect and discard any legacy CPaaS payloads or CPaaS numbers so they never enter CRM chat
+  const isCPaaS =
+    payload.srno ||
+    payload.wabaSrno ||
+    payload.waba_srno ||
+    payload.wabaNumber === '919217666839' ||
+    payload.waba_number === '919217666839' ||
+    payload.replyFrom ||
+    payload.cpaas ||
+    payload.provider === 'LEGOMARK_CPAAS' ||
+    payload.provider_name === 'LEGOMARK_CPAAS';
+
+  if (isCPaaS) {
+    console.warn('[WhatsApp Webhook V2] Discarded legacy CPaaS webhook payload from CRM processing.');
+    return;
+  }
 
   console.log('[NOTIFICATION_EVENT_CREATED]', {
     source: 'WEBHOOK_POST_INGESTION',

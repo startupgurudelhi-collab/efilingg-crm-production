@@ -445,7 +445,7 @@ const Customer360Panel = React.memo(
             <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
               Activity Timeline Stream
             </span>
-            <span className="text-[9px] text-slate-500 font-mono">CPaaS Diagnostics</span>
+            <span className="text-[9px] text-slate-500 font-mono">WhatsApp Cloud API Diagnostics</span>
           </div>
 
           <div className="space-y-2 max-h-96 overflow-y-auto pr-1">

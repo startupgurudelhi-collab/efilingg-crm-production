@@ -3,7 +3,7 @@
  * Efilingg CRM Enterprise Layer (Sprint 1.3 - Block 1)
  *
  * Facade pattern delegating to WhatsAppProviderFactory.
- * Supports Meta WhatsApp Cloud API and Legomark CPaaS in parallel via WHATSAPP_PROVIDER switch.
+ * Powered by Meta WhatsApp Cloud API (Official WhatsApp Business API).
  */
 
 import { AttachmentV2, MessageV2 } from './types';

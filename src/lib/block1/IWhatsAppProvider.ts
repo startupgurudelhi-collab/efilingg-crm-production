@@ -1,7 +1,7 @@
 /**
  * WhatsApp Provider Abstraction Interface
  * 
- * Supports parallel co-existence of Meta WhatsApp Cloud API and Legomark CPaaS.
+ * Meta WhatsApp Cloud API Provider for Official WhatsApp Business Integration.
  */
 
 import { AttachmentV2, MessageV2 } from './types';
@@ -40,7 +40,7 @@ export interface SendMediaOptions {
   senderName?: string;
 }
 
-export type WhatsAppProviderName = 'META_CLOUD_API' | 'LEGOMARK_CPAAS';
+export type WhatsAppProviderName = 'META_CLOUD_API';
 
 export interface IWhatsAppProvider {
   /**
@@ -49,7 +49,7 @@ export interface IWhatsAppProvider {
   getProviderName(): WhatsAppProviderName;
 
   /**
-   * Verifies incoming webhook challenge (for Meta or CPaaS verification)
+   * Verifies incoming webhook challenge (for Meta Cloud API verification)
    */
   verifyWebhook(
     mode?: string,

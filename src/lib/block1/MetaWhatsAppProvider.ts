@@ -81,6 +81,23 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
     const processedMessages: IngestionResult[] = [];
     let updatedStatusesCount = 0;
 
+    // Reject any legacy CPaaS payloads or CPaaS numbers
+    const pAny = payload as any;
+    if (
+      pAny?.srno ||
+      pAny?.wabaSrno ||
+      pAny?.waba_srno ||
+      pAny?.wabaNumber === '919217666839' ||
+      pAny?.waba_number === '919217666839' ||
+      pAny?.replyFrom ||
+      pAny?.cpaas ||
+      pAny?.provider === 'LEGOMARK_CPAAS' ||
+      pAny?.provider_name === 'LEGOMARK_CPAAS'
+    ) {
+      console.warn('[MetaWhatsAppProvider] Ignored legacy CPaaS webhook payload to prevent CPaaS number collision.');
+      return { processedMessages: [], updatedStatusesCount: 0 };
+    }
+
     try {
       addWebhookLog({
         channel: 'WHATSAPP_META',
@@ -126,6 +143,12 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
               for (const msgObj of value.messages) {
                 const senderPhone = msgObj.from;
                 if (!senderPhone) continue;
+
+                // Ignore if sender is legacy CPaaS test number
+                if (senderPhone === '919217666839') {
+                  console.warn('[MetaWhatsAppProvider] Ignored message from legacy CPaaS number:', senderPhone);
+                  continue;
+                }
 
                 let messageText = '';
                 const attachments: AttachmentV2[] = [];
@@ -236,27 +259,6 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
               }
             }
           }
-        }
-      } else {
-        // Fallback for custom or direct JSON payloads
-        const pAny = payload as any;
-        const senderPhone = pAny.from || pAny.sender_number || pAny.senderNumber || pAny.mobile || pAny.phone;
-        const messageText = pAny.text?.body || pAny.text || pAny.body || pAny.message || pAny.content;
-        const msgId = pAny.id || pAny.message_id || pAny.messageId || pAny.msgId;
-
-        if (senderPhone && messageText) {
-          const profileName = pAny.name || pAny.sender_name || pAny.contact_name || pAny.profile_name || 'WhatsApp Contact';
-          const ingestion = LeadEngineService.processInboundMessage({
-            channel: 'WHATSAPP',
-            senderPhone: String(senderPhone),
-            senderName: String(profileName),
-            messageText: String(messageText),
-            whatsappMessageId: msgId ? String(msgId) : undefined,
-            rawPayload: pAny,
-            mobile: String(senderPhone),
-            contactName: String(profileName),
-          });
-          processedMessages.push(ingestion);
         }
       }
     } catch (err) {

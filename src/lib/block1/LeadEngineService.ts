@@ -184,13 +184,10 @@ export class LeadEngineService {
       saveOpportunity(opportunity);
     }
 
-    // 5. Conversation Lookup & CPaaS Identifier resolution
+    // 5. Conversation Lookup
     let conversation = getConversationByContact(normPhone);
     console.log(`[Diagnostic 5/9] Conversation Lookup | Contact Phone: "${normPhone}" | Found: ${conversation ? `YES (${conversation.id} - ${conversation.state})` : 'NO'}`);
 
-    const extractedSrno = options.srno || (options.rawPayload as any)?.srno || (options.rawPayload as any)?.sr_no || '51736254';
-    const extractedWabaSrno = options.wabaSrno || (options.rawPayload as any)?.wabaSrno || (options.rawPayload as any)?.waba_srno || '1632';
-    const extractedWabaNumber = options.wabaNumber || (options.rawPayload as any)?.wabaNumber || (options.rawPayload as any)?.waba_number || process.env.CPAAS_WABA_NUMBER || '919217666839';
     const extractedMobile = options.mobile || normPhone;
     const extractedContactName = options.contactName || options.senderName || customer.name || 'WhatsApp Contact';
 
@@ -217,9 +214,6 @@ export class LeadEngineService {
         assignedType: executiveAssignment.assignmentStrategy === 'MANUAL' ? 'HUMAN_EXECUTIVE' : 'ROUND_ROBIN',
         serviceCategory: options.serviceRequested || 'General Inquiry',
         unreadCount: 1,
-        srno: extractedSrno,
-        wabaSrno: extractedWabaSrno,
-        wabaNumber: extractedWabaNumber,
         mobile: extractedMobile,
         contactName: extractedContactName,
         createdAt: now,
@@ -241,7 +235,7 @@ export class LeadEngineService {
         `WhatsApp conversation opened with ${conversation.customerName}`,
         'WhatsAppWebhook'
       );
-      console.log(`[Diagnostic 6/9] Conversation Created | ID: ${conversation.id} | Contact: "${conversation.contactNumber}" | Customer: "${conversation.customerName}" | SRNO: "${conversation.srno}"`);
+      console.log(`[Diagnostic 6/9] Conversation Created | ID: ${conversation.id} | Contact: "${conversation.contactNumber}" | Customer: "${conversation.customerName}"`);
     } else {
       let updated = false;
       if (!conversation.customerId && customer) {
@@ -260,18 +254,6 @@ export class LeadEngineService {
         conversation.state = 'OPEN';
         updated = true;
       }
-      if (!conversation.srno || conversation.srno !== extractedSrno) {
-        conversation.srno = extractedSrno;
-        updated = true;
-      }
-      if (!conversation.wabaSrno || conversation.wabaSrno !== extractedWabaSrno) {
-        conversation.wabaSrno = extractedWabaSrno;
-        updated = true;
-      }
-      if (!conversation.wabaNumber || conversation.wabaNumber !== extractedWabaNumber) {
-        conversation.wabaNumber = extractedWabaNumber;
-        updated = true;
-      }
       if (!conversation.mobile) {
         conversation.mobile = extractedMobile;
         updated = true;
@@ -284,7 +266,7 @@ export class LeadEngineService {
       if (updated) {
         saveConversation(conversation);
       }
-      console.log(`[Diagnostic 6/9] Conversation Retained/Updated | ID: ${conversation.id} | State: "${conversation.state}" | SRNO: "${conversation.srno}"`);
+      console.log(`[Diagnostic 6/9] Conversation Retained/Updated | ID: ${conversation.id} | State: "${conversation.state}"`);
     }
 
     // 7. Save Message Insertion

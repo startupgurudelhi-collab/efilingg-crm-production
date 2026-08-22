@@ -32,6 +32,7 @@ import {
 } from './db';
 import { eventBus } from '../eventBus';
 import { AiSalesAgentEngine } from '../aiAgent/AiSalesAgentEngine';
+import { isForbiddenCPaaSPayload, isForbiddenCPaaSPhone } from './cpaasFilter';
 
 export interface IngestInboundMessageOptions {
   channel: ChannelType;
@@ -68,6 +69,35 @@ export class LeadEngineService {
    * Process Inbound Customer/Lead Message Flow
    */
   public static processInboundMessage(options: IngestInboundMessageOptions): IngestionResult {
+    // Drop any CPaaS phone numbers or CPaaS payloads immediately
+    if (
+      isForbiddenCPaaSPhone(options.senderPhone) ||
+      isForbiddenCPaaSPhone(options.mobile) ||
+      isForbiddenCPaaSPhone(options.wabaNumber) ||
+      isForbiddenCPaaSPayload(options.rawPayload)
+    ) {
+      console.warn('[LeadEngineService] Dropped legacy CPaaS message from processing:', options.senderPhone);
+      return {
+        customerFound: false,
+        conversation: {
+          id: 'DROPPED_CPAAS',
+          channel: options.channel,
+          contactNumber: options.senderPhone,
+          state: 'CLOSED',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        } as ConversationV2,
+        message: {
+          id: 'DROPPED_CPAAS',
+          conversationId: 'DROPPED_CPAAS',
+          direction: 'INBOUND',
+          messageType: 'TEXT',
+          content: options.messageText,
+          timestamp: new Date().toISOString(),
+        } as MessageV2,
+      };
+    }
+
     const normPhone = CustomerIdentityService.normalizePhone(options.senderPhone);
     const now = new Date().toISOString();
 

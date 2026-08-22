@@ -17,6 +17,7 @@ import { AttachmentV2, DeliveryStatus, MessageV2 } from './types';
 import { LeadEngineService, IngestionResult } from './LeadEngineService';
 import { WhatsAppMediaService } from './WhatsAppMediaService';
 import { WhatsAppWebhookPayload } from './WhatsAppService';
+import { isForbiddenCPaaSPayload, isForbiddenCPaaSPhone } from './cpaasFilter';
 import {
   addWebhookLog,
   getConversationById,
@@ -82,18 +83,7 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
     let updatedStatusesCount = 0;
 
     // Reject any legacy CPaaS payloads or CPaaS numbers
-    const pAny = payload as any;
-    if (
-      pAny?.srno ||
-      pAny?.wabaSrno ||
-      pAny?.waba_srno ||
-      pAny?.wabaNumber === '919217666839' ||
-      pAny?.waba_number === '919217666839' ||
-      pAny?.replyFrom ||
-      pAny?.cpaas ||
-      pAny?.provider === 'LEGOMARK_CPAAS' ||
-      pAny?.provider_name === 'LEGOMARK_CPAAS'
-    ) {
+    if (isForbiddenCPaaSPayload(payload)) {
       console.warn('[MetaWhatsAppProvider] Ignored legacy CPaaS webhook payload to prevent CPaaS number collision.');
       return { processedMessages: [], updatedStatusesCount: 0 };
     }
@@ -145,7 +135,7 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
                 if (!senderPhone) continue;
 
                 // Ignore if sender is legacy CPaaS test number
-                if (senderPhone === '919217666839') {
+                if (isForbiddenCPaaSPhone(senderPhone)) {
                   console.warn('[MetaWhatsAppProvider] Ignored message from legacy CPaaS number:', senderPhone);
                   continue;
                 }

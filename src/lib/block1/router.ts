@@ -15,6 +15,7 @@ import { LeadEngineService } from './LeadEngineService';
 import { WhatsAppService, DEFAULT_WHATSAPP_VERIFY_TOKEN } from './WhatsAppService';
 import { WhatsAppProviderFactory } from './WhatsAppProviderFactory';
 import { WhatsAppMediaService } from './WhatsAppMediaService';
+import { isForbiddenCPaaSPayload } from './cpaasFilter';
 import {
   getCustomers,
   getLeads,
@@ -70,6 +71,17 @@ const handleWebhookIngestion = async (req: Request, res: Response) => {
   try {
     const payload = req.body;
     console.log('[WHATSAPP WEBHOOK RECEIVED] Incoming webhook payload received via router');
+
+    if (isForbiddenCPaaSPayload(payload)) {
+      console.warn('[WhatsApp Router] Discarded legacy CPaaS webhook payload from CRM processing.');
+      return res.status(200).json({
+        success: true,
+        message: 'Legacy CPaaS webhook payload discarded.',
+        processedMessagesCount: 0,
+        updatedStatusesCount: 0,
+      });
+    }
+
     const result = await WhatsAppService.processWebhook(payload);
     return res.status(200).json({
       success: true,

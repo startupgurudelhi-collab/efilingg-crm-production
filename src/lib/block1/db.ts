@@ -18,6 +18,7 @@ import {
 } from './types';
 import { getStorageString, setStorageString } from '../db';
 import { eventBus } from '../eventBus';
+import { isForbiddenCPaaSPhone, isForbiddenCPaaSPayload } from './cpaasFilter';
 
 // Storage Keys
 const KEY_CUSTOMERS = 'efilingg_crm_block1_customers';
@@ -416,9 +417,17 @@ export function getConversations(includeDeleted = false): ConversationV2[] {
     saveItems(KEY_CONVERSATIONS, rawConversations);
   }
 
+  const filteredConversations = rawConversations.filter((c) => {
+    if (c.id === 'DROPPED_CPAAS') return false;
+    if (isForbiddenCPaaSPhone(c.contactNumber)) return false;
+    if (isForbiddenCPaaSPhone(c.mobile)) return false;
+    if (isForbiddenCPaaSPhone((c as any).wabaNumber)) return false;
+    return true;
+  });
+
   const conversations = includeDeleted
-    ? rawConversations
-    : rawConversations.filter((c) => !c.deleted_at);
+    ? filteredConversations
+    : filteredConversations.filter((c) => !c.deleted_at);
 
   // Dynamically calculate and enforce unreadCount based on last_read_at and message read status
   conversations.forEach((conv) => {
@@ -552,7 +561,12 @@ export function markConversationAsRead(conversationId: string): {
 // ==========================================
 
 export function getMessages(conversationId?: string): MessageV2[] {
-  const list = getItems<MessageV2>(KEY_MESSAGES, INITIAL_MESSAGES);
+  const list = getItems<MessageV2>(KEY_MESSAGES, INITIAL_MESSAGES).filter((m) => {
+    if (m.conversationId === 'DROPPED_CPAAS') return false;
+    if (isForbiddenCPaaSPhone(m.senderId)) return false;
+    if (isForbiddenCPaaSPayload(m.rawPayload)) return false;
+    return true;
+  });
   if (conversationId) {
     return list.filter((m) => m.conversationId === conversationId);
   }
@@ -564,6 +578,13 @@ export function getMessageById(id: string): MessageV2 | undefined {
 }
 
 export function saveMessage(msg: MessageV2): MessageV2 {
+  if (
+    msg.conversationId === 'DROPPED_CPAAS' ||
+    isForbiddenCPaaSPhone(msg.senderId) ||
+    isForbiddenCPaaSPayload(msg.rawPayload)
+  ) {
+    return msg;
+  }
   const list = getMessages();
   const idx = list.findIndex((m) => m.id === msg.id);
 

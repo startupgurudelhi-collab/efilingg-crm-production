@@ -20,6 +20,7 @@ import { getMessages as getBlock1Messages } from './src/lib/block1/db';
 import { WhatsAppService } from './src/lib/block1/WhatsAppService';
 import { WhatsAppMediaService } from './src/lib/block1/WhatsAppMediaService';
 import { WhatsAppProviderFactory } from './src/lib/block1/WhatsAppProviderFactory';
+import { isForbiddenCPaaSPayload, isForbiddenCPaaSPhone } from './src/lib/block1/cpaasFilter';
 import { registerServerPersistHandler, crmMemoryStore } from './src/lib/db';
 import { block2Router } from './src/lib/block2/router';
 import { block3Router } from './src/lib/block3/router';
@@ -324,17 +325,9 @@ async function syncAllStoredWebhookLogs(): Promise<void> {
       if (Array.isArray(logs) && logs.length > 0) {
         // Filter out legacy CPaaS webhook logs
         const validMetaLogs = logs.filter((logItem: any) => {
-          const p = logItem.payload || {};
-          const isCPaaS =
-            p.srno ||
-            p.wabaSrno ||
-            p.waba_srno ||
-            p.wabaNumber === '919217666839' ||
-            p.waba_number === '919217666839' ||
-            p.replyFrom ||
-            logItem.sender_number === '919217666839' ||
-            logItem.provider_name === 'LEGOMARK_CPAAS';
-          return !isCPaaS;
+          if (isForbiddenCPaaSPayload(logItem.payload)) return false;
+          if (isForbiddenCPaaSPhone(logItem.sender_number)) return false;
+          return true;
         });
 
         // Update previewStore to only keep clean Meta logs
@@ -347,7 +340,7 @@ async function syncAllStoredWebhookLogs(): Promise<void> {
         // Process in chronological order (oldest to newest)
         const sortedLogs = [...validMetaLogs].reverse();
         for (const logItem of sortedLogs) {
-          if (logItem.payload) {
+          if (logItem.payload && !isForbiddenCPaaSPayload(logItem.payload)) {
             console.log(`\n===================================================================`);
             console.log(`[Webhook Re-Sync Executing] Webhook ID: ${logItem.id} | Sender: ${logItem.sender_number}`);
             await WhatsAppService.processWebhook(logItem.payload);
@@ -364,40 +357,47 @@ async function syncAllStoredWebhookLogs(): Promise<void> {
 function cleanLegacyCPaaSChats(): void {
   try {
     // 1. Clean conversations
-    const rawConvs = previewStore['efilingg_crm_conversations_v2'] || crmMemoryStore['efilingg_crm_conversations_v2'];
-    if (rawConvs) {
-      const convs = JSON.parse(rawConvs);
-      if (Array.isArray(convs)) {
-        const cleanedConvs = convs.filter((c: any) => {
-          const isCPaaS =
-            c.contactNumber === '919217666839' ||
-            c.wabaNumber === '919217666839' ||
-            c.srno === '51736254';
-          return !isCPaaS;
-        });
-        if (cleanedConvs.length !== convs.length) {
-          savePreviewStore('efilingg_crm_conversations_v2', JSON.stringify(cleanedConvs));
-          crmMemoryStore['efilingg_crm_conversations_v2'] = JSON.stringify(cleanedConvs);
-          console.log(`[CPaaS Cleanup] Removed ${convs.length - cleanedConvs.length} legacy CPaaS conversations.`);
+    const convKeys = ['efilingg_crm_conversations_v2', 'efilingg_crm_block1_conversations'];
+    for (const key of convKeys) {
+      const rawConvs = previewStore[key] || crmMemoryStore[key];
+      if (rawConvs) {
+        const convs = JSON.parse(rawConvs);
+        if (Array.isArray(convs)) {
+          const cleanedConvs = convs.filter((c: any) => {
+            if (c.id === 'DROPPED_CPAAS') return false;
+            if (isForbiddenCPaaSPhone(c.contactNumber)) return false;
+            if (isForbiddenCPaaSPhone(c.mobile)) return false;
+            if (isForbiddenCPaaSPhone(c.wabaNumber)) return false;
+            return true;
+          });
+          if (cleanedConvs.length !== convs.length) {
+            savePreviewStore(key, JSON.stringify(cleanedConvs));
+            crmMemoryStore[key] = JSON.stringify(cleanedConvs);
+            console.log(`[CPaaS Cleanup] Removed ${convs.length - cleanedConvs.length} legacy CPaaS conversations from ${key}.`);
+          }
         }
       }
     }
 
     // 2. Clean messages
-    const rawMsgs = previewStore['efilingg_crm_messages_v2'] || crmMemoryStore['efilingg_crm_messages_v2'];
-    if (rawMsgs) {
-      const msgs = JSON.parse(rawMsgs);
-      if (Array.isArray(msgs)) {
-        const cleanedMsgs = msgs.filter((m: any) => {
-          const isCPaaS =
-            m.senderId === '919217666839' ||
-            (m.content && typeof m.content === 'string' && m.content.includes('Legomark CPaaS'));
-          return !isCPaaS;
-        });
-        if (cleanedMsgs.length !== msgs.length) {
-          savePreviewStore('efilingg_crm_messages_v2', JSON.stringify(cleanedMsgs));
-          crmMemoryStore['efilingg_crm_messages_v2'] = JSON.stringify(cleanedMsgs);
-          console.log(`[CPaaS Cleanup] Removed ${msgs.length - cleanedMsgs.length} legacy CPaaS messages.`);
+    const msgKeys = ['efilingg_crm_messages_v2', 'efilingg_crm_block1_messages'];
+    for (const key of msgKeys) {
+      const rawMsgs = previewStore[key] || crmMemoryStore[key];
+      if (rawMsgs) {
+        const msgs = JSON.parse(rawMsgs);
+        if (Array.isArray(msgs)) {
+          const cleanedMsgs = msgs.filter((m: any) => {
+            if (m.conversationId === 'DROPPED_CPAAS') return false;
+            if (isForbiddenCPaaSPhone(m.senderId)) return false;
+            if (isForbiddenCPaaSPayload(m.rawPayload)) return false;
+            if (m.content && typeof m.content === 'string' && (m.content.includes('Legomark CPaaS') || m.content.includes('9217666839'))) return false;
+            return true;
+          });
+          if (cleanedMsgs.length !== msgs.length) {
+            savePreviewStore(key, JSON.stringify(cleanedMsgs));
+            crmMemoryStore[key] = JSON.stringify(cleanedMsgs);
+            console.log(`[CPaaS Cleanup] Removed ${msgs.length - cleanedMsgs.length} legacy CPaaS messages from ${key}.`);
+          }
         }
       }
     }
@@ -1202,18 +1202,7 @@ const handleWebhookIngestionExpress = async (req: any, res: any) => {
   console.log(JSON.stringify(payload, null, 2));
 
   // Detect and discard any legacy CPaaS payloads or CPaaS numbers so they never enter CRM chat
-  const isCPaaS =
-    payload.srno ||
-    payload.wabaSrno ||
-    payload.waba_srno ||
-    payload.wabaNumber === '919217666839' ||
-    payload.waba_number === '919217666839' ||
-    payload.replyFrom ||
-    payload.cpaas ||
-    payload.provider === 'LEGOMARK_CPAAS' ||
-    payload.provider_name === 'LEGOMARK_CPAAS';
-
-  if (isCPaaS) {
+  if (isForbiddenCPaaSPayload(payload)) {
     console.warn('[WhatsApp Webhook V2] Discarded legacy CPaaS webhook payload from CRM processing.');
     return;
   }

@@ -240,11 +240,27 @@ export default function EmployeeDashboard({
   const totalInterested = assignedLeads.filter((l) => l.stage !== 'Not Interested').length;
   const totalFinalDisposed = assignedLeads.filter((l) => l.stage === 'Not Interested').length;
 
-  // Shared Leads (received by current employee)
+  // Shared Leads (received by current employee) - Sorted latest first
   const allTransfers = getTransfers();
-  const sharedLeads = assignedLeads.filter(l => 
-    allTransfers.some(t => t.leadId === l.id && t.transferredTo === currentUserId)
-  );
+  const sharedLeads = assignedLeads
+    .filter(l => 
+      allTransfers.some(t => t.leadId === l.id && t.transferredTo === currentUserId)
+    )
+    .sort((a, b) => {
+      const transA = allTransfers.filter(t => t.leadId === a.id && t.transferredTo === currentUserId).sort((x, y) => new Date(y.transferredAt).getTime() - new Date(x.transferredAt).getTime())[0];
+      const transB = allTransfers.filter(t => t.leadId === b.id && t.transferredTo === currentUserId).sort((x, y) => new Date(y.transferredAt).getTime() - new Date(x.transferredAt).getTime())[0];
+      const timeA = transA ? new Date(transA.transferredAt).getTime() : (a.creationDate ? new Date(a.creationDate).getTime() : 0);
+      const timeB = transB ? new Date(transB.transferredAt).getTime() : (b.creationDate ? new Date(b.creationDate).getTime() : 0);
+      if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) {
+        return timeB - timeA;
+      }
+      const idNumA = parseInt((a.id || '').replace(/\D/g, ''), 10) || 0;
+      const idNumB = parseInt((b.id || '').replace(/\D/g, ''), 10) || 0;
+      if (idNumA !== idNumB) {
+        return idNumB - idNumA;
+      }
+      return (b.id || '').localeCompare(a.id || '');
+    });
 
   const getLeadTransferDetails = (leadId: string) => {
     const transfersForLead = allTransfers.filter(t => t.leadId === leadId && t.transferredTo === currentUserId);
@@ -275,35 +291,49 @@ export default function EmployeeDashboard({
     }
   };
 
-  // Filter associate leads output
-  const filteredMyLeads = assignedLeads.filter((l) => {
-    const matchesSearch =
-      l.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      l.mobile.includes(searchQuery) ||
-      (l.businessName && l.businessName.toLowerCase().includes(searchQuery.toLowerCase()));
+  // Filter associate leads output & sort Latest to Oldest
+  const filteredMyLeads = assignedLeads
+    .filter((l) => {
+      const matchesSearch =
+        l.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        l.mobile.includes(searchQuery) ||
+        (l.businessName && l.businessName.toLowerCase().includes(searchQuery.toLowerCase()));
 
-    const matchesStage = filterStage ? l.stage === filterStage : true;
-    const matchesService = filterService ? l.serviceRequired === filterService : true;
+      const matchesStage = filterStage ? l.stage === filterStage : true;
+      const matchesService = filterService ? l.serviceRequired === filterService : true;
 
-    let matchesDate = true;
-    const leadDateOnly = l.creationDate ? l.creationDate.split('T')[0] : '';
-    if (startDate && leadDateOnly < startDate) matchesDate = false;
-    if (endDate && leadDateOnly > endDate) matchesDate = false;
+      let matchesDate = true;
+      const leadDateOnly = l.creationDate ? l.creationDate.split('T')[0] : '';
+      if (startDate && leadDateOnly < startDate) matchesDate = false;
+      if (endDate && leadDateOnly > endDate) matchesDate = false;
 
-    // Apply the user's category filters mapped correctly
-    let matchesCategory = true;
-    if (categoryFilter === 'INTRESTED') {
-      matchesCategory = l.stage !== 'Not Interested';
-    } else if (categoryFilter === 'FOLLOWUP PENDING') {
-      matchesCategory = l.stage === 'Follow-Up Pending';
-    } else if (categoryFilter === 'FINAL DISPOSED') {
-      matchesCategory = l.stage === 'Not Interested';
-    } else if (categoryFilter === 'CONVERTED') {
-      matchesCategory = l.stage === 'Converted';
-    }
+      // Apply the user's category filters mapped correctly
+      let matchesCategory = true;
+      if (categoryFilter === 'INTRESTED') {
+        matchesCategory = l.stage !== 'Not Interested';
+      } else if (categoryFilter === 'FOLLOWUP PENDING') {
+        matchesCategory = l.stage === 'Follow-Up Pending';
+      } else if (categoryFilter === 'FINAL DISPOSED') {
+        matchesCategory = l.stage === 'Not Interested';
+      } else if (categoryFilter === 'CONVERTED') {
+        matchesCategory = l.stage === 'Converted';
+      }
 
-    return matchesSearch && matchesStage && matchesService && matchesDate && matchesCategory;
-  });
+      return matchesSearch && matchesStage && matchesService && matchesDate && matchesCategory;
+    })
+    .sort((a, b) => {
+      const timeA = a.creationDate ? new Date(a.creationDate).getTime() : 0;
+      const timeB = b.creationDate ? new Date(b.creationDate).getTime() : 0;
+      if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) {
+        return timeB - timeA;
+      }
+      const idNumA = parseInt((a.id || '').replace(/\D/g, ''), 10) || 0;
+      const idNumB = parseInt((b.id || '').replace(/\D/g, ''), 10) || 0;
+      if (idNumA !== idNumB) {
+        return idNumB - idNumA;
+      }
+      return (b.id || '').localeCompare(a.id || '');
+    });
 
   return (
     <div className="space-y-6">

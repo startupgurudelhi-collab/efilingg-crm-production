@@ -908,11 +908,27 @@ export default function AdminDashboard({
     onRefreshData();
   };
 
-  // Shared Leads (received by current user)
+  // Shared Leads (received by current user) - Sorted latest first
   const tlAllTransfers = getTransfers();
-  const tlSharedLeads = leads.filter(l => 
-    l.assignedTo === currentUserId && tlAllTransfers.some(t => t.leadId === l.id && t.transferredTo === currentUserId)
-  );
+  const tlSharedLeads = leads
+    .filter(l => 
+      l.assignedTo === currentUserId && tlAllTransfers.some(t => t.leadId === l.id && t.transferredTo === currentUserId)
+    )
+    .sort((a, b) => {
+      const transA = tlAllTransfers.filter(t => t.leadId === a.id && t.transferredTo === currentUserId).sort((x, y) => new Date(y.transferredAt).getTime() - new Date(x.transferredAt).getTime())[0];
+      const transB = tlAllTransfers.filter(t => t.leadId === b.id && t.transferredTo === currentUserId).sort((x, y) => new Date(y.transferredAt).getTime() - new Date(x.transferredAt).getTime())[0];
+      const timeA = transA ? new Date(transA.transferredAt).getTime() : (a.creationDate ? new Date(a.creationDate).getTime() : 0);
+      const timeB = transB ? new Date(transB.transferredAt).getTime() : (b.creationDate ? new Date(b.creationDate).getTime() : 0);
+      if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) {
+        return timeB - timeA;
+      }
+      const idNumA = parseInt((a.id || '').replace(/\D/g, ''), 10) || 0;
+      const idNumB = parseInt((b.id || '').replace(/\D/g, ''), 10) || 0;
+      if (idNumA !== idNumB) {
+        return idNumB - idNumA;
+      }
+      return (b.id || '').localeCompare(a.id || '');
+    });
 
   const getTLTransferDetails = (leadId: string) => {
     const transfersForLead = tlAllTransfers.filter(t => t.leadId === leadId && t.transferredTo === currentUserId);
@@ -943,39 +959,53 @@ export default function AdminDashboard({
     }
   };
 
-  // Filter leads based on admin choices
-  const filteredLeads = leads.filter((l) => {
-    const matchesSearch =
-      l.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      l.mobile.includes(searchQuery) ||
-      l.businessName.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesStage = filterStage ? l.stage === filterStage : true;
-    const matchesService = filterService ? l.serviceRequired === filterService : true;
-    const matchesEmployee = filterEmployee ? l.assignedTo === filterEmployee : true;
+  // Filter leads based on admin choices & sort Latest to Oldest
+  const filteredLeads = leads
+    .filter((l) => {
+      const matchesSearch =
+        l.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        l.mobile.includes(searchQuery) ||
+        l.businessName.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      const matchesStage = filterStage ? l.stage === filterStage : true;
+      const matchesService = filterService ? l.serviceRequired === filterService : true;
+      const matchesEmployee = filterEmployee ? l.assignedTo === filterEmployee : true;
 
-    let matchesDate = true;
-    const leadDateOnly = l.creationDate ? l.creationDate.split('T')[0] : '';
-    if (startDate) {
-      matchesDate = matchesDate && leadDateOnly >= startDate;
-    }
-    if (endDate) {
-      matchesDate = matchesDate && leadDateOnly <= endDate;
-    }
+      let matchesDate = true;
+      const leadDateOnly = l.creationDate ? l.creationDate.split('T')[0] : '';
+      if (startDate) {
+        matchesDate = matchesDate && leadDateOnly >= startDate;
+      }
+      if (endDate) {
+        matchesDate = matchesDate && leadDateOnly <= endDate;
+      }
 
-    let matchesCategory = true;
-    if (categoryFilter === 'INTRESTED') {
-      matchesCategory = l.stage !== 'Not Interested';
-    } else if (categoryFilter === 'FOLLOWUP PENDING') {
-      matchesCategory = l.stage === 'Follow-Up Pending';
-    } else if (categoryFilter === 'FINAL DISPOSED') {
-      matchesCategory = l.stage === 'Not Interested';
-    } else if (categoryFilter === 'CONVERTED') {
-      matchesCategory = l.stage === 'Converted';
-    }
+      let matchesCategory = true;
+      if (categoryFilter === 'INTRESTED') {
+        matchesCategory = l.stage !== 'Not Interested';
+      } else if (categoryFilter === 'FOLLOWUP PENDING') {
+        matchesCategory = l.stage === 'Follow-Up Pending';
+      } else if (categoryFilter === 'FINAL DISPOSED') {
+        matchesCategory = l.stage === 'Not Interested';
+      } else if (categoryFilter === 'CONVERTED') {
+        matchesCategory = l.stage === 'Converted';
+      }
 
-    return matchesSearch && matchesStage && matchesService && matchesEmployee && matchesDate && matchesCategory;
-  });
+      return matchesSearch && matchesStage && matchesService && matchesEmployee && matchesDate && matchesCategory;
+    })
+    .sort((a, b) => {
+      const timeA = a.creationDate ? new Date(a.creationDate).getTime() : 0;
+      const timeB = b.creationDate ? new Date(b.creationDate).getTime() : 0;
+      if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) {
+        return timeB - timeA;
+      }
+      const idNumA = parseInt((a.id || '').replace(/\D/g, ''), 10) || 0;
+      const idNumB = parseInt((b.id || '').replace(/\D/g, ''), 10) || 0;
+      if (idNumA !== idNumB) {
+        return idNumB - idNumA;
+      }
+      return (b.id || '').localeCompare(a.id || '');
+    });
 
   return (
     <div className="space-y-6">
@@ -1907,9 +1937,23 @@ export default function AdminDashboard({
                 );
               };
 
-              const filteredAuditedLeads = getCategoryFilteredLeads().filter(lead => {
-                return doesLeadMatchSegment(lead.id, auditSegment) && matchSearch(lead);
-              });
+              const filteredAuditedLeads = getCategoryFilteredLeads()
+                .filter(lead => {
+                  return doesLeadMatchSegment(lead.id, auditSegment) && matchSearch(lead);
+                })
+                .sort((a, b) => {
+                  const timeA = a.creationDate ? new Date(a.creationDate).getTime() : 0;
+                  const timeB = b.creationDate ? new Date(b.creationDate).getTime() : 0;
+                  if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) {
+                    return timeB - timeA;
+                  }
+                  const idNumA = parseInt((a.id || '').replace(/\D/g, ''), 10) || 0;
+                  const idNumB = parseInt((b.id || '').replace(/\D/g, ''), 10) || 0;
+                  if (idNumA !== idNumB) {
+                    return idNumB - idNumA;
+                  }
+                  return (b.id || '').localeCompare(a.id || '');
+                });
 
               const displayedAuditedLeads = showAllFilteredAuditedLeads ? filteredAuditedLeads : filteredAuditedLeads.slice(0, 10);
 

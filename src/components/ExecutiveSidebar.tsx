@@ -34,6 +34,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { Employee } from '../types';
+import { hasModuleAccess } from '../lib/permissions';
 import {
   getV2GstClients,
   getV2GstReturnStatuses,
@@ -528,7 +529,7 @@ export default function ExecutiveSidebar({
             )}
           </button>
 
-          {/* ACCORDION 1: TASK COMMAND CENTER */}
+          {/* ACCORDION 1: TASK COMMAND CENTER (ALWAYS ACCESSIBLE TO ALL EMPLOYEES) */}
           <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
             <button
               onClick={() => toggleAccordion('tasks')}
@@ -556,218 +557,234 @@ export default function ExecutiveSidebar({
           </div>
 
           {/* ACCORDION 2: TRADEMARK & COPYRIGHT */}
-          <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
-            <button
-              onClick={() => toggleAccordion('trademark')}
-              className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
-            >
-              <div className="flex items-center gap-1.5">
-                <Award className="h-3.5 w-3.5 text-indigo-500" />
-                {!isCollapsed && <span>TRADEMARK & COPYRIGHT</span>}
-              </div>
-              {!isCollapsed && (
-                <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.trademark ? 'rotate-180' : ''}`} />
-              )}
-            </button>
+          {hasModuleAccess(sessionUser, 'trademark') && (
+            <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
+              <button
+                onClick={() => toggleAccordion('trademark')}
+                className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Award className="h-3.5 w-3.5 text-indigo-500" />
+                  {!isCollapsed && <span>TRADEMARK & COPYRIGHT</span>}
+                </div>
+                {!isCollapsed && (
+                  <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.trademark ? 'rotate-180' : ''}`} />
+                )}
+              </button>
 
-            {(!isCollapsed && openAccordions.trademark) && (
-              <div className="space-y-0.5 pl-2 border-l border-indigo-500/20 ml-2">
-                {renderOpsSubItem('ops_tm_dashboard', 'Trademark Dashboard')}
-                {renderOpsSubItem('ops_tm_applications', 'Trademark Applications', opsCounts.tmTotal)}
-                {renderOpsSubItem('ops_tm_objections', 'Trademark Objection Cases', opsCounts.tmObjected, opsCounts.tmObjected > 0 ? 'red' : 'default')}
-                {renderOpsSubItem('ops_tm_hearings', 'Trademark Hearings', opsCounts.tmHearings, opsCounts.tmHearings > 0 ? 'amber' : 'default')}
-                {renderOpsSubItem('ops_tm_registrations', 'Trademark Registrations', opsCounts.tmApproved, 'green')}
-                {renderOpsSubItem('ops_copyright_registrations', 'Copyright Registrations')}
-              </div>
-            )}
-          </div>
+              {(!isCollapsed && openAccordions.trademark) && (
+                <div className="space-y-0.5 pl-2 border-l border-indigo-500/20 ml-2">
+                  {renderOpsSubItem('ops_tm_dashboard', 'Trademark Dashboard')}
+                  {renderOpsSubItem('ops_tm_applications', 'Trademark Applications', opsCounts.tmTotal)}
+                  {renderOpsSubItem('ops_tm_objections', 'Trademark Objection Cases', opsCounts.tmObjected, opsCounts.tmObjected > 0 ? 'red' : 'default')}
+                  {renderOpsSubItem('ops_tm_hearings', 'Trademark Hearings', opsCounts.tmHearings, opsCounts.tmHearings > 0 ? 'amber' : 'default')}
+                  {renderOpsSubItem('ops_tm_registrations', 'Trademark Registrations', opsCounts.tmApproved, 'green')}
+                  {renderOpsSubItem('ops_copyright_registrations', 'Copyright Registrations')}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ACCORDION 3: GST COMPLIANCE */}
-          <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
-            <button
-              onClick={() => toggleAccordion('gst')}
-              className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
-            >
-              <div className="flex items-center gap-1.5">
-                <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-500" />
-                {!isCollapsed && <span>GST COMPLIANCE</span>}
-              </div>
-              {!isCollapsed && (
-                <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.gst ? 'rotate-180' : ''}`} />
+          {hasModuleAccess(sessionUser, 'gst') && (
+            <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
+              <button
+                onClick={() => toggleAccordion('gst')}
+                className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <div className="flex items-center gap-1.5">
+                  <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-500" />
+                  {!isCollapsed && <span>GST COMPLIANCE</span>}
+                </div>
+                {!isCollapsed && (
+                  <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.gst ? 'rotate-180' : ''}`} />
+                )}
+              </button>
+
+              {(!isCollapsed && openAccordions.gst) && (
+                <div className="space-y-0.5 pl-2 border-l border-emerald-500/20 ml-2">
+                  {renderOpsSubItem('ops_gst_dashboard', 'GST Dashboard')}
+                  {renderOpsSubItem('ops_gst_clients', 'Clients Portfolio', opsCounts.gstClients)}
+                  {renderOpsSubItem('ops_gst_monthly', 'Monthly Returns', opsCounts.gstr1Pending + opsCounts.gstr3bPending, (opsCounts.gstr1Pending + opsCounts.gstr3bPending) > 0 ? 'amber' : 'default')}
+                  {renderOpsSubItem('ops_gst_quarterly', 'Quarterly Returns', opsCounts.gstQuarterly)}
+                  {renderOpsSubItem('ops_gst_reports', 'GST Reports')}
+                  {renderOpsSubItem('ops_gst_settings', 'GST Chrome Extension')}
+                </div>
               )}
-            </button>
+            </div>
+          )}
 
-            {(!isCollapsed && openAccordions.gst) && (
-              <div className="space-y-0.5 pl-2 border-l border-emerald-500/20 ml-2">
-                {renderOpsSubItem('ops_gst_dashboard', 'GST Dashboard')}
-                {renderOpsSubItem('ops_gst_clients', 'Clients Portfolio', opsCounts.gstClients)}
-                {renderOpsSubItem('ops_gst_monthly', 'Monthly Returns', opsCounts.gstr1Pending + opsCounts.gstr3bPending, (opsCounts.gstr1Pending + opsCounts.gstr3bPending) > 0 ? 'amber' : 'default')}
-                {renderOpsSubItem('ops_gst_quarterly', 'Quarterly Returns', opsCounts.gstQuarterly)}
-                {renderOpsSubItem('ops_gst_reports', 'GST Reports')}
-                {renderOpsSubItem('ops_gst_settings', 'GST Chrome Extension')}
-              </div>
-            )}
-          </div>
+          {/* ACCORDION 4: INCOME TAX */}
+          {hasModuleAccess(sessionUser, 'income_tax') && (
+            <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
+              <button
+                onClick={() => toggleAccordion('itr')}
+                className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Shield className="h-3.5 w-3.5 text-blue-500" />
+                  {!isCollapsed && <span>INCOME TAX</span>}
+                </div>
+                {!isCollapsed && (
+                  <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.itr ? 'rotate-180' : ''}`} />
+                )}
+              </button>
 
-          {/* ACCORDION 3: INCOME TAX */}
-          <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
-            <button
-              onClick={() => toggleAccordion('itr')}
-              className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
-            >
-              <div className="flex items-center gap-1.5">
-                <Shield className="h-3.5 w-3.5 text-blue-500" />
-                {!isCollapsed && <span>INCOME TAX</span>}
-              </div>
-              {!isCollapsed && (
-                <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.itr ? 'rotate-180' : ''}`} />
+              {(!isCollapsed && openAccordions.itr) && (
+                <div className="space-y-0.5 pl-2 border-l border-blue-500/20 ml-2">
+                  {renderOpsSubItem('ops_itr_dashboard', 'ITR Dashboard')}
+                  {renderOpsSubItem('ops_itr_individual', 'Individual ITR', opsCounts.itrIndividual)}
+                  {renderOpsSubItem('ops_itr_business', 'Business ITR', opsCounts.itrBusiness)}
+                  {renderOpsSubItem('ops_itr_audit', 'Tax Audit', opsCounts.taxAudits)}
+                </div>
               )}
-            </button>
+            </div>
+          )}
 
-            {(!isCollapsed && openAccordions.itr) && (
-              <div className="space-y-0.5 pl-2 border-l border-blue-500/20 ml-2">
-                {renderOpsSubItem('ops_itr_dashboard', 'ITR Dashboard')}
-                {renderOpsSubItem('ops_itr_individual', 'Individual ITR', opsCounts.itrIndividual)}
-                {renderOpsSubItem('ops_itr_business', 'Business ITR', opsCounts.itrBusiness)}
-                {renderOpsSubItem('ops_itr_audit', 'Tax Audit', opsCounts.taxAudits)}
-              </div>
-            )}
-          </div>
+          {/* ACCORDION 5: MCA & ROC */}
+          {hasModuleAccess(sessionUser, 'mca_roc') && (
+            <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
+              <button
+                onClick={() => toggleAccordion('mca')}
+                className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Building2 className="h-3.5 w-3.5 text-purple-500" />
+                  {!isCollapsed && <span>MCA & ROC</span>}
+                </div>
+                {!isCollapsed && (
+                  <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.mca ? 'rotate-180' : ''}`} />
+                )}
+              </button>
 
-          {/* ACCORDION 4: MCA & ROC */}
-          <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
-            <button
-              onClick={() => toggleAccordion('mca')}
-              className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
-            >
-              <div className="flex items-center gap-1.5">
-                <Building2 className="h-3.5 w-3.5 text-purple-500" />
-                {!isCollapsed && <span>MCA & ROC</span>}
-              </div>
-              {!isCollapsed && (
-                <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.mca ? 'rotate-180' : ''}`} />
-              )}
-            </button>
-
-            {(!isCollapsed && openAccordions.mca) && (
-              <div className="space-y-0.5 pl-2 border-l border-purple-500/20 ml-2">
-                {renderOpsSubItem('ops_mca_dashboard', 'Dashboard', opsCounts.mcaActiveCompanies)}
-                {renderOpsSubItem('ops_mca_pvt_ltd', 'Private Limited Co.', opsCounts.mcaPvtLtd)}
-                {renderOpsSubItem('ops_mca_llp_clients', 'LLP Clients', opsCounts.mcaLlp)}
-                {renderOpsSubItem('ops_mca_section8', 'Section 8 Co.', opsCounts.mcaSection8)}
-                {renderOpsSubItem('ops_mca_kyc', 'DIN KYC Panel', opsCounts.dinKycPending, opsCounts.dinKycPending > 0 ? 'amber' : 'default')}
-                {renderOpsSubItem('ops_mca_post_inc', 'Post Incorporation Compliances', opsCounts.postIncPending, opsCounts.postIncPending > 0 ? 'red' : 'default')}
-                
-                {/* ROC Filing Group with 2 sub-menus: Companies ROC & LLP Compliances */}
-                <div className="pt-1">
-                  <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-purple-600 dark:text-purple-400">
-                    ROC Filing
-                  </div>
-                  <div className="space-y-0.5 pl-1.5 border-l border-purple-500/30 ml-1 mt-0.5">
-                    {renderOpsSubItem('ops_mca_roc_companies', 'Companies ROC', opsCounts.rocCompaniesPending, opsCounts.rocCompaniesPending > 0 ? 'amber' : 'default')}
-                    {renderOpsSubItem('ops_mca_roc_llp', 'LLP Compliances', opsCounts.rocLlpPending, opsCounts.rocLlpPending > 0 ? 'amber' : 'default')}
+              {(!isCollapsed && openAccordions.mca) && (
+                <div className="space-y-0.5 pl-2 border-l border-purple-500/20 ml-2">
+                  {renderOpsSubItem('ops_mca_dashboard', 'Dashboard', opsCounts.mcaActiveCompanies)}
+                  {renderOpsSubItem('ops_mca_pvt_ltd', 'Private Limited Co.', opsCounts.mcaPvtLtd)}
+                  {renderOpsSubItem('ops_mca_llp_clients', 'LLP Clients', opsCounts.mcaLlp)}
+                  {renderOpsSubItem('ops_mca_section8', 'Section 8 Co.', opsCounts.mcaSection8)}
+                  {renderOpsSubItem('ops_mca_kyc', 'DIN KYC Panel', opsCounts.dinKycPending, opsCounts.dinKycPending > 0 ? 'amber' : 'default')}
+                  {renderOpsSubItem('ops_mca_post_inc', 'Post Incorporation Compliances', opsCounts.postIncPending, opsCounts.postIncPending > 0 ? 'red' : 'default')}
+                  
+                  {/* ROC Filing Group with 2 sub-menus: Companies ROC & LLP Compliances */}
+                  <div className="pt-1">
+                    <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-purple-600 dark:text-purple-400">
+                      ROC Filing
+                    </div>
+                    <div className="space-y-0.5 pl-1.5 border-l border-purple-500/30 ml-1 mt-0.5">
+                      {renderOpsSubItem('ops_mca_roc_companies', 'Companies ROC', opsCounts.rocCompaniesPending, opsCounts.rocCompaniesPending > 0 ? 'amber' : 'default')}
+                      {renderOpsSubItem('ops_mca_roc_llp', 'LLP Compliances', opsCounts.rocLlpPending, opsCounts.rocLlpPending > 0 ? 'amber' : 'default')}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
-
-          {/* ACCORDION 5: TRUST & NGO */}
-          <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
-            <button
-              onClick={() => toggleAccordion('trust')}
-              className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
-            >
-              <div className="flex items-center gap-1.5">
-                <Landmark className="h-3.5 w-3.5 text-teal-500" />
-                {!isCollapsed && <span>TRUST & NGO</span>}
-              </div>
-              {!isCollapsed && (
-                <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.trust ? 'rotate-180' : ''}`} />
               )}
-            </button>
+            </div>
+          )}
 
-            {(!isCollapsed && openAccordions.trust) && (
-              <div className="space-y-0.5 pl-2 border-l border-teal-500/20 ml-2">
-                {renderOpsSubItem('ops_trust_dashboard', 'NGO Dashboard', opsCounts.ngoClients)}
-                {renderOpsSubItem('ops_trust_12a_80g', '12A & 80G', opsCounts.count12A)}
-              </div>
-            )}
-          </div>
+          {/* ACCORDION 6: TRUST & NGO */}
+          {hasModuleAccess(sessionUser, 'trust_ngo') && (
+            <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
+              <button
+                onClick={() => toggleAccordion('trust')}
+                className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Landmark className="h-3.5 w-3.5 text-teal-500" />
+                  {!isCollapsed && <span>TRUST & NGO</span>}
+                </div>
+                {!isCollapsed && (
+                  <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.trust ? 'rotate-180' : ''}`} />
+                )}
+              </button>
 
-          {/* ACCORDION 6: DSC MANAGEMENT */}
-          <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
-            <button
-              onClick={() => toggleAccordion('dsc')}
-              className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
-            >
-              <div className="flex items-center gap-1.5">
-                <KeyRound className="h-3.5 w-3.5 text-amber-500" />
-                {!isCollapsed && <span>DSC MANAGEMENT</span>}
-              </div>
-              {!isCollapsed && (
-                <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.dsc ? 'rotate-180' : ''}`} />
+              {(!isCollapsed && openAccordions.trust) && (
+                <div className="space-y-0.5 pl-2 border-l border-teal-500/20 ml-2">
+                  {renderOpsSubItem('ops_trust_dashboard', 'NGO Dashboard', opsCounts.ngoClients)}
+                  {renderOpsSubItem('ops_trust_12a_80g', '12A & 80G', opsCounts.count12A)}
+                </div>
               )}
-            </button>
+            </div>
+          )}
 
-            {(!isCollapsed && openAccordions.dsc) && (
-              <div className="space-y-0.5 pl-2 border-l border-amber-500/20 ml-2">
-                {renderOpsSubItem('ops_dsc_active', 'Active DSC', opsCounts.dscActive)}
-                {renderOpsSubItem('ops_dsc_renewal', 'Renewal Due', opsCounts.dscRenewalDue, opsCounts.dscRenewalDue > 0 ? 'amber' : 'default')}
-                {renderOpsSubItem('ops_dsc_expired', 'Expired DSC', opsCounts.dscExpired, opsCounts.dscExpired > 0 ? 'red' : 'default')}
-              </div>
-            )}
-          </div>
+          {/* ACCORDION 7: DSC MANAGEMENT */}
+          {hasModuleAccess(sessionUser, 'dsc') && (
+            <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
+              <button
+                onClick={() => toggleAccordion('dsc')}
+                className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <div className="flex items-center gap-1.5">
+                  <KeyRound className="h-3.5 w-3.5 text-amber-500" />
+                  {!isCollapsed && <span>DSC MANAGEMENT</span>}
+                </div>
+                {!isCollapsed && (
+                  <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.dsc ? 'rotate-180' : ''}`} />
+                )}
+              </button>
 
-          {/* ACCORDION 7: REGISTRATION & LICENSE */}
-          <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
-            <button
-              onClick={() => toggleAccordion('license')}
-              className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
-            >
-              <div className="flex items-center gap-1.5">
-                <FileCheck2 className="h-3.5 w-3.5 text-cyan-500" />
-                {!isCollapsed && <span>REGISTRATION & LICENSE</span>}
-              </div>
-              {!isCollapsed && (
-                <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.license ? 'rotate-180' : ''}`} />
+              {(!isCollapsed && openAccordions.dsc) && (
+                <div className="space-y-0.5 pl-2 border-l border-amber-500/20 ml-2">
+                  {renderOpsSubItem('ops_dsc_active', 'Active DSC', opsCounts.dscActive)}
+                  {renderOpsSubItem('ops_dsc_renewal', 'Renewal Due', opsCounts.dscRenewalDue, opsCounts.dscRenewalDue > 0 ? 'amber' : 'default')}
+                  {renderOpsSubItem('ops_dsc_expired', 'Expired DSC', opsCounts.dscExpired, opsCounts.dscExpired > 0 ? 'red' : 'default')}
+                </div>
               )}
-            </button>
+            </div>
+          )}
 
-            {(!isCollapsed && openAccordions.license) && (
-              <div className="space-y-0.5 pl-2 border-l border-cyan-500/20 ml-2">
-                {renderOpsSubItem('ops_license_fssai', 'FSSAI', opsCounts.fssaiCount)}
-                {renderOpsSubItem('ops_license_msme', 'MSME', opsCounts.msmeCount)}
-                {renderOpsSubItem('ops_license_iec', 'IEC', opsCounts.iecCount)}
-                {renderOpsSubItem('ops_license_trade', 'Trade License', opsCounts.tradeLicenseCount)}
-                {renderOpsSubItem('ops_license_labour', 'Labour License', opsCounts.labourLicenseCount)}
-              </div>
-            )}
-          </div>
+          {/* ACCORDION 8: REGISTRATION & LICENSE */}
+          {hasModuleAccess(sessionUser, 'registration_license') && (
+            <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
+              <button
+                onClick={() => toggleAccordion('license')}
+                className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <div className="flex items-center gap-1.5">
+                  <FileCheck2 className="h-3.5 w-3.5 text-cyan-500" />
+                  {!isCollapsed && <span>REGISTRATION & LICENSE</span>}
+                </div>
+                {!isCollapsed && (
+                  <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.license ? 'rotate-180' : ''}`} />
+                )}
+              </button>
 
-          {/* ACCORDION 8: CLIENT MASTER */}
-          <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
-            <button
-              onClick={() => toggleAccordion('clients')}
-              className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
-            >
-              <div className="flex items-center gap-1.5">
-                <Users className="h-3.5 w-3.5 text-indigo-500" />
-                {!isCollapsed && <span>CLIENT MASTER</span>}
-              </div>
-              {!isCollapsed && (
-                <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.clients ? 'rotate-180' : ''}`} />
+              {(!isCollapsed && openAccordions.license) && (
+                <div className="space-y-0.5 pl-2 border-l border-cyan-500/20 ml-2">
+                  {renderOpsSubItem('ops_license_fssai', 'FSSAI', opsCounts.fssaiCount)}
+                  {renderOpsSubItem('ops_license_msme', 'MSME', opsCounts.msmeCount)}
+                  {renderOpsSubItem('ops_license_iec', 'IEC', opsCounts.iecCount)}
+                  {renderOpsSubItem('ops_license_trade', 'Trade License', opsCounts.tradeLicenseCount)}
+                  {renderOpsSubItem('ops_license_labour', 'Labour License', opsCounts.labourLicenseCount)}
+                </div>
               )}
-            </button>
+            </div>
+          )}
 
-            {(!isCollapsed && openAccordions.clients) && (
-              <div className="space-y-0.5 pl-2 border-l border-indigo-500/20 ml-2">
-                {renderOpsSubItem('ops_clients_master', 'Client Master', opsCounts.totalClients)}
-                {renderOpsSubItem('ops_clients_allocation', 'Allocation Desk', opsCounts.unmappedClients)}
-                {renderOpsSubItem('ops_clients_mapping', 'Service Mapping')}
-              </div>
-            )}
-          </div>
+          {/* ACCORDION 9: CLIENT MASTER */}
+          {hasModuleAccess(sessionUser, 'client_master') && (
+            <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
+              <button
+                onClick={() => toggleAccordion('clients')}
+                className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5 text-indigo-500" />
+                  {!isCollapsed && <span>CLIENT MASTER</span>}
+                </div>
+                {!isCollapsed && (
+                  <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.clients ? 'rotate-180' : ''}`} />
+                )}
+              </button>
+
+              {(!isCollapsed && openAccordions.clients) && (
+                <div className="space-y-0.5 pl-2 border-l border-indigo-500/20 ml-2">
+                  {renderOpsSubItem('ops_clients_master', 'Client Master', opsCounts.totalClients)}
+                  {renderOpsSubItem('ops_clients_allocation', 'Allocation Desk', opsCounts.unmappedClients)}
+                  {renderOpsSubItem('ops_clients_mapping', 'Service Mapping')}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         /* STANDARD MODULES (SALES, SETTINGS, HR) */

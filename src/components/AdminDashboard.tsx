@@ -48,7 +48,8 @@ import {
   saveResignationRequests,
   formatLeadMobileNumberForExport
 } from '../lib/db';
-import { Employee, Lead, FollowUp, Proposal, ActivityLog, LeadStage, EmployeeRole, TeamLeaderMapping, LeaveRequest, HistoricalPayroll, ResignationRequest } from '../types';
+import { Employee, Lead, FollowUp, Proposal, ActivityLog, LeadStage, EmployeeRole, TeamLeaderMapping, LeaveRequest, HistoricalPayroll, ResignationRequest, AppModuleId, ALL_APP_MODULES } from '../types';
+import { ALL_MODULE_IDS, DEFAULT_OPS_MODULES, DEFAULT_SALES_MODULES, getEmployeeAccessibleModules } from '../lib/permissions';
 import ServicesManager from './ServicesManager';
 import ProposalTemplateEditor from './ProposalTemplateEditor';
 import AiSalesAgentContainer from './aiAgent/AiSalesAgentContainer';
@@ -85,7 +86,11 @@ import {
   Lock,
   Unlock,
   History,
-  RotateCcw
+  RotateCcw,
+  Layers,
+  ListTodo,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import ImportExportWizard from './ImportExportWizard';
 import RecoveryCenter from './RecoveryCenter';
@@ -185,6 +190,7 @@ export default function AdminDashboard({
   const [empOtherFixedAllowance, setEmpOtherFixedAllowance] = useState<number | string>('');
   const [empIncentivePerConversion, setEmpIncentivePerConversion] = useState<number | string>('');
   const [empAddress, setEmpAddress] = useState('');
+  const [empAccessibleModules, setEmpAccessibleModules] = useState<AppModuleId[]>([...DEFAULT_SALES_MODULES]);
 
   // Editing state trackers
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -770,7 +776,8 @@ export default function AdminDashboard({
       photo: empPhoto,
       password: 'efilingg@123',
       isPasswordChanged: false,
-      address: empAddress
+      address: empAddress,
+      accessibleModules: empRole === 'admin' ? ALL_MODULE_IDS : empAccessibleModules
     }, currentUserId);
 
     // Reset Form
@@ -788,6 +795,7 @@ export default function AdminDashboard({
     setEmpIncentivePerConversion('');
     setEmpPhoto('');
     setEmpAddress('');
+    setEmpAccessibleModules([...DEFAULT_SALES_MODULES]);
     setShowAddEmp(false);
     
     // Refresh
@@ -1560,27 +1568,127 @@ export default function AdminDashboard({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-500">Workspace Authority Role</label>
+                  <label className="text-[10px] uppercase font-bold text-slate-500">Account Authority Role</label>
                   <select
                     value={empRole}
-                    onChange={(e) => setEmpRole(e.target.value as EmployeeRole)}
+                    onChange={(e) => {
+                      const newRole = e.target.value as EmployeeRole;
+                      setEmpRole(newRole);
+                      if (newRole === 'admin') {
+                        setEmpAccessibleModules([...ALL_MODULE_IDS]);
+                      }
+                    }}
                     className="w-full p-2 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-slate-100"
                   >
-                    <option value="employee">Filing Associate Desk (Employee Role)</option>
-                    <option value="team_leader">Team Leader Management (Middle Tier)</option>
-                    <option value="admin">Master Administrator Gateway (Admin Role)</option>
+                    <option value="employee">Employee Account (Module-Specific Access)</option>
+                    <option value="admin">Master Administrator Gateway (Full Access)</option>
                   </select>
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] uppercase font-bold text-indigo-650">Workable Department</label>
                   <select
                     value={empDepartment}
-                    onChange={(e) => setEmpDepartment(e.target.value)}
+                    onChange={(e) => {
+                      const dept = e.target.value;
+                      setEmpDepartment(dept);
+                      if (empRole !== 'admin') {
+                        if (dept === 'OPERATION MANAGEMENT') {
+                          setEmpAccessibleModules([...DEFAULT_OPS_MODULES]);
+                        } else {
+                          setEmpAccessibleModules([...DEFAULT_SALES_MODULES]);
+                        }
+                      }
+                    }}
                     className="w-full p-2 bg-white dark:bg-slate-900 border border-indigo-200 dark:border-slate-800 rounded-xl text-xs text-indigo-700 dark:text-indigo-400 font-bold"
                   >
                     <option value="SALES & MARKETING">SALES & MARKETING</option>
                     <option value="OPERATION MANAGEMENT">OPERATION MANAGEMENT</option>
                   </select>
+                </div>
+
+                {/* Module Permissions Checkbox Grid in New Employee Form */}
+                <div className="col-span-2 space-y-3 p-4 bg-slate-50 dark:bg-slate-950/80 rounded-2xl border border-indigo-200 dark:border-indigo-900/40">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+                    <div>
+                      <h4 className="font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider text-xs flex items-center gap-1.5">
+                        <Layers className="h-4 w-4" />
+                        <span>Module & Dashboard Permissions</span>
+                      </h4>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Tick the modules/dashboards this employee will have access to.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEmpAccessibleModules([...ALL_MODULE_IDS])}
+                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-950 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 transition cursor-pointer"
+                      >
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEmpAccessibleModules([])}
+                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition cursor-pointer"
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Task Manager Always Active Banner */}
+                  <div className="flex items-center justify-between p-2.5 px-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300">
+                    <div className="flex items-center gap-2">
+                      <ListTodo className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                      <span className="font-bold text-[11px]">Task Manager (Default for All Employees)</span>
+                    </div>
+                    <span className="text-[9.5px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                      Always Active
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                    {ALL_APP_MODULES.map((mod) => {
+                      const isSelected = empAccessibleModules.includes(mod.id) || empRole === 'admin';
+                      return (
+                        <div
+                          key={mod.id}
+                          onClick={() => {
+                            if (empRole !== 'admin') {
+                              setEmpAccessibleModules(prev =>
+                                prev.includes(mod.id) ? prev.filter(id => id !== mod.id) : [...prev, mod.id]
+                              );
+                            }
+                          }}
+                          className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-start gap-2.5 select-none ${
+                            isSelected
+                              ? 'bg-white dark:bg-slate-900 border-indigo-500 dark:border-indigo-500/80 shadow-xs ring-1 ring-indigo-500/30'
+                              : 'bg-slate-100/60 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 opacity-60 hover:opacity-100'
+                          }`}
+                        >
+                          <div className="pt-0.5">
+                            {isSelected ? (
+                              <CheckSquare className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                            ) : (
+                              <Square className="h-4 w-4 text-slate-400 shrink-0" />
+                            )}
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <span className={`font-black text-[11.5px] leading-tight block truncate ${
+                              isSelected ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'
+                            }`}>
+                              {mod.label}
+                            </span>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1 leading-snug">
+                              {mod.description}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div className="space-y-1">

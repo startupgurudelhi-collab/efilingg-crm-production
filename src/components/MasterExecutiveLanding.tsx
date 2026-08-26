@@ -26,6 +26,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { Employee, Lead, FollowUp, Proposal, ActivityLog } from '../types';
+import { hasModuleAccess } from '../lib/permissions';
 import { 
   getV2GstClients,
   getV2GstReturnStatuses,
@@ -274,241 +275,257 @@ export default function MasterExecutiveLanding({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-3.5">
           
           {/* MODULE 1: SALES & MARKETING */}
-          <div
-            onClick={() => onNavigateModule('sales')}
-            className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3.5 sm:p-4 shadow-md hover:shadow-xl transition-all duration-200 hover:-translate-y-0.5 cursor-pointer flex flex-col justify-between"
-          >
-            {/* Top Accent Gradient */}
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-400" />
+          {hasModuleAccess(sessionUser, 'sales_marketing') && (
+            <div
+              onClick={() => onNavigateModule('sales')}
+              className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3.5 sm:p-4 shadow-md hover:shadow-xl transition-all duration-200 hover:-translate-y-0.5 cursor-pointer flex flex-col justify-between"
+            >
+              {/* Top Accent Gradient */}
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-400" />
 
-            <div className="space-y-2.5">
-              {/* Icon & Badge */}
-              <div className="flex items-center justify-between">
-                <div className="h-9 w-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400 group-hover:scale-105 transition-transform">
-                  <TrendingUp className="h-4.5 w-4.5" />
+              <div className="space-y-2.5">
+                {/* Icon & Badge */}
+                <div className="flex items-center justify-between">
+                  <div className="h-9 w-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400 group-hover:scale-105 transition-transform">
+                    <TrendingUp className="h-4.5 w-4.5" />
+                  </div>
+                  <span className="text-[9px] font-bold font-mono px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                    MODULE 1
+                  </span>
                 </div>
-                <span className="text-[9px] font-bold font-mono px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                  MODULE 1
-                </span>
+
+                {/* Title & Description */}
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors leading-tight">
+                    SALES & MARKETING
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug line-clamp-2">
+                    Lead Pipeline, Followups, Proposals, Service Catalogue, Proposal Designer, AI Qualified Leads
+                  </p>
+                </div>
+
+                {/* Lightweight SVG Visual Accent (Compact) */}
+                <div className="h-14 w-full rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800/80 p-1 overflow-hidden flex items-center justify-center">
+                  <AnalyticsIllustration className="h-full w-auto" />
+                </div>
+
+                {/* Statistics Grid */}
+                <div className="grid grid-cols-2 gap-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                  <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Total Leads</span>
+                    <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-200 font-mono leading-tight">{totalLeads}</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Converted</span>
+                    <span className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 font-mono leading-tight">{convertedLeadsCount}</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Conversion</span>
+                    <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-200 font-mono leading-tight">{conversionRate}%</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Pending F/U</span>
+                    <span className="text-xs sm:text-sm font-black text-amber-500 font-mono leading-tight">{pendingFollowupsCount}</span>
+                  </div>
+                </div>
               </div>
 
-              {/* Title & Description */}
-              <div>
-                <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors leading-tight">
-                  SALES & MARKETING
-                </h3>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug line-clamp-2">
-                  Lead Pipeline, Followups, Proposals, Service Catalogue, Proposal Designer, AI Qualified Leads
-                </p>
-              </div>
-
-              {/* Lightweight SVG Visual Accent (Compact) */}
-              <div className="h-14 w-full rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800/80 p-1 overflow-hidden flex items-center justify-center">
-                <AnalyticsIllustration className="h-full w-auto" />
-              </div>
-
-              {/* Statistics Grid */}
-              <div className="grid grid-cols-2 gap-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
-                <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
-                  <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Total Leads</span>
-                  <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-200 font-mono leading-tight">{totalLeads}</span>
-                </div>
-                <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
-                  <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Converted</span>
-                  <span className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 font-mono leading-tight">{convertedLeadsCount}</span>
-                </div>
-                <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
-                  <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Conversion</span>
-                  <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-200 font-mono leading-tight">{conversionRate}%</span>
-                </div>
-                <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
-                  <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Pending F/U</span>
-                  <span className="text-xs sm:text-sm font-black text-amber-500 font-mono leading-tight">{pendingFollowupsCount}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* CTA Button */}
-            <div className="pt-2 mt-1">
-              <div className="w-full py-1.5 px-3 rounded-lg bg-emerald-600 group-hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center justify-between shadow-xs transition-all">
-                <span>Open Sales Command</span>
-                <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
-              </div>
-            </div>
-          </div>
-
-          {/* MODULE 2: OPERATION MANAGEMENT */}
-          <div
-            onClick={() => onNavigateModule('ops')}
-            className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3.5 sm:p-4 shadow-md hover:shadow-xl transition-all duration-200 hover:-translate-y-0.5 cursor-pointer flex flex-col justify-between"
-          >
-            {/* Top Accent Gradient */}
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 to-blue-400" />
-
-            <div className="space-y-2.5">
-              {/* Icon & Badge */}
-              <div className="flex items-center justify-between">
-                <div className="h-9 w-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 group-hover:scale-105 transition-transform">
-                  <Briefcase className="h-4.5 w-4.5" />
-                </div>
-                <span className="text-[9px] font-bold font-mono px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                  MODULE 2
-                </span>
-              </div>
-
-              {/* Title & Description */}
-              <div>
-                <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors leading-tight">
-                  OPERATION MANAGEMENT
-                </h3>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug line-clamp-2">
-                  GST Filings, ITR Operations, MCA Compliance, Tasks Processing, Delivery Tracking
-                </p>
-              </div>
-
-              {/* Lightweight SVG Visual Accent (Compact) */}
-              <div className="h-14 w-full rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800/80 p-1 overflow-hidden flex items-center justify-center">
-                <BusinessOperationsIllustration className="h-full w-auto" />
-              </div>
-
-              {/* Statistics Grid */}
-              <div className="grid grid-cols-2 gap-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
-                <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
-                  <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Active Clients</span>
-                  <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-200 font-mono leading-tight">{gstClients.length + mcaClients.length + itrClients.length}</span>
-                </div>
-                <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
-                  <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Pending Ops</span>
-                  <span className="text-xs sm:text-sm font-black text-rose-500 font-mono leading-tight">{totalPendingOps}</span>
-                </div>
-                <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
-                  <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Completed</span>
-                  <span className="text-xs sm:text-sm font-black text-indigo-600 dark:text-indigo-400 font-mono leading-tight">{completedOpsCount}</span>
-                </div>
-                <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
-                  <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Due Today</span>
-                  <span className="text-xs sm:text-sm font-black text-amber-500 font-mono leading-tight">{todayDueCount}</span>
+              {/* CTA Button */}
+              <div className="pt-2 mt-1">
+                <div className="w-full py-1.5 px-3 rounded-lg bg-emerald-600 group-hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center justify-between shadow-xs transition-all">
+                  <span>Open Sales Command</span>
+                  <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
                 </div>
               </div>
             </div>
+          )}
 
-            {/* CTA Button */}
-            <div className="pt-2 mt-1">
-              <div className="w-full py-1.5 px-3 rounded-lg bg-indigo-600 group-hover:bg-indigo-500 text-white text-[11px] font-bold flex items-center justify-between shadow-xs transition-all">
-                <span>Open Operations Center</span>
-                <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
+          {/* MODULE 2: OPERATION MANAGEMENT (VISIBLE IF ANY OPS MODULE OR TASK COMMAND CENTER IS ACTIVE) */}
+          {(sessionUser.role === 'admin' ||
+            hasModuleAccess(sessionUser, 'gst') ||
+            hasModuleAccess(sessionUser, 'mca_roc') ||
+            hasModuleAccess(sessionUser, 'income_tax') ||
+            hasModuleAccess(sessionUser, 'trademark') ||
+            hasModuleAccess(sessionUser, 'trust_ngo') ||
+            hasModuleAccess(sessionUser, 'dsc') ||
+            hasModuleAccess(sessionUser, 'registration_license') ||
+            hasModuleAccess(sessionUser, 'client_master')) && (
+            <div
+              onClick={() => onNavigateModule('ops')}
+              className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3.5 sm:p-4 shadow-md hover:shadow-xl transition-all duration-200 hover:-translate-y-0.5 cursor-pointer flex flex-col justify-between"
+            >
+              {/* Top Accent Gradient */}
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 to-blue-400" />
+
+              <div className="space-y-2.5">
+                {/* Icon & Badge */}
+                <div className="flex items-center justify-between">
+                  <div className="h-9 w-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 group-hover:scale-105 transition-transform">
+                    <Briefcase className="h-4.5 w-4.5" />
+                  </div>
+                  <span className="text-[9px] font-bold font-mono px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                    MODULE 2
+                  </span>
+                </div>
+
+                {/* Title & Description */}
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors leading-tight">
+                    OPERATION MANAGEMENT
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug line-clamp-2">
+                    GST Filings, ITR Operations, MCA Compliance, Tasks Processing, Delivery Tracking
+                  </p>
+                </div>
+
+                {/* Lightweight SVG Visual Accent (Compact) */}
+                <div className="h-14 w-full rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800/80 p-1 overflow-hidden flex items-center justify-center">
+                  <BusinessOperationsIllustration className="h-full w-auto" />
+                </div>
+
+                {/* Statistics Grid */}
+                <div className="grid grid-cols-2 gap-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                  <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Active Clients</span>
+                    <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-200 font-mono leading-tight">{gstClients.length + mcaClients.length + itrClients.length}</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Pending Ops</span>
+                    <span className="text-xs sm:text-sm font-black text-rose-500 font-mono leading-tight">{totalPendingOps}</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Completed</span>
+                    <span className="text-xs sm:text-sm font-black text-indigo-600 dark:text-indigo-400 font-mono leading-tight">{completedOpsCount}</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Due Today</span>
+                    <span className="text-xs sm:text-sm font-black text-amber-500 font-mono leading-tight">{todayDueCount}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* CTA Button */}
+              <div className="pt-2 mt-1">
+                <div className="w-full py-1.5 px-3 rounded-lg bg-indigo-600 group-hover:bg-indigo-500 text-white text-[11px] font-bold flex items-center justify-between shadow-xs transition-all">
+                  <span>Open Operations Center</span>
+                  <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* MODULE 3: SETTINGS & CONTROL CENTER */}
-          <div
-            onClick={() => onNavigateModule('settings')}
-            className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3.5 sm:p-4 shadow-md hover:shadow-xl transition-all duration-200 hover:-translate-y-0.5 cursor-pointer flex flex-col justify-between"
-          >
-            {/* Top Accent Gradient */}
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-cyan-400" />
+          {hasModuleAccess(sessionUser, 'settings_control') && (
+            <div
+              onClick={() => onNavigateModule('settings')}
+              className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3.5 sm:p-4 shadow-md hover:shadow-xl transition-all duration-200 hover:-translate-y-0.5 cursor-pointer flex flex-col justify-between"
+            >
+              {/* Top Accent Gradient */}
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-cyan-400" />
 
-            <div className="space-y-2.5">
-              {/* Icon & Badge */}
-              <div className="flex items-center justify-between">
-                <div className="h-9 w-9 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/50 flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:scale-105 transition-transform">
-                  <Shield className="h-4.5 w-4.5" />
+              <div className="space-y-2.5">
+                {/* Icon & Badge */}
+                <div className="flex items-center justify-between">
+                  <div className="h-9 w-9 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/50 flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:scale-105 transition-transform">
+                    <Shield className="h-4.5 w-4.5" />
+                  </div>
+                  <span className="text-[9px] font-bold font-mono px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                    MODULE 3
+                  </span>
                 </div>
-                <span className="text-[9px] font-bold font-mono px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                  MODULE 3
-                </span>
+
+                {/* Title & Description */}
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors leading-tight">
+                    SETTINGS & CONTROL CENTER
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug line-clamp-2">
+                    System Controls, AI Sales Agent, Recovery Center, WhatsApp Webhook, Security Telemetry
+                  </p>
+                </div>
+
+                {/* Lightweight SVG Visual Accent (Compact) */}
+                <div className="h-14 w-full rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800/80 p-1 overflow-hidden flex items-center justify-center">
+                  <ComplianceSecurityIllustration className="h-full w-auto" />
+                </div>
+
+                {/* Sub-items list tags */}
+                <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                  <div className="flex flex-wrap gap-1">
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">AI Sales Agent</span>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">WhatsApp</span>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">Recovery</span>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">Security</span>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300">Health</span>
+                  </div>
+                </div>
               </div>
 
-              {/* Title & Description */}
-              <div>
-                <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors leading-tight">
-                  SETTINGS & CONTROL CENTER
-                </h3>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug line-clamp-2">
-                  System Controls, AI Sales Agent, Recovery Center, WhatsApp Webhook, Security Telemetry
-                </p>
-              </div>
-
-              {/* Lightweight SVG Visual Accent (Compact) */}
-              <div className="h-14 w-full rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800/80 p-1 overflow-hidden flex items-center justify-center">
-                <ComplianceSecurityIllustration className="h-full w-auto" />
-              </div>
-
-              {/* Sub-items list tags */}
-              <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800">
-                <div className="flex flex-wrap gap-1">
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">AI Sales Agent</span>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">WhatsApp</span>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">Recovery</span>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">Security</span>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300">Health</span>
+              {/* CTA Button */}
+              <div className="pt-2 mt-1">
+                <div className="w-full py-1.5 px-3 rounded-lg bg-blue-600 group-hover:bg-blue-500 text-white text-[11px] font-bold flex items-center justify-between shadow-xs transition-all">
+                  <span>Open Control Center</span>
+                  <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
                 </div>
               </div>
             </div>
-
-            {/* CTA Button */}
-            <div className="pt-2 mt-1">
-              <div className="w-full py-1.5 px-3 rounded-lg bg-blue-600 group-hover:bg-blue-500 text-white text-[11px] font-bold flex items-center justify-between shadow-xs transition-all">
-                <span>Open Control Center</span>
-                <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
-              </div>
-            </div>
-          </div>
+          )}
 
           {/* MODULE 4: HR & WORKFORCE MANAGEMENT */}
-          <div
-            onClick={() => onNavigateModule('hr')}
-            className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3.5 sm:p-4 shadow-md hover:shadow-xl transition-all duration-200 hover:-translate-y-0.5 cursor-pointer flex flex-col justify-between"
-          >
-            {/* Top Accent Gradient */}
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-500 to-pink-400" />
+          {hasModuleAccess(sessionUser, 'hr_workforce') && (
+            <div
+              onClick={() => onNavigateModule('hr')}
+              className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3.5 sm:p-4 shadow-md hover:shadow-xl transition-all duration-200 hover:-translate-y-0.5 cursor-pointer flex flex-col justify-between"
+            >
+              {/* Top Accent Gradient */}
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-500 to-pink-400" />
 
-            <div className="space-y-2.5">
-              {/* Icon & Badge */}
-              <div className="flex items-center justify-between">
-                <div className="h-9 w-9 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/50 flex items-center justify-center text-purple-600 dark:text-purple-400 group-hover:scale-105 transition-transform">
-                  <Users className="h-4.5 w-4.5" />
+              <div className="space-y-2.5">
+                {/* Icon & Badge */}
+                <div className="flex items-center justify-between">
+                  <div className="h-9 w-9 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/50 flex items-center justify-center text-purple-600 dark:text-purple-400 group-hover:scale-105 transition-transform">
+                    <Users className="h-4.5 w-4.5" />
+                  </div>
+                  <span className="text-[9px] font-bold font-mono px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                    MODULE 4
+                  </span>
                 </div>
-                <span className="text-[9px] font-bold font-mono px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                  MODULE 4
-                </span>
+
+                {/* Title & Description */}
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors leading-tight">
+                    HR & WORKFORCE
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug line-clamp-2">
+                    Employees Roster, Payroll Approvals, Leaves, Attendance Audit & Time Logs
+                  </p>
+                </div>
+
+                {/* Lightweight SVG Visual Accent (Compact) */}
+                <div className="h-14 w-full rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800/80 p-1 overflow-hidden flex items-center justify-center">
+                  <TeamCollaborationIllustration className="h-full w-auto" />
+                </div>
+
+                {/* Sub-items list tags */}
+                <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                  <div className="flex flex-wrap gap-1">
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">Staff ({totalEmployees})</span>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">Payroll</span>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">Attendance</span>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">Leave Requests</span>
+                  </div>
+                </div>
               </div>
 
-              {/* Title & Description */}
-              <div>
-                <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors leading-tight">
-                  HR & WORKFORCE
-                </h3>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug line-clamp-2">
-                  Employees Roster, Payroll Approvals, Leaves, Attendance Audit & Time Logs
-                </p>
-              </div>
-
-              {/* Lightweight SVG Visual Accent (Compact) */}
-              <div className="h-14 w-full rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800/80 p-1 overflow-hidden flex items-center justify-center">
-                <TeamCollaborationIllustration className="h-full w-auto" />
-              </div>
-
-              {/* Sub-items list tags */}
-              <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800">
-                <div className="flex flex-wrap gap-1">
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">Staff ({totalEmployees})</span>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">Payroll</span>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">Attendance</span>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">Leave Requests</span>
+              {/* CTA Button */}
+              <div className="pt-2 mt-1">
+                <div className="w-full py-1.5 px-3 rounded-lg bg-purple-600 group-hover:bg-purple-500 text-white text-[11px] font-bold flex items-center justify-between shadow-xs transition-all">
+                  <span>Open HR Center</span>
+                  <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
                 </div>
               </div>
             </div>
-
-            {/* CTA Button */}
-            <div className="pt-2 mt-1">
-              <div className="w-full py-1.5 px-3 rounded-lg bg-purple-600 group-hover:bg-purple-500 text-white text-[11px] font-bold flex items-center justify-between shadow-xs transition-all">
-                <span>Open HR Center</span>
-                <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
-              </div>
-            </div>
-          </div>
+          )}
 
         </div>
       </section>

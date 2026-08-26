@@ -6,6 +6,119 @@
 export type EmployeeRole = 'admin' | 'employee' | 'team_leader';
 export type EmployeeStatus = 'active' | 'disabled';
 
+export type AppModuleId =
+  | 'sales_marketing'       // Sales & Marketing
+  | 'gst'                   // GST
+  | 'mca_roc'               // MCA & ROC
+  | 'income_tax'            // INCOME TAX RETURN
+  | 'trademark'             // TRADEMARK & COPYRIGHT
+  | 'trust_ngo'             // TRUST AND NGO
+  | 'dsc'                   // DSC MANAGEMENT
+  | 'registration_license'  // REGISTRATION & LICENSE
+  | 'client_master'         // CLIENT MASTER
+  | 'hr_workforce'          // HR & WORKFORCE
+  | 'settings_control';     // SETTING & CONTROLL CENTER
+
+export interface AppModuleInfo {
+  id: AppModuleId;
+  label: string;
+  category: 'Sales' | 'Operations' | 'Management' | 'Admin';
+  description: string;
+  shortTitle: string;
+  defaultIcon: string;
+}
+
+export const ALL_APP_MODULES: AppModuleInfo[] = [
+  {
+    id: 'sales_marketing',
+    label: 'Sales & Marketing',
+    category: 'Sales',
+    description: 'Leads Pipeline, Followups, Proposals, AI Sales & Rate Master',
+    shortTitle: 'Sales Desk',
+    defaultIcon: 'TrendingUp'
+  },
+  {
+    id: 'gst',
+    label: 'GST',
+    category: 'Operations',
+    description: 'GSTR-1, GSTR-3B, Monthly & Quarterly Returns, Client Portfolio',
+    shortTitle: 'GST Compliance',
+    defaultIcon: 'FileSpreadsheet'
+  },
+  {
+    id: 'mca_roc',
+    label: 'MCA & ROC',
+    category: 'Operations',
+    description: 'Pvt Ltd, LLP, Section 8, DIN KYC, Post Inc & Annual ROC (AOC-4/MGT-7)',
+    shortTitle: 'MCA & ROC',
+    defaultIcon: 'Building2'
+  },
+  {
+    id: 'income_tax',
+    label: 'INCOME TAX RETURN',
+    category: 'Operations',
+    description: 'Individual & Business ITR, Direct Tax Clearance & Tax Audit 3CD',
+    shortTitle: 'Income Tax',
+    defaultIcon: 'Shield'
+  },
+  {
+    id: 'trademark',
+    label: 'TRADEMARK & COPYRIGHT',
+    category: 'Operations',
+    description: 'Applications, Objections, Hearings, Registrations & Copyrights',
+    shortTitle: 'Trademark & IP',
+    defaultIcon: 'Award'
+  },
+  {
+    id: 'trust_ngo',
+    label: 'TRUST AND NGO',
+    category: 'Operations',
+    description: 'NGOs & Trusts, Section 12A & 80G, Form 10B & 10BB Audits',
+    shortTitle: 'Trust & NGO',
+    defaultIcon: 'Landmark'
+  },
+  {
+    id: 'dsc',
+    label: 'DSC MANAGEMENT',
+    category: 'Operations',
+    description: 'Class 3 Digital Signatures, Renewals (<30 Days) & Expired Tokens',
+    shortTitle: 'DSC Management',
+    defaultIcon: 'KeyRound'
+  },
+  {
+    id: 'registration_license',
+    label: 'REGISTRATION & LICENSE',
+    category: 'Operations',
+    description: 'FSSAI, MSME / Udyam, IEC, Trade & Labour Statutory Licenses',
+    shortTitle: 'Statutory Licenses',
+    defaultIcon: 'FileCheck2'
+  },
+  {
+    id: 'client_master',
+    label: 'CLIENT MASTER',
+    category: 'Operations',
+    description: 'Central Client Directory, Allocation Desk & Service Mapping',
+    shortTitle: 'Client Master',
+    defaultIcon: 'Users'
+  },
+  {
+    id: 'hr_workforce',
+    label: 'HR & WORKFORCE',
+    category: 'Management',
+    description: 'Employees Roster, Payroll Approvals, Leaves & Attendance Logs',
+    shortTitle: 'HR & Workforce',
+    defaultIcon: 'Users'
+  },
+  {
+    id: 'settings_control',
+    label: 'SETTING & CONTROLL CENTER',
+    category: 'Admin',
+    description: 'Security Telemetry, AI Sales Agent, Recovery Center & WhatsApp Gateway',
+    shortTitle: 'Control Center',
+    defaultIcon: 'ShieldCheck'
+  }
+];
+
 export interface VersionedRecord {
   version?: number;
   updatedAt?: string;
@@ -42,6 +155,9 @@ export interface Employee extends VersionedRecord {
   exitDate?: string;
   exitReason?: string;
   exitStatus?: 'resigned' | 'terminated' | 'none';
+
+  // Module Access Control (Task Manager is enabled for all employees by default)
+  accessibleModules?: AppModuleId[];
 }
 
 export type LeadStage =

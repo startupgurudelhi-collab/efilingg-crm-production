@@ -404,7 +404,7 @@ function AppContent() {
       <header className="sticky top-0 z-40 w-full bg-white dark:bg-slate-900 border-b border-slate-150 dark:border-slate-850 shadow-xs px-4 sm:px-6 py-2 flex items-center justify-between">
         <div className="flex items-center space-x-2 animate-fade-in">
           {/* Mobile sidebar hamburger */}
-          {isMasterOrTL && (
+          {adminNavTarget !== 'landing' && (
             <button
               onClick={() => setIsSidebarMobileOpen(true)}
               className="md:hidden p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 transition-colors cursor-pointer"
@@ -494,118 +494,39 @@ function AppContent() {
         </div>
       </header>
 
-      {/* Main Core View Area with Sidebar for Admin / Team Leader */}
+      {/* Main Core View Area with Sidebar for all authenticated users */}
       <div className="flex-1 flex w-full">
-        {isMasterOrTL ? (
-          <>
-            {/* Enterprise Isolated Left Sidebar (Only visible when inside a module) */}
-            {adminNavTarget !== 'landing' && (
-              <ExecutiveSidebar
-                activeModule={getModuleForTarget(adminNavTarget)}
-                currentTab={adminNavTarget}
-                onSelectTab={(target) => setAdminNavTarget(target)}
-                onBackToLanding={() => setAdminNavTarget('landing')}
-                sessionUser={sessionUser}
-                isCollapsed={isSidebarCollapsed}
-                onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
-                isOpenMobile={isSidebarMobileOpen}
-                onCloseMobile={() => setIsSidebarMobileOpen(false)}
-                leadCount={getLeads().length}
-                followupCount={getFollowUps().filter((f) => f.status === 'pending').length}
-                proposalCount={getProposals().length}
-                opsPendingCount={getV2Tasks().filter((t) => t.status === 'pending').length}
-                employeeCount={getEmployees().length}
-              />
-            )}
+        {/* Enterprise Isolated Left Sidebar (Only visible when inside a module) */}
+        {adminNavTarget !== 'landing' && (
+          <ExecutiveSidebar
+            activeModule={getModuleForTarget(adminNavTarget)}
+            currentTab={adminNavTarget}
+            onSelectTab={(target) => setAdminNavTarget(target)}
+            onBackToLanding={() => setAdminNavTarget('landing')}
+            sessionUser={sessionUser}
+            isCollapsed={isSidebarCollapsed}
+            onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
+            isOpenMobile={isSidebarMobileOpen}
+            onCloseMobile={() => setIsSidebarMobileOpen(false)}
+            leadCount={getLeads().length}
+            followupCount={getFollowUps().filter((f) => f.status === 'pending').length}
+            proposalCount={getProposals().length}
+            opsPendingCount={getV2Tasks().filter((t) => t.status === 'pending').length}
+            employeeCount={getEmployees().length}
+          />
+        )}
 
-            {/* Content Viewport */}
-            <main className={`flex-1 min-w-0 w-full ${isOpsTarget ? 'p-2 sm:p-4 lg:p-5 max-w-none' : 'p-4 sm:p-6 md:p-8 max-w-7xl mx-auto'}`}>
-              {adminNavTarget === 'landing' ? (
-                <MasterExecutiveLanding
-                  sessionUser={sessionUser}
-                  employees={getEmployees()}
-                  leads={getLeads()}
-                  followups={getFollowUps()}
-                  proposals={getProposals()}
-                  syncStatus={syncStatus}
-                  onNavigateModule={handleNavigateModule}
-                  onRefreshData={handleRefreshAllData}
-                  onTriggerLeadDetail={(id) => {
-                    if (id === null) {
-                      setIsCreatingLead(true);
-                    } else {
-                      setActiveLeadId(id);
-                    }
-                  }}
-                  onTriggerProposalDraft={() => setIsCreatingProposal(true)}
-                />
-              ) : (
-                <div className="space-y-4 animate-fade-in">
-                  {/* Modern Executive Breadcrumbs & Context Bar */}
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs">
-                    <div className="flex items-center space-x-2 text-xs">
-                      <button
-                        onClick={() => setAdminNavTarget('landing')}
-                        className="inline-flex items-center space-x-1.5 font-bold text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
-                      >
-                        <Home className="h-3.5 w-3.5" />
-                        <span>Command Center</span>
-                      </button>
-                      <ChevronRight className="h-3 w-3 text-slate-400" />
-                      <span className="font-semibold text-slate-400">{breadcrumbInfo.group}</span>
-                      <ChevronRight className="h-3 w-3 text-slate-400" />
-                      <span className="font-bold text-slate-900 dark:text-white truncate">{breadcrumbInfo.title}</span>
-                    </div>
-
-                    <button
-                      onClick={() => setAdminNavTarget('landing')}
-                      className="inline-flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all self-start sm:self-auto cursor-pointer shrink-0"
-                    >
-                      <ArrowLeft className="h-3.5 w-3.5" />
-                      <span>Back to Overview</span>
-                    </button>
-                  </div>
-
-                  {/* Active Isolated Workspace Rendering */}
-                  {isOpsTarget ? (
-                    <OperationManagementDashboard
-                      initialSegment={getOpsDashboardSegment(adminNavTarget)}
-                      activeNavTarget={adminNavTarget}
-                      onNavigateTarget={(target) => setAdminNavTarget(target as any)}
-                    />
-                  ) : (
-                    <AdminDashboard
-                      currentUserId={sessionUser.id}
-                      onRefreshData={handleRefreshAllData}
-                      triggerRefresh={triggerRefresh}
-                      activeTabOverride={getAdminDashboardTab(adminNavTarget)}
-                      hideTabBar={true}
-                      activePayrollSubTab={getAdminDashboardPayrollSubTab(adminNavTarget)}
-                      activeCategoryFilter={getAdminDashboardCategoryFilter(adminNavTarget)}
-                      onTriggerLeadDetail={(id) => {
-                        if (id === null) {
-                          setIsCreatingLead(true);
-                        } else {
-                          setActiveLeadId(id);
-                        }
-                      }}
-                      onTriggerProposalPreview={(p) => setActiveProposalPreview(p)}
-                      onTriggerProposalDraft={() => setIsCreatingProposal(true)}
-                    />
-                  )}
-                </div>
-              )}
-            </main>
-          </>
-        ) : sessionUser.department === 'OPERATION MANAGEMENT' ? (
-          <main className="flex-1 p-6 md:p-8 max-w-7xl mx-auto w-full">
-            <OperationManagementDashboard />
-          </main>
-        ) : (
-          <main className="flex-1 p-6 md:p-8 max-w-7xl mx-auto w-full">
-            <EmployeeDashboard
-              currentUserId={sessionUser.id}
-              triggerRefresh={triggerRefresh}
+        {/* Content Viewport */}
+        <main className={`flex-1 min-w-0 w-full ${isOpsTarget ? 'p-2 sm:p-4 lg:p-5 max-w-none' : 'p-4 sm:p-6 md:p-8 max-w-7xl mx-auto'}`}>
+          {adminNavTarget === 'landing' ? (
+            <MasterExecutiveLanding
+              sessionUser={sessionUser}
+              employees={getEmployees()}
+              leads={getLeads()}
+              followups={getFollowUps()}
+              proposals={getProposals()}
+              syncStatus={syncStatus}
+              onNavigateModule={handleNavigateModule}
               onRefreshData={handleRefreshAllData}
               onTriggerLeadDetail={(id) => {
                 if (id === null) {
@@ -614,11 +535,65 @@ function AppContent() {
                   setActiveLeadId(id);
                 }
               }}
-              onTriggerProposalPreview={(p) => setActiveProposalPreview(p)}
               onTriggerProposalDraft={() => setIsCreatingProposal(true)}
             />
-          </main>
-        )}
+          ) : (
+            <div className="space-y-4 animate-fade-in">
+              {/* Modern Executive Breadcrumbs & Context Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs">
+                <div className="flex items-center space-x-2 text-xs">
+                  <button
+                    onClick={() => setAdminNavTarget('landing')}
+                    className="inline-flex items-center space-x-1.5 font-bold text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
+                  >
+                    <Home className="h-3.5 w-3.5" />
+                    <span>Command Center</span>
+                  </button>
+                  <ChevronRight className="h-3 w-3 text-slate-400" />
+                  <span className="font-semibold text-slate-400">{breadcrumbInfo.group}</span>
+                  <ChevronRight className="h-3 w-3 text-slate-400" />
+                  <span className="font-bold text-slate-900 dark:text-white truncate">{breadcrumbInfo.title}</span>
+                </div>
+
+                <button
+                  onClick={() => setAdminNavTarget('landing')}
+                  className="inline-flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all self-start sm:self-auto cursor-pointer shrink-0"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  <span>Back to Overview</span>
+                </button>
+              </div>
+
+              {/* Active Isolated Workspace Rendering */}
+              {isOpsTarget ? (
+                <OperationManagementDashboard
+                  initialSegment={getOpsDashboardSegment(adminNavTarget)}
+                  activeNavTarget={adminNavTarget}
+                  onNavigateTarget={(target) => setAdminNavTarget(target as any)}
+                />
+              ) : (
+                <AdminDashboard
+                  currentUserId={sessionUser.id}
+                  onRefreshData={handleRefreshAllData}
+                  triggerRefresh={triggerRefresh}
+                  activeTabOverride={getAdminDashboardTab(adminNavTarget)}
+                  hideTabBar={true}
+                  activePayrollSubTab={getAdminDashboardPayrollSubTab(adminNavTarget)}
+                  activeCategoryFilter={getAdminDashboardCategoryFilter(adminNavTarget)}
+                  onTriggerLeadDetail={(id) => {
+                    if (id === null) {
+                      setIsCreatingLead(true);
+                    } else {
+                      setActiveLeadId(id);
+                    }
+                  }}
+                  onTriggerProposalPreview={(p) => setActiveProposalPreview(p)}
+                  onTriggerProposalDraft={() => setIsCreatingProposal(true)}
+                />
+              )}
+            </div>
+          )}
+        </main>
       </div>
 
       {/* ==============================================================

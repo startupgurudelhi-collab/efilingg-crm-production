@@ -4,8 +4,13 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Employee, EmployeeRole } from '../types';
-import { X, Save, User, Mail, Phone, MapPin, Briefcase, DollarSign, Award, Sliders } from 'lucide-react';
+import { Employee, EmployeeRole, AppModuleId, ALL_APP_MODULES } from '../types';
+import { getEmployeeAccessibleModules, ALL_MODULE_IDS } from '../lib/permissions';
+import {
+  X, Save, User, Mail, Phone, MapPin, Briefcase, DollarSign, Award, Sliders,
+  CheckSquare, Square, ShieldCheck, ListTodo, Layers, TrendingUp,
+  FileSpreadsheet, Building2, Shield, Landmark, KeyRound, FileCheck2, Users
+} from 'lucide-react';
 
 interface EditEmployeeModalProps {
   employee: Employee;
@@ -18,7 +23,7 @@ export default function EditEmployeeModal({ employee, onClose, onSave }: EditEmp
   const [name, setName] = useState(employee.name || '');
   const [email, setEmail] = useState(employee.email || '');
   const [mobile, setMobile] = useState(employee.mobile || '');
-  const [role, setRole] = useState<EmployeeRole>(employee.role || 'employee');
+  const [role, setRole] = useState<EmployeeRole>(employee.role === 'team_leader' ? 'employee' : (employee.role || 'employee'));
   const [department, setDepartment] = useState<string>(employee.department || 'SALES & MARKETING');
   const [code, setCode] = useState(employee.employeeCode || '');
   const [designation, setDesignation] = useState(employee.designation || '');
@@ -28,6 +33,29 @@ export default function EditEmployeeModal({ employee, onClose, onSave }: EditEmp
   const [otherFixedAllowance, setOtherFixedAllowance] = useState<number | string>(employee.otherFixedAllowance || '');
   const [incentivePerConversion, setIncentivePerConversion] = useState<number | string>(employee.incentivePerConversion || '');
   const [address, setAddress] = useState(employee.address || '');
+
+  // Initialize accessible modules
+  const [selectedModules, setSelectedModules] = useState<AppModuleId[]>(() => {
+    return getEmployeeAccessibleModules(employee);
+  });
+
+  const toggleModule = (modId: AppModuleId) => {
+    setSelectedModules(prev => {
+      if (prev.includes(modId)) {
+        return prev.filter(id => id !== modId);
+      } else {
+        return [...prev, modId];
+      }
+    });
+  };
+
+  const handleSelectAllModules = () => {
+    setSelectedModules([...ALL_MODULE_IDS]);
+  };
+
+  const handleClearAllModules = () => {
+    setSelectedModules([]);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,15 +78,33 @@ export default function EditEmployeeModal({ employee, onClose, onSave }: EditEmp
       otherFixedAllowance: Number(otherFixedAllowance) || 0,
       incentivePerConversion: Number(incentivePerConversion) || 0,
       photo,
-      address
+      address,
+      accessibleModules: role === 'admin' ? ALL_MODULE_IDS : selectedModules
     });
+  };
+
+  const getModuleIcon = (id: AppModuleId) => {
+    switch (id) {
+      case 'sales_marketing': return <TrendingUp className="h-4 w-4 text-emerald-500" />;
+      case 'gst': return <FileSpreadsheet className="h-4 w-4 text-emerald-600" />;
+      case 'mca_roc': return <Building2 className="h-4 w-4 text-purple-500" />;
+      case 'income_tax': return <Shield className="h-4 w-4 text-blue-500" />;
+      case 'trademark': return <Award className="h-4 w-4 text-indigo-500" />;
+      case 'trust_ngo': return <Landmark className="h-4 w-4 text-teal-500" />;
+      case 'dsc': return <KeyRound className="h-4 w-4 text-amber-500" />;
+      case 'registration_license': return <FileCheck2 className="h-4 w-4 text-cyan-500" />;
+      case 'client_master': return <Users className="h-4 w-4 text-indigo-500" />;
+      case 'hr_workforce': return <Users className="h-4 w-4 text-purple-600" />;
+      case 'settings_control': return <ShieldCheck className="h-4 w-4 text-blue-600" />;
+      default: return <Layers className="h-4 w-4 text-slate-500" />;
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs overflow-y-auto flex items-center justify-center p-4 font-sans">
       
       {/* DIALOG BODY */}
-      <div className="w-full max-w-2xl bg-white dark:bg-slate-900 shadow-2xl rounded-3xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh] overflow-hidden">
+      <div className="w-full max-w-3xl bg-white dark:bg-slate-900 shadow-2xl rounded-3xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[92vh] overflow-hidden">
         
         {/* HEADER BAR */}
         <div className="p-5 px-6 border-b border-slate-100 dark:border-slate-850 bg-slate-50 dark:bg-slate-950 flex items-center justify-between shrink-0 select-none">
@@ -68,10 +114,10 @@ export default function EditEmployeeModal({ employee, onClose, onSave }: EditEmp
             </div>
             <div>
               <h3 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wider">
-                Edit Employee Credentials
+                Edit Employee Credentials & Permissions
               </h3>
               <p className="text-[10px] text-slate-400 font-semibold font-mono">
-                UPDATING INTERNAL ID & SALARY METRICS FOR: {employee.id}
+                UPDATING INTERNAL ID, DESIGNATION & MODULE DASHBOARDS FOR: {employee.id}
               </p>
             </div>
           </div>
@@ -84,7 +130,7 @@ export default function EditEmployeeModal({ employee, onClose, onSave }: EditEmp
         </div>
 
         {/* SCROLLABLE FORM */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 text-xs">
           
           {/* PROFILE PHOTO EDIT SECTOR */}
           <div className="flex items-center space-x-4 p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200/50 dark:border-slate-800">
@@ -189,6 +235,7 @@ export default function EditEmployeeModal({ employee, onClose, onSave }: EditEmp
                     type="text"
                     value={designation}
                     onChange={(e) => setDesignation(e.target.value)}
+                    placeholder="e.g. GST Senior Executive, ROC Specialist"
                     className="w-full pl-9 p-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl text-slate-855 dark:text-slate-101 font-medium"
                   />
                 </div>
@@ -217,15 +264,14 @@ export default function EditEmployeeModal({ employee, onClose, onSave }: EditEmp
               </div>
 
               <div className="space-y-1">
-                <label className="font-bold text-slate-500 block">Workplace Authority Role</label>
+                <label className="font-bold text-slate-500 block">Account Authority Role</label>
                 <select
                   value={role}
                   onChange={(e) => setRole(e.target.value as EmployeeRole)}
                   className="w-full p-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl text-slate-850 dark:text-slate-101 font-medium"
                 >
-                  <option value="employee">Filing Associate Desk (Employee Role)</option>
-                  <option value="team_leader">Team Leader Management (Middle Tier)</option>
-                  <option value="admin">Master Administrator Gateway (Admin Role)</option>
+                  <option value="employee">Employee Account (Module-Specific Access)</option>
+                  <option value="admin">Master Administrator Gateway (Full Access)</option>
                 </select>
               </div>
 
@@ -243,8 +289,102 @@ export default function EditEmployeeModal({ employee, onClose, onSave }: EditEmp
             </div>
           </div>
 
-          {/* SECTION B: BANK & SALARY PAYSLIP SLABS */}
-          <div className="space-y-3 pt-2">
+          {/* =========================================================================
+              SECTION B: MODULE ACCESS CONTROL & DASHBOARD SELECTION (USER REQUEST)
+              ========================================================================= */}
+          <div className="space-y-3 p-4 bg-slate-50 dark:bg-slate-950/80 rounded-2xl border border-indigo-200 dark:border-indigo-900/40">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+              <div>
+                <h4 className="font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider text-xs flex items-center gap-1.5">
+                  <Layers className="h-4 w-4" />
+                  <span>Module & Dashboard Permissions</span>
+                </h4>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Select which services & dashboards this employee will see upon logging in.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSelectAllModules}
+                  className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-950 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 transition cursor-pointer"
+                >
+                  Select All
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearAllModules}
+                  className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition cursor-pointer"
+                >
+                  Clear All
+                </button>
+              </div>
+            </div>
+
+            {/* Permanent Task Manager Notice */}
+            <div className="flex items-center justify-between p-2.5 px-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300">
+              <div className="flex items-center gap-2">
+                <ListTodo className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span className="font-bold text-[11px]">Task Manager (Default for All Employees)</span>
+              </div>
+              <span className="text-[9.5px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                Always Active
+              </span>
+            </div>
+
+            {/* 11 Modules Checkboxes Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+              {ALL_APP_MODULES.map((mod) => {
+                const isSelected = selectedModules.includes(mod.id) || role === 'admin';
+                return (
+                  <div
+                    key={mod.id}
+                    onClick={() => {
+                      if (role !== 'admin') {
+                        toggleModule(mod.id);
+                      }
+                    }}
+                    className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-start gap-2.5 select-none ${
+                      isSelected
+                        ? 'bg-white dark:bg-slate-900 border-indigo-500 dark:border-indigo-500/80 shadow-xs ring-1 ring-indigo-500/30'
+                        : 'bg-slate-100/60 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <div className="pt-0.5">
+                      {isSelected ? (
+                        <CheckSquare className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      ) : (
+                        <Square className="h-4 w-4 text-slate-400 shrink-0" />
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        {getModuleIcon(mod.id)}
+                        <span className={`font-black text-[11.5px] leading-tight truncate ${
+                          isSelected ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'
+                        }`}>
+                          {mod.label}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1 leading-snug">
+                        {mod.description}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {role === 'admin' && (
+              <p className="text-[10px] text-indigo-500 font-bold italic pt-1">
+                * Note: Master Administrator role automatically receives full access to all 11 modules and system controls.
+              </p>
+            )}
+          </div>
+
+          {/* SECTION C: BANK & SALARY PAYSLIP SLABS */}
+          <div className="space-y-3 pt-1">
             <h4 className="font-extrabold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider text-[10px] border-b border-slate-100 dark:border-slate-800 pb-1">
               Monthly Remuneration Slabs
             </h4>
@@ -297,16 +437,16 @@ export default function EditEmployeeModal({ employee, onClose, onSave }: EditEmp
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-650 dark:text-slate-300 rounded-xl cursor-pointer"
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-650 dark:text-slate-300 rounded-xl cursor-pointer font-bold"
             >
-              Cancel Edit
+              Cancel
             </button>
             <button
               type="submit"
-              className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 p-5 rounded-xl transition duration-150 shadow-md cursor-pointer text-xs"
+              className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-5 rounded-xl transition duration-150 shadow-md cursor-pointer text-xs"
             >
               <Save className="h-4.5 w-4.5" />
-              <span>Update Credentials</span>
+              <span>Save & Update Employee</span>
             </button>
           </div>
 

@@ -48,6 +48,7 @@ import {
   getV2Trademarks
 } from '../lib/v2_db';
 import { getISTDateString } from '../lib/db';
+import { AiAgentRepository } from '../lib/aiAgent/db';
 
 export type ActiveModule = 'landing' | 'sales' | 'ops' | 'settings' | 'hr';
 
@@ -58,7 +59,10 @@ export type NavigationTarget =
   | 'sales_leads'
   | 'sales_followups'
   | 'sales_proposals'
+  | 'sales_services'
+  | 'sales_templates'
   | 'sales_ai_inbox'
+  | 'sales_ai_qualified_leads'
   | 'sales_ai_agent'
   // Operations & Accordions
   | 'ops_dashboard'
@@ -91,17 +95,23 @@ export type NavigationTarget =
   | 'ops_itr_individual'
   | 'ops_itr_business'
   | 'ops_itr_audit'
-  | 'ops_itr_notices'
   // MCA & ROC
   | 'ops_mca_dashboard'
-  | 'ops_mca_roc'
-  | 'ops_mca_llp'
+  | 'ops_mca_pvt_ltd'
+  | 'ops_mca_llp_clients'
+  | 'ops_mca_section8'
   | 'ops_mca_kyc'
+  | 'ops_mca_post_inc'
+  | 'ops_mca_roc'
+  | 'ops_mca_roc_companies'
+  | 'ops_mca_roc_llp'
+  | 'ops_mca_llp'
   | 'ops_mca_aoc4'
   | 'ops_mca_mgt7'
   | 'ops_mca_inc20a'
   // Trust & NGO
   | 'ops_trust_dashboard'
+  | 'ops_trust_12a_80g'
   | 'ops_trust_12a'
   | 'ops_trust_80g'
   | 'ops_trust_10b'
@@ -138,8 +148,7 @@ export type NavigationTarget =
   | 'hr_payroll'
   | 'hr_attendance'
   | 'hr_leaves'
-  | 'hr_services'
-  | 'hr_templates'
+  | 'hr_offer_letter'
   // TL Specific
   | 'tl_my_attendance';
 
@@ -260,12 +269,25 @@ export default function ExecutiveSidebar({
       const scrutinyCases = itrClients.filter(c => c.typeOfItr === 'ITR-7' || c.isAuditApplicable).length;
 
       const mcaActiveCompanies = mcaClients.length;
-      const rocPending = mcaReturns.filter(r => r.aoc4Status !== 'FILED' || r.mgt7Status !== 'FILED').length;
+      const mcaPvtLtd = mcaClients.filter(c => c.clientType === 'PRIVATE LIMITED COMPANY').length;
+      const mcaLlp = mcaClients.filter(c => c.clientType === 'LLP').length;
+      const mcaSection8 = mcaClients.filter(c => c.clientType === 'SECTION 8 NGO').length;
+      const rocPending = mcaReturns.filter(r => r.aoc4Status !== 'FILED' || r.mgt7Status !== 'FILED' || r.form11Status !== 'FILED' || r.form8Status !== 'FILED').length;
       const llpCount = mcaClients.filter(c => c.clientType === 'LLP').length;
-      const dinKycPending = mcaReturns.filter(r => r.dinKycStatus !== 'FILED').length;
+      const dinKycPending = mcaClients.flatMap(c => c.directors || []).filter(d => d.dinKycStatus !== 'Approved').length;
       const aoc4Pending = mcaReturns.filter(r => r.aoc4Status !== 'FILED').length;
       const mgt7Pending = mcaReturns.filter(r => r.mgt7Status !== 'FILED').length;
       const inc20aPending = mcaClients.filter(c => !c.isInc20aFiled).length;
+      const postIncPending = mcaClients.filter(c => (c.clientType === 'PRIVATE LIMITED COMPANY' || c.clientType === 'SECTION 8 NGO') && (!c.isInc20aFiled || !c.isAdt1Filed)).length;
+      
+      const rocCompaniesPending = mcaReturns.filter(r => {
+        const c = mcaClients.find(cl => cl.id === r.mcaClientId);
+        return c && c.clientType !== 'LLP' && (r.aoc4Status !== 'FILED' || r.mgt7Status !== 'FILED');
+      }).length;
+      const rocLlpPending = mcaReturns.filter(r => {
+        const c = mcaClients.find(cl => cl.id === r.mcaClientId);
+        return c && c.clientType === 'LLP' && (r.form11Status !== 'FILED' || r.form8Status !== 'FILED');
+      }).length;
 
       const ngoClients = trustClients.length;
       const count12A = trustClients.filter(t => t.has12A80G).length;
@@ -293,7 +315,7 @@ export default function ExecutiveSidebar({
         tmTotal, tmApplied, tmObjected, tmHearings, tmApproved,
         gstClients: gstClients.length, gstr1Pending, gstr3bPending, gstQuarterly, gstNotices: 2,
         itrIndividual, itrBusiness, taxAudits, scrutinyCases,
-        mcaActiveCompanies, rocPending, llpCount, dinKycPending, aoc4Pending, mgt7Pending, inc20aPending,
+        mcaActiveCompanies, mcaPvtLtd, mcaLlp, mcaSection8, rocPending, rocCompaniesPending, rocLlpPending, llpCount, dinKycPending, aoc4Pending, mgt7Pending, inc20aPending, postIncPending,
         ngoClients, count12A, count80G: count12A, form10bPending,
         dscActive, dscRenewalDue, dscExpired,
         fssaiCount, msmeCount, iecCount, tradeLicenseCount, labourLicenseCount,
@@ -305,7 +327,7 @@ export default function ExecutiveSidebar({
         tmTotal: 0, tmApplied: 0, tmObjected: 0, tmHearings: 0, tmApproved: 0,
         gstClients: 0, gstr1Pending: 0, gstr3bPending: 0, gstQuarterly: 0, gstNotices: 0,
         itrIndividual: 0, itrBusiness: 0, taxAudits: 0, scrutinyCases: 0,
-        mcaActiveCompanies: 0, rocPending: 0, llpCount: 0, dinKycPending: 0, aoc4Pending: 0, mgt7Pending: 0, inc20aPending: 0,
+        mcaActiveCompanies: 0, mcaPvtLtd: 0, mcaLlp: 0, mcaSection8: 0, rocPending: 0, rocCompaniesPending: 0, rocLlpPending: 0, llpCount: 0, dinKycPending: 0, aoc4Pending: 0, mgt7Pending: 0, inc20aPending: 0, postIncPending: 0,
         ngoClients: 0, count12A: 0, count80G: 0, form10bPending: 0,
         dscActive: 0, dscRenewalDue: 0, dscExpired: 0,
         fssaiCount: 0, msmeCount: 0, iecCount: 0, tradeLicenseCount: 0, labourLicenseCount: 0,
@@ -333,8 +355,10 @@ export default function ExecutiveSidebar({
       { id: 'sales_leads', label: 'Leads Pipeline', icon: TrendingUp, badge: leadCount },
       { id: 'sales_followups', label: 'Pending Followups', icon: PhoneCall, badge: followupCount },
       { id: 'sales_proposals', label: 'Proposals & Quotes', icon: FileText, badge: proposalCount },
+      { id: 'sales_services', label: 'Service Catalogue', icon: Award },
+      ...(!isTeamLeader ? [{ id: 'sales_templates' as const, label: 'Proposal Designer', icon: FileText }] : []),
       { id: 'sales_ai_inbox', label: 'AI Sales Inbox', icon: Sparkles, highlight: true },
-      { id: 'sales_ai_agent', label: 'AI Sales Agent', icon: ShieldCheck }
+      { id: 'sales_ai_qualified_leads', label: 'AI Qualified Leads', icon: UserCheck, badge: AiAgentRepository.getQualifiedLeads().length, highlight: true }
     ]
   };
 
@@ -352,9 +376,9 @@ export default function ExecutiveSidebar({
       activeTabClass: 'bg-blue-600 text-white shadow-md shadow-blue-900/20'
     },
     items: [
-      { id: 'settings_ai', label: 'AI Settings', icon: Sparkles },
+      { id: 'settings_ai', label: 'AI Sales Agent', icon: ShieldCheck, highlight: true },
       { id: 'settings_whatsapp', label: 'WhatsApp Settings', icon: PhoneCall },
-      { id: 'settings_recovery', label: 'Recovery Center', icon: Lock, highlight: true },
+      { id: 'settings_recovery', label: 'Recovery Center', icon: Lock },
       { id: 'settings_audit', label: 'Audit Logs', icon: Database },
       { id: 'settings_security', label: 'Security Telemetry', icon: Shield },
       { id: 'settings_backup', label: 'Data Import Export', icon: FileSpreadsheet }
@@ -379,8 +403,7 @@ export default function ExecutiveSidebar({
       { id: 'hr_payroll', label: 'Payroll & Approvals', icon: DollarSign },
       { id: 'hr_attendance', label: 'Attendance Audit', icon: Calendar },
       { id: 'hr_leaves', label: 'Leave Requests', icon: UserCheck },
-      { id: 'hr_services', label: 'Service Catalogue', icon: Award },
-      ...(!isTeamLeader ? [{ id: 'hr_templates' as const, label: 'Proposal Designer', icon: FileText }] : []),
+      ...(!isTeamLeader ? [{ id: 'hr_offer_letter' as const, label: 'Offer Letter Template', icon: FileText }] : []),
       ...(isTeamLeader ? [{ id: 'tl_my_attendance' as const, label: 'My Punch & Calendar', icon: Calendar }] : [])
     ]
   };
@@ -581,7 +604,7 @@ export default function ExecutiveSidebar({
                 {renderOpsSubItem('ops_gst_monthly', 'Monthly Returns', opsCounts.gstr1Pending + opsCounts.gstr3bPending, (opsCounts.gstr1Pending + opsCounts.gstr3bPending) > 0 ? 'amber' : 'default')}
                 {renderOpsSubItem('ops_gst_quarterly', 'Quarterly Returns', opsCounts.gstQuarterly)}
                 {renderOpsSubItem('ops_gst_reports', 'GST Reports')}
-                {renderOpsSubItem('ops_gst_settings', 'Extension Logs & Settings')}
+                {renderOpsSubItem('ops_gst_settings', 'GST Chrome Extension')}
               </div>
             )}
           </div>
@@ -607,7 +630,6 @@ export default function ExecutiveSidebar({
                 {renderOpsSubItem('ops_itr_individual', 'Individual ITR', opsCounts.itrIndividual)}
                 {renderOpsSubItem('ops_itr_business', 'Business ITR', opsCounts.itrBusiness)}
                 {renderOpsSubItem('ops_itr_audit', 'Tax Audit', opsCounts.taxAudits)}
-                {renderOpsSubItem('ops_itr_notices', 'Notices', opsCounts.scrutinyCases)}
               </div>
             )}
           </div>
@@ -629,13 +651,23 @@ export default function ExecutiveSidebar({
 
             {(!isCollapsed && openAccordions.mca) && (
               <div className="space-y-0.5 pl-2 border-l border-purple-500/20 ml-2">
-                {renderOpsSubItem('ops_mca_dashboard', 'Company Dashboard', opsCounts.mcaActiveCompanies)}
-                {renderOpsSubItem('ops_mca_roc', 'ROC Forms', opsCounts.rocPending)}
-                {renderOpsSubItem('ops_mca_llp', 'LLP Compliance', opsCounts.llpCount)}
-                {renderOpsSubItem('ops_mca_kyc', 'Director KYC', opsCounts.dinKycPending)}
-                {renderOpsSubItem('ops_mca_aoc4', 'AOC-4', opsCounts.aoc4Pending)}
-                {renderOpsSubItem('ops_mca_mgt7', 'MGT-7', opsCounts.mgt7Pending)}
-                {renderOpsSubItem('ops_mca_inc20a', 'INC-20A', opsCounts.inc20aPending)}
+                {renderOpsSubItem('ops_mca_dashboard', 'Dashboard', opsCounts.mcaActiveCompanies)}
+                {renderOpsSubItem('ops_mca_pvt_ltd', 'Private Limited Co.', opsCounts.mcaPvtLtd)}
+                {renderOpsSubItem('ops_mca_llp_clients', 'LLP Clients', opsCounts.mcaLlp)}
+                {renderOpsSubItem('ops_mca_section8', 'Section 8 Co.', opsCounts.mcaSection8)}
+                {renderOpsSubItem('ops_mca_kyc', 'DIN KYC Panel', opsCounts.dinKycPending, opsCounts.dinKycPending > 0 ? 'amber' : 'default')}
+                {renderOpsSubItem('ops_mca_post_inc', 'Post Incorporation Compliances', opsCounts.postIncPending, opsCounts.postIncPending > 0 ? 'red' : 'default')}
+                
+                {/* ROC Filing Group with 2 sub-menus: Companies ROC & LLP Compliances */}
+                <div className="pt-1">
+                  <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-purple-600 dark:text-purple-400">
+                    ROC Filing
+                  </div>
+                  <div className="space-y-0.5 pl-1.5 border-l border-purple-500/30 ml-1 mt-0.5">
+                    {renderOpsSubItem('ops_mca_roc_companies', 'Companies ROC', opsCounts.rocCompaniesPending, opsCounts.rocCompaniesPending > 0 ? 'amber' : 'default')}
+                    {renderOpsSubItem('ops_mca_roc_llp', 'LLP Compliances', opsCounts.rocLlpPending, opsCounts.rocLlpPending > 0 ? 'amber' : 'default')}
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -658,10 +690,7 @@ export default function ExecutiveSidebar({
             {(!isCollapsed && openAccordions.trust) && (
               <div className="space-y-0.5 pl-2 border-l border-teal-500/20 ml-2">
                 {renderOpsSubItem('ops_trust_dashboard', 'NGO Dashboard', opsCounts.ngoClients)}
-                {renderOpsSubItem('ops_trust_12a', '12A', opsCounts.count12A)}
-                {renderOpsSubItem('ops_trust_80g', '80G', opsCounts.count80G)}
-                {renderOpsSubItem('ops_trust_10b', 'Form 10B', opsCounts.form10bPending)}
-                {renderOpsSubItem('ops_trust_10bb', 'Form 10BB')}
+                {renderOpsSubItem('ops_trust_12a_80g', '12A & 80G', opsCounts.count12A)}
               </div>
             )}
           </div>

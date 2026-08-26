@@ -222,7 +222,10 @@ function AppContent() {
       case 'sales_leads': return 'leads';
       case 'sales_followups': return 'leads';
       case 'sales_proposals': return 'proposals';
+      case 'sales_services': return 'services';
+      case 'sales_templates': return 'templates';
       case 'sales_ai_inbox': return 'ai_sales_inbox';
+      case 'sales_ai_qualified_leads': return 'ai_qualified_leads';
       case 'sales_ai_agent': return 'ai_sales_agent';
       case 'settings_recovery': return 'recovery_center';
       case 'settings_ai': return 'ai_sales_agent';
@@ -234,8 +237,7 @@ function AppContent() {
       case 'hr_payroll': return 'payroll';
       case 'hr_attendance': return 'payroll';
       case 'hr_leaves': return 'payroll';
-      case 'hr_services': return 'services';
-      case 'hr_templates': return 'templates';
+      case 'hr_offer_letter': return 'offer_letter';
       case 'tl_my_attendance': return 'my_attendance';
       default: return 'analytics';
     }
@@ -272,8 +274,11 @@ function AppContent() {
       case 'sales_leads': return { group: 'Sales & Marketing', title: 'Leads Pipeline Management' };
       case 'sales_followups': return { group: 'Sales & Marketing', title: 'Pending Followups & Client Calls' };
       case 'sales_proposals': return { group: 'Sales & Marketing', title: 'Proposals, Quotations & Estimates' };
+      case 'sales_services': return { group: 'Sales & Marketing', title: 'Service Catalogue & Rate Master' };
+      case 'sales_templates': return { group: 'Sales & Marketing', title: 'Proposal Designer' };
       case 'sales_ai_inbox': return { group: 'Sales & Marketing', title: 'AI Sales Inbox & Automated Chats' };
-      case 'sales_ai_agent': return { group: 'Sales & Marketing', title: 'AI Sales Agent Telemetry' };
+      case 'sales_ai_qualified_leads': return { group: 'Sales & Marketing', title: 'AI-Qualified Leads Directory' };
+      case 'sales_ai_agent': return { group: 'Settings & Control', title: 'AI Sales Agent & Automation Platform' };
       
       // Operations & Accordion Navigation Targets
       case 'ops_dashboard': return { group: 'Operation Management', title: 'Operations Command Center (Mission Control)' };
@@ -291,17 +296,23 @@ function AppContent() {
       case 'ops_gst_quarterly': return { group: 'Operation Management', title: 'GST Compliance · Quarterly Returns' };
       case 'ops_gst_notices': return { group: 'Operation Management', title: 'GST Compliance · Notices & Scrutiny' };
       case 'ops_gst_reports': return { group: 'Operation Management', title: 'GST Compliance · Reports & MIS' };
+      case 'ops_gst_settings': return { group: 'Operation Management', title: 'GST Compliance · Chrome Extension & Auto-Login' };
 
       case 'ops_itr_dashboard': return { group: 'Operation Management', title: 'Income Tax · ITR Clearance Dashboard' };
       case 'ops_itr_individual': return { group: 'Operation Management', title: 'Income Tax · Individual ITR Desk' };
       case 'ops_itr_business': return { group: 'Operation Management', title: 'Income Tax · Business & Corporate ITR' };
       case 'ops_itr_audit': return { group: 'Operation Management', title: 'Income Tax · Tax Audit Form 3CD' };
-      case 'ops_itr_notices': return { group: 'Operation Management', title: 'Income Tax · Notice Cases & Rectification' };
 
-      case 'ops_mca_dashboard': return { group: 'Operation Management', title: 'MCA & ROC · Company Dashboard' };
-      case 'ops_mca_roc': return { group: 'Operation Management', title: 'MCA & ROC · ROC Statutory Forms' };
+      case 'ops_mca_dashboard': return { group: 'Operation Management', title: 'MCA & ROC · Companies Master Dashboard' };
+      case 'ops_mca_pvt_ltd': return { group: 'Operation Management', title: 'MCA & ROC · Private Limited Companies' };
+      case 'ops_mca_llp_clients': return { group: 'Operation Management', title: 'MCA & ROC · Limited Liability Partnerships (LLP)' };
+      case 'ops_mca_section8': return { group: 'Operation Management', title: 'MCA & ROC · Section 8 Non-Profit Companies' };
+      case 'ops_mca_kyc': return { group: 'Operation Management', title: 'MCA & ROC · Director DIN KYC Control Panel' };
+      case 'ops_mca_post_inc': return { group: 'Operation Management', title: 'MCA & ROC · Post Incorporation Compliance Desk' };
+      case 'ops_mca_roc': return { group: 'Operation Management', title: 'MCA & ROC · ROC Statutory Annual Filings' };
+      case 'ops_mca_roc_companies': return { group: 'Operation Management', title: 'MCA & ROC · Companies Annual ROC (AOC-4 & MGT-7)' };
+      case 'ops_mca_roc_llp': return { group: 'Operation Management', title: 'MCA & ROC · LLP Statutory Filings (Form 11 & Form 8)' };
       case 'ops_mca_llp': return { group: 'Operation Management', title: 'MCA & ROC · LLP Statutory Filings' };
-      case 'ops_mca_kyc': return { group: 'Operation Management', title: 'MCA & ROC · Director KYC Desk' };
       case 'ops_mca_aoc4': return { group: 'Operation Management', title: 'MCA & ROC · Financials AOC-4' };
       case 'ops_mca_mgt7': return { group: 'Operation Management', title: 'MCA & ROC · Annual Return MGT-7' };
       case 'ops_mca_inc20a': return { group: 'Operation Management', title: 'MCA & ROC · Commencement INC-20A' };
@@ -333,7 +344,7 @@ function AppContent() {
       case 'ops_clients': return { group: 'Operation Management', title: 'Client Master & Service Mapping' };
 
       case 'settings_recovery': return { group: 'Settings & Control', title: 'Recovery Center & Snapshot Vault' };
-      case 'settings_ai': return { group: 'Settings & Control', title: 'AI Automation & Inference Settings' };
+      case 'settings_ai': return { group: 'Settings & Control', title: 'AI Sales Agent & Automation Platform' };
       case 'settings_whatsapp': return { group: 'Settings & Control', title: 'WhatsApp Webhook & API Gateway' };
       case 'settings_audit': return { group: 'Settings & Control', title: 'Security Audit Logs' };
       case 'settings_security': return { group: 'Settings & Control', title: 'Security Telemetry & Health' };
@@ -342,8 +353,7 @@ function AppContent() {
       case 'hr_payroll': return { group: 'HR & Workforce', title: 'Payroll Control & Salary Approvals' };
       case 'hr_attendance': return { group: 'HR & Workforce', title: 'Attendance Audit & Logs' };
       case 'hr_leaves': return { group: 'HR & Workforce', title: 'Leave Requests & Approvals' };
-      case 'hr_services': return { group: 'HR & Workforce', title: 'Service Catalogue & Pricing' };
-      case 'hr_templates': return { group: 'HR & Workforce', title: 'Proposal & Offer Letter Designer' };
+      case 'hr_offer_letter': return { group: 'HR & Workforce', title: 'Offer Letter Template Designer' };
       case 'tl_my_attendance': return { group: 'HR & Workforce', title: 'My Punch & Calendar' };
       default: return { group: 'Executive Command Center', title: 'Executive Overview' };
     }
@@ -351,13 +361,29 @@ function AppContent() {
 
   const handleNavigateModule = (module: 'sales' | 'ops' | 'settings' | 'hr', specificTab?: string) => {
     if (module === 'sales') {
-      setAdminNavTarget(specificTab === 'leads' ? 'sales_leads' : specificTab === 'followups' ? 'sales_followups' : specificTab === 'proposals' ? 'sales_proposals' : 'sales_dashboard');
+      setAdminNavTarget(
+        specificTab === 'leads' ? 'sales_leads' :
+        specificTab === 'followups' ? 'sales_followups' :
+        specificTab === 'proposals' ? 'sales_proposals' :
+        specificTab === 'services' ? 'sales_services' :
+        specificTab === 'templates' ? 'sales_templates' :
+        specificTab === 'ai_inbox' ? 'sales_ai_inbox' :
+        specificTab === 'qualified_leads' ? 'sales_ai_qualified_leads' :
+        'sales_dashboard'
+      );
     } else if (module === 'ops') {
       setAdminNavTarget(specificTab === 'gst' ? 'ops_gst' : specificTab === 'itr' ? 'ops_itr' : specificTab === 'mca' ? 'ops_mca' : specificTab === 'tasks' ? 'ops_tasks' : specificTab === 'clients' ? 'ops_clients' : 'ops_dashboard');
     } else if (module === 'settings') {
       setAdminNavTarget(specificTab === 'recovery_center' ? 'settings_recovery' : specificTab === 'ai' ? 'settings_ai' : specificTab === 'whatsapp' ? 'settings_whatsapp' : specificTab === 'audit' ? 'settings_audit' : specificTab === 'backup' ? 'settings_backup' : 'settings_recovery');
     } else if (module === 'hr') {
-      setAdminNavTarget(specificTab === 'employees' ? 'hr_employees' : specificTab === 'payroll' ? 'hr_payroll' : specificTab === 'attendance' ? 'hr_attendance' : specificTab === 'leaves' ? 'hr_leaves' : specificTab === 'services' ? 'hr_services' : specificTab === 'templates' ? 'hr_templates' : 'hr_employees');
+      setAdminNavTarget(
+        specificTab === 'employees' ? 'hr_employees' :
+        specificTab === 'payroll' ? 'hr_payroll' :
+        specificTab === 'attendance' ? 'hr_attendance' :
+        specificTab === 'leaves' ? 'hr_leaves' :
+        specificTab === 'offer_letter' ? 'hr_offer_letter' :
+        'hr_employees'
+      );
     }
   };
 

@@ -63,20 +63,20 @@ export default function AiSalesAgentContainer({
       {/* Top Section Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
         <div className="flex items-center space-x-3">
-          <div className="h-11 w-11 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-bold shadow-md shadow-emerald-500/20">
+          <div className="h-11 w-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-cyan-500 text-white flex items-center justify-center font-bold shadow-md shadow-blue-500/20">
             <Bot className="h-6 w-6" />
           </div>
           <div>
             <div className="flex items-center space-x-2">
               <h1 className="text-base font-black text-slate-900 dark:text-white">
-                Sales & Marketing / AI Sales Agent
+                Settings & Control Center / AI Sales Agent
               </h1>
-              <span className="px-2 py-0.5 rounded-md text-[9.5px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                V1 FOUNDATION
+              <span className="px-2 py-0.5 rounded-md text-[9.5px] font-black uppercase tracking-wider bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
+                MODULE 3
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              WhatsApp Sales Agent Admin Platform — Knowledge Base, FAQ Training, Lead Form Builder, & Qualified Lead Engine
+              WhatsApp Sales Agent Control Center — Knowledge Base, FAQ Training, Lead Form Builder & Autonomous AI Settings
             </p>
           </div>
         </div>

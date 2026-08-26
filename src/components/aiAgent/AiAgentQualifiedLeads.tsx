@@ -55,7 +55,9 @@ export default function AiAgentQualifiedLeads({
   const [statusNotes, setStatusNotes] = useState('');
 
   const loadLeads = () => {
-    setLeads(AiAgentRepository.getQualifiedLeads());
+    const raw = AiAgentRepository.getQualifiedLeads();
+    const sorted = [...raw].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    setLeads(sorted);
   };
 
   useEffect(() => {

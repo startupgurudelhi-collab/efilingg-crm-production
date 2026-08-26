@@ -52,6 +52,7 @@ import { Employee, Lead, FollowUp, Proposal, ActivityLog, LeadStage, EmployeeRol
 import ServicesManager from './ServicesManager';
 import ProposalTemplateEditor from './ProposalTemplateEditor';
 import AiSalesAgentContainer from './aiAgent/AiSalesAgentContainer';
+import AiAgentQualifiedLeads from './aiAgent/AiAgentQualifiedLeads';
 import {
   Users,
   Briefcase,
@@ -132,11 +133,11 @@ export default function AdminDashboard({
   const [logs, setLogs] = useState<ActivityLog[]>([]);
 
   // Local Views Tab
-  const [viewTab, setViewTab] = useState<'analytics' | 'employees' | 'leads' | 'proposals' | 'logs' | 'backup' | 'recovery_center' | 'services' | 'templates' | 'payroll' | 'ai_sales_inbox' | 'whatsapp_webhook' | 'ai_sales_agent' | 'my_attendance'>('analytics');
+  const [viewTab, setViewTab] = useState<'analytics' | 'employees' | 'leads' | 'proposals' | 'logs' | 'backup' | 'recovery_center' | 'services' | 'templates' | 'offer_letter' | 'payroll' | 'ai_sales_inbox' | 'whatsapp_webhook' | 'ai_sales_agent' | 'ai_qualified_leads' | 'my_attendance'>('analytics');
 
   useEffect(() => {
     if (activeTabOverride) {
-      const validTabs = ['analytics', 'employees', 'leads', 'proposals', 'logs', 'backup', 'recovery_center', 'services', 'templates', 'payroll', 'ai_sales_inbox', 'whatsapp_webhook', 'ai_sales_agent', 'my_attendance'];
+      const validTabs = ['analytics', 'employees', 'leads', 'proposals', 'logs', 'backup', 'recovery_center', 'services', 'templates', 'offer_letter', 'payroll', 'ai_sales_inbox', 'whatsapp_webhook', 'ai_sales_agent', 'ai_qualified_leads', 'my_attendance'];
       if (validTabs.includes(activeTabOverride)) {
         setViewTab(activeTabOverride as any);
       }
@@ -188,7 +189,6 @@ export default function AdminDashboard({
   // Editing state trackers
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [showOfferLetterEmp, setShowOfferLetterEmp] = useState<Employee | null>(null);
-  const [templatesSubTab, setTemplatesSubTab] = useState<'proposal' | 'offer'>('proposal');
   const [payrollSubTab, setPayrollSubTab] = useState<'calc' | 'history' | 'attendance' | 'leaves'>('calc');
   const [employeesSubTab, setEmployeesSubTab] = useState<'directory' | 'exits' | 'transfers'>('directory');
   const [rawResignations, setRawResignations] = useState<ResignationRequest[]>([]);
@@ -1063,9 +1063,17 @@ export default function AdminDashboard({
               </button>
             </FeatureFlagGuard>
             <button
-              onClick={() => setViewTab('ai_sales_agent')}
+              onClick={() => setViewTab('ai_qualified_leads')}
               className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-emerald-500/30 font-bold ${
-                viewTab === 'ai_sales_agent' ? 'bg-emerald-600 text-white' : 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50'
+                viewTab === 'ai_qualified_leads' ? 'bg-emerald-600 text-white' : 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50'
+              }`}
+            >
+              🎯 AI Qualified Leads
+            </button>
+            <button
+              onClick={() => setViewTab('ai_sales_agent')}
+              className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-blue-500/30 font-bold ${
+                viewTab === 'ai_sales_agent' ? 'bg-blue-600 text-white' : 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50'
               }`}
             >
               🧠 AI Sales Agent
@@ -1134,6 +1142,16 @@ export default function AdminDashboard({
                 Proposal Designer
               </button>
             )}
+            {!isTeamLeader && (
+              <button
+                onClick={() => setViewTab('offer_letter')}
+                className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ${
+                  viewTab === 'offer_letter' ? 'bg-slate-900 dark:bg-slate-105 text-white' : 'text-slate-505 hover:bg-slate-50'
+                }`}
+              >
+                Offer Letter Template
+              </button>
+            )}
             <button
               onClick={() => setViewTab('payroll')}
               className={`px-4 py-2 text-xs font-semibold rounded-xl whitespace-nowrap ring-1 ring-emerald-500/30 ${
@@ -1166,6 +1184,19 @@ export default function AdminDashboard({
             currentUserName={loggedInUser?.name || 'Administrator'}
           />
         </FeatureFlagGuard>
+      )}
+
+      {/* ==============================================================
+          TAB: AI QUALIFIED LEADS (Sales & Marketing Direct Module)
+          ============================================================== */}
+      {viewTab === 'ai_qualified_leads' && (
+        <div className="space-y-6">
+          <AiAgentQualifiedLeads
+            currentUserId={currentUserId}
+            currentUserName={loggedInUser?.name || 'Administrator'}
+            onRefresh={onRefreshData}
+          />
+        </div>
       )}
 
       {/* ==============================================================
@@ -3579,43 +3610,27 @@ export default function AdminDashboard({
         />
       )}
 
+      {/* ==============================================================
+          TAB: PROPOSAL TEMPLATE DESIGNER (Sales & Marketing Direct)
+          ============================================================== */}
       {viewTab === 'templates' && (
         <div className="space-y-6">
-          {/* Sub Tab toggle controls for template design */}
-          <div className="flex bg-slate-100 dark:bg-slate-950 p-1.5 rounded-2xl w-fit border border-slate-200/50">
-            <button
-              onClick={() => setTemplatesSubTab('proposal')}
-              className={`flex items-center space-x-2 py-2 px-5 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
-                templatesSubTab === 'proposal'
-                  ? 'bg-white dark:bg-slate-900 text-slate-900 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              <span>Design Master Proposal Template</span>
-            </button>
-            <button
-              onClick={() => setTemplatesSubTab('offer')}
-              className={`flex items-center space-x-2 py-2 px-5 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
-                templatesSubTab === 'offer'
-                  ? 'bg-white dark:bg-slate-900 text-slate-900 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              <span>Design Master Offer Letter Template</span>
-            </button>
-          </div>
+          <ProposalTemplateEditor 
+            currentUserId={currentUserId} 
+            onRefreshData={onRefreshData} 
+          />
+        </div>
+      )}
 
-          {templatesSubTab === 'proposal' ? (
-            <ProposalTemplateEditor 
-              currentUserId={currentUserId} 
-              onRefreshData={onRefreshData} 
-            />
-          ) : (
-            <OfferLetterTemplateEditor 
-              currentUserId={currentUserId} 
-              onRefreshData={onRefreshData} 
-            />
-          )}
+      {/* ==============================================================
+          TAB: OFFER LETTER TEMPLATE DESIGNER (HR & Payroll Direct)
+          ============================================================== */}
+      {viewTab === 'offer_letter' && (
+        <div className="space-y-6">
+          <OfferLetterTemplateEditor 
+            currentUserId={currentUserId} 
+            onRefreshData={onRefreshData} 
+          />
         </div>
       )}
 

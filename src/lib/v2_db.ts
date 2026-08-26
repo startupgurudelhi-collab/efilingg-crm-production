@@ -94,7 +94,7 @@ export interface V2McaRocReturn {
   form8Status?: 'FILED' | 'NOT FILED';
   form8Srn?: string;
   balanceSheetStatus?: 'READY' | 'PENDING';
-  itrStatus?: 'FILED' | 'PENDING';
+  itrStatus?: 'FILED' | 'NOT FILED' | 'PENDING';
   itrAckNo?: string;
   
   // For Pvt Ltd / Section 8
@@ -131,8 +131,12 @@ export interface V2TaxAuditClient {
   id: string; // Linked taxpayerId (V2ItrClient)
   clientName: string;
   taxpayerType: string;
-  auditForm: '3CD/3CB' | '10B/10BB';
-  status: 'FILED' | 'PENDING WITH CA' | 'NOT FILED' | 'E-VERIFY PENDING';
+  auditForm: '3CD/3CB' | '10B/10BB' | 'FORM 3CD' | string;
+  status: 'FILED' | 'PENDING WITH CA' | 'NOT FILED' | 'E-VERIFY PENDING' | 'COMPLETED' | 'BALANCE SHEET PENDING' | 'FORM PENDING' | 'PENDING';
+  assignedEmployeeId?: string;
+  assignedEmployeeName?: string;
+  username?: string;
+  password?: string;
 }
 
 export interface V2TrustClient {
@@ -144,6 +148,9 @@ export interface V2TrustClient {
   emailId: string;
   mobileNumber: string;
   has12A80G: boolean;
+  is12a80gExpired?: boolean;
+  regDate12A80G?: string; // YYYY-MM-DD
+  expiryDate12A80G?: string; // YYYY-MM-DD
   itPortalUsername: string;
   itPortalPassword?: string;
   complianceStatus: string; // 'Good' | 'Attention' | 'At Risk'
@@ -420,6 +427,8 @@ export function getV2McaClients(): V2McaClient[] {
       auditorFirmId: 'AUD-1',
       isInc20aFiled: false,
       isAdt1Filed: true,
+      assignedEmployeeId: 'EMP-NEHA',
+      assignedEmployeeName: 'Neha Sharma',
       directors: [
         { name: 'Amit Singhal', dinNumber: '08412948', dinStatus: 'ACTIVE', mcaId: 'amit.mca', mcaPassword: 'Amit@123password', email: 'amit@innogeektech.co.in', mobile: '9001284910', dinKycStatus: 'Approved' },
         { name: 'Sonal Singhal', dinNumber: '09124485', dinStatus: 'ACTIVE', mcaId: 'sonal.mca', email: 'sonal@innogeektech.co.in', mobile: '9001284911', dinKycStatus: 'Pending' }
@@ -439,9 +448,89 @@ export function getV2McaClients(): V2McaClient[] {
       auditorFirmId: 'AUD-2',
       isInc20aFiled: false,
       isAdt1Filed: false,
+      assignedEmployeeId: 'EMP-RAMESH',
+      assignedEmployeeName: 'Ramesh Kumar',
       directors: [
         { name: 'Dr. Meena Semwal', dinNumber: '07129481', dinStatus: 'ACTIVE', mcaId: 'meena.ngo', email: 'meenal@outlook.com', mobile: '9211029410', dinKycStatus: 'Approved' },
         { name: 'Kiran Rawat', dinNumber: '07941204', dinStatus: 'ACTIVE', mcaId: 'kiran.ngo', email: 'kiran@outlook.com', mobile: '9211029412', dinKycStatus: 'Pending with CA' }
+      ]
+    },
+    {
+      id: 'MCA-CL-3',
+      clientName: 'BluePeak Logistics LLP',
+      clientType: 'LLP',
+      dateOfRegistration: '2025-04-15',
+      clientEmail: 'contact@bluepeaklogistics.in',
+      clientMobile: '9811092810',
+      clientAddress: 'Andheri East, Mumbai, Maharashtra - 400069',
+      clientState: 'Maharashtra',
+      incomeTaxId: 'AAFFB1928M',
+      incomeTaxPassword: 'LLP@BluePeak99',
+      auditorFirmId: 'AUD-1',
+      isInc20aFiled: true,
+      isAdt1Filed: true,
+      assignedEmployeeId: 'EMP-NEHA',
+      assignedEmployeeName: 'Neha Sharma',
+      directors: [
+        { name: 'Vikram Sethi', dinNumber: '08129401', dinStatus: 'ACTIVE', mcaId: 'vikram.llp', email: 'vikram@bluepeak.in', mobile: '9811092810', dinKycStatus: 'Approved' },
+        { name: 'Rohan Mehra', dinNumber: '08401928', dinStatus: 'ACTIVE', mcaId: 'rohan.llp', email: 'rohan@bluepeak.in', mobile: '9811092811', dinKycStatus: 'Approved' }
+      ]
+    },
+    {
+      id: 'MCA-CL-4',
+      clientName: 'Zenith Agro Foods Pvt Ltd',
+      clientType: 'PRIVATE LIMITED COMPANY',
+      dateOfRegistration: '2024-11-20',
+      clientEmail: 'accounts@zenithagro.co.in',
+      clientMobile: '9711029381',
+      clientAddress: 'Sanand GIDC, Ahmedabad, Gujarat - 382110',
+      clientState: 'Gujarat',
+      incomeTaxId: 'AABCZ9921Q',
+      incomeTaxPassword: 'Zenith@Pass@2026',
+      auditorFirmId: 'AUD-2',
+      isInc20aFiled: true,
+      isAdt1Filed: true,
+      assignedEmployeeId: 'EMP-RAMESH',
+      assignedEmployeeName: 'Ramesh Kumar',
+      directors: [
+        { name: 'Nilesh Patel', dinNumber: '06819204', dinStatus: 'ACTIVE', mcaId: 'nilesh.zenith', email: 'nilesh@zenithagro.co.in', mobile: '9711029381', dinKycStatus: 'Pending' },
+        { name: 'Bhavik Patel', dinNumber: '07192048', dinStatus: 'ACTIVE', mcaId: 'bhavik.zenith', email: 'bhavik@zenithagro.co.in', mobile: '9711029382', dinKycStatus: 'Pending with CA' }
+      ]
+    },
+    {
+      id: 'MCA-CL-5',
+      clientName: 'GreenLeaf Solar Ventures LLP',
+      clientType: 'LLP',
+      dateOfRegistration: '2025-06-30',
+      clientEmail: 'info@greenleafsolar.org',
+      clientMobile: '9412093811',
+      clientAddress: 'Banjara Hills, Hyderabad, Telangana - 500034',
+      clientState: 'Telangana',
+      incomeTaxId: 'AAFFG3819P',
+      incomeTaxPassword: 'Green@SolarPass',
+      auditorFirmId: 'AUD-1',
+      isInc20aFiled: true,
+      isAdt1Filed: true,
+      directors: [
+        { name: 'K. Venkat Rao', dinNumber: '09124019', dinStatus: 'ACTIVE', mcaId: 'venkat.solar', email: 'venkat@greenleafsolar.org', mobile: '9412093811', dinKycStatus: 'Approved' }
+      ]
+    },
+    {
+      id: 'MCA-CL-6',
+      clientName: 'Gramin Shiksha Foundation Section 8',
+      clientType: 'SECTION 8 NGO',
+      dateOfRegistration: '2025-12-01',
+      clientEmail: 'support@graminshiksha.org',
+      clientMobile: '9650192841',
+      clientAddress: 'Civil Lines, Jaipur, Rajasthan - 302006',
+      clientState: 'Rajasthan',
+      incomeTaxId: 'AAACG4819M',
+      incomeTaxPassword: 'Gramin@Shiksha1',
+      auditorFirmId: 'AUD-2',
+      isInc20aFiled: false,
+      isAdt1Filed: false,
+      directors: [
+        { name: 'Anita Sharma', dinNumber: '07491028', dinStatus: 'ACTIVE', mcaId: 'anita.ngo', email: 'anita@graminshiksha.org', mobile: '9650192841', dinKycStatus: 'Pending' }
       ]
     }
   ]);
@@ -500,6 +589,54 @@ export function getV2McaRocReturns(): V2McaRocReturn[] {
       mgt7Status: 'NOT FILED',
       balanceSheetStatus: 'PENDING',
       itrStatus: 'PENDING',
+      caName: 'CA Neha Goel'
+    },
+    {
+      id: 'MCA-CL-3_2025-26',
+      mcaClientId: 'MCA-CL-3',
+      financialYear: '2025-26',
+      form11Status: 'FILED',
+      form11Srn: 'F1194821',
+      form8Status: 'NOT FILED',
+      balanceSheetStatus: 'READY',
+      itrStatus: 'PENDING',
+      caName: 'CA Alok Sharma'
+    },
+    {
+      id: 'MCA-CL-4_2025-26',
+      mcaClientId: 'MCA-CL-4',
+      financialYear: '2025-26',
+      dinKycStatus: 'NOT FILED',
+      adt1Status: 'FILED',
+      adt1Srn: 'A7192048',
+      aoc4Status: 'FILED',
+      aoc4Srn: 'AOC49182',
+      mgt7Status: 'FILED',
+      mgt7Srn: 'MGT79182',
+      balanceSheetStatus: 'READY',
+      itrStatus: 'FILED',
+      caName: 'CA Neha Goel'
+    },
+    {
+      id: 'MCA-CL-5_2025-26',
+      mcaClientId: 'MCA-CL-5',
+      financialYear: '2025-26',
+      form11Status: 'NOT FILED',
+      form8Status: 'NOT FILED',
+      balanceSheetStatus: 'PENDING',
+      itrStatus: 'PENDING',
+      caName: 'CA Alok Sharma'
+    },
+    {
+      id: 'MCA-CL-6_2025-26',
+      mcaClientId: 'MCA-CL-6',
+      financialYear: '2025-26',
+      dinKycStatus: 'NOT FILED',
+      adt1Status: 'NOT FILED',
+      aoc4Status: 'NOT FILED',
+      mgt7Status: 'NOT FILED',
+      balanceSheetStatus: 'PENDING',
+      itrStatus: 'NOT FILED',
       caName: 'CA Neha Goel'
     }
   ]);
@@ -566,37 +703,58 @@ export function updateV2ItrStatus(id: string, status: V2ItrClient['itrStatus']) 
 export function getV2TaxAuditClients(): V2TaxAuditClient[] {
   const itrClients = getV2ItrClients();
   const trustClients = getV2TrustClients();
+  const overrides = getV2TaxAuditOverrides();
   
   const list: V2TaxAuditClient[] = [];
 
-  // 1. From Individual/Individual ITR
+  // 1. From Individual/Business/MCA ITR
   itrClients.forEach(itr => {
     if (itr.isAuditApplicable) {
-      let auditForm: '3CD/3CB' | '10B/10BB' = '3CD/3CB';
-      if (itr.taxpayerType === 'TRUST & SOCIETY' || itr.taxpayerType === 'SECTION 8') {
-        auditForm = '10B/10BB';
+      let auditForm: string = 'Form 3CD';
+      const entityTypeUpper = (itr.taxpayerType || '').toUpperCase();
+      if (
+        entityTypeUpper.includes('TRUST') ||
+        entityTypeUpper.includes('SOCIETY') ||
+        entityTypeUpper.includes('SECTION 8') ||
+        entityTypeUpper.includes('NGO') ||
+        itr.typeOfItr === 'ITR-7'
+      ) {
+        auditForm = 'Form 10B';
+      } else {
+        // Proprietor, Private Limited, LLP, Partnership Firm, Corporate
+        auditForm = 'Form 3CD';
       }
+      const override = overrides.find(o => o.clientId === itr.id);
       list.push({
         id: itr.id,
         clientName: itr.taxpayerName,
         taxpayerType: itr.taxpayerType,
         auditForm,
-        status: (itr.itrStatus === 'FILED' ? 'FILED' : (itr.itrStatus === 'PENDING FOR TAX AUDIT' ? 'PENDING WITH CA' : 'NOT FILED'))
+        status: override ? override.status : (itr.itrStatus === 'FILED' ? 'COMPLETED' : (itr.itrStatus === 'PENDING FOR TAX AUDIT' ? 'PENDING WITH CA' : 'PENDING')),
+        assignedEmployeeId: override?.assignedEmployeeId || itr.assignedEmployeeId,
+        assignedEmployeeName: override?.assignedEmployeeName || itr.assignedEmployeeName,
+        username: itr.panNumber,
+        password: itr.itPortalPassword
       });
     }
   });
 
-  // 2. From Trust & Society
+  // 2. From Trust & Society (Active 12A & 80G entities always mandate Form 10B Tax Audit)
   trustClients.forEach(trust => {
     if (trust.has12A80G) {
-      // Avoid duplications
       if (!list.some(item => item.clientName === trust.entityName)) {
+        const trustAuditId = `TRUST-AUD-${trust.id}`;
+        const override = overrides.find(o => o.clientId === trustAuditId);
         list.push({
-          id: `TRUST-AUD-${trust.id}`,
+          id: trustAuditId,
           clientName: trust.entityName,
-          taxpayerType: 'TRUST & SOCIETY',
-          auditForm: '10B/10BB',
-          status: 'PENDING WITH CA'
+          taxpayerType: trust.typeOfEntity === 'Society' ? 'SOCIETY (EXEMPT)' : 'TRUST & NGO',
+          auditForm: 'Form 10B',
+          status: override ? override.status : 'PENDING WITH CA',
+          assignedEmployeeId: override?.assignedEmployeeId || trust.assignedEmployeeId,
+          assignedEmployeeName: override?.assignedEmployeeName || trust.assignedEmployeeName,
+          username: trust.itPortalUsername,
+          password: trust.itPortalPassword
         });
       }
     }
@@ -617,6 +775,9 @@ export function getV2TrustClients(): V2TrustClient[] {
       emailId: 'prerna.foundation@rediffmail.com',
       mobileNumber: '9512491204',
       has12A80G: true,
+      is12a80gExpired: false,
+      regDate12A80G: '2022-04-01',
+      expiryDate12A80G: '2027-03-31',
       itPortalUsername: 'PRERNA_12A_80G',
       itPortalPassword: 'PrernaPassword@1',
       complianceStatus: 'Good',
@@ -631,6 +792,7 @@ export function getV2TrustClients(): V2TrustClient[] {
       emailId: 'gramvikas.samiti@org.in',
       mobileNumber: '7910249122',
       has12A80G: false,
+      is12a80gExpired: false,
       itPortalUsername: 'GRAM_VIKAS',
       itPortalPassword: 'GramVKPassword',
       complianceStatus: 'Attention',
@@ -640,10 +802,12 @@ export function getV2TrustClients(): V2TrustClient[] {
 }
 export function addV2TrustClient(cl: Omit<V2TrustClient, 'id' | 'complianceStatus' | 'healthScore'>): V2TrustClient {
   const list = getV2TrustClients();
-  const healthScore = cl.has12A80G ? 95 : 75;
-  const complianceStatus = healthScore >= 85 ? 'Good' : 'Attention';
+  const isExpired = cl.is12a80gExpired || (cl.expiryDate12A80G && new Date(cl.expiryDate12A80G) < new Date());
+  const healthScore = cl.has12A80G ? (isExpired ? 70 : 95) : 75;
+  const complianceStatus = healthScore >= 85 ? 'Good' : (healthScore >= 70 ? 'Attention' : 'At Risk');
   const newItem: V2TrustClient = {
     ...cl,
+    is12a80gExpired: isExpired || false,
     id: `TRUST-${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
     healthScore,
     complianceStatus
@@ -651,7 +815,7 @@ export function addV2TrustClient(cl: Omit<V2TrustClient, 'id' | 'complianceStatu
   list.push(newItem);
   saveV2Items(KEY_V2_TRUST_CLIENTS, list);
   
-  // Auto forward to ITR & Tax Audit
+  // Auto forward to ITR & Tax Audit (Form 10B)
   if (cl.has12A80G) {
     addV2ItrClient({
       taxpayerName: newItem.entityName,
@@ -662,7 +826,9 @@ export function addV2TrustClient(cl: Omit<V2TrustClient, 'id' | 'complianceStatu
       itPortalPassword: newItem.itPortalPassword || '',
       isAuditApplicable: true,
       linkedTrustId: newItem.id,
-      itrStatus: 'PENDING FOR TAX AUDIT'
+      itrStatus: 'PENDING FOR TAX AUDIT',
+      assignedEmployeeId: newItem.assignedEmployeeId,
+      assignedEmployeeName: newItem.assignedEmployeeName
     });
   }
 
@@ -896,8 +1062,43 @@ export function updateV2TrustClient(updated: V2TrustClient): void {
   const list = getV2TrustClients();
   const idx = list.findIndex(item => item.id === updated.id);
   if (idx !== -1) {
-    list[idx] = updated;
+    const isExpired = updated.is12a80gExpired || (updated.expiryDate12A80G && new Date(updated.expiryDate12A80G) < new Date());
+    const healthScore = updated.has12A80G ? (isExpired ? 70 : 95) : 75;
+    const complianceStatus = healthScore >= 85 ? 'Good' : (healthScore >= 70 ? 'Attention' : 'At Risk');
+    
+    const clientToSave: V2TrustClient = {
+      ...updated,
+      is12a80gExpired: isExpired || false,
+      healthScore,
+      complianceStatus
+    };
+    list[idx] = clientToSave;
     saveV2Items(KEY_V2_TRUST_CLIENTS, list);
+
+    // Sync to ITR / Tax Audit
+    const itrList = getV2ItrClients();
+    const existingItr = itrList.find(i => i.linkedTrustId === updated.id || i.taxpayerName === updated.entityName);
+    if (existingItr) {
+      existingItr.taxpayerName = updated.entityName;
+      existingItr.isAuditApplicable = updated.has12A80G;
+      existingItr.assignedEmployeeId = updated.assignedEmployeeId;
+      existingItr.assignedEmployeeName = updated.assignedEmployeeName;
+      saveV2Items(KEY_V2_ITR_CLIENTS, itrList);
+    } else if (updated.has12A80G) {
+      addV2ItrClient({
+        taxpayerName: updated.entityName,
+        taxpayerType: 'TRUST & SOCIETY',
+        panNumber: 'AAAPT' + Math.floor(1000 + Math.random() * 9000) + 'A',
+        typeOfItr: 'ITR-7',
+        address: updated.address,
+        itPortalPassword: updated.itPortalPassword || '',
+        isAuditApplicable: true,
+        linkedTrustId: updated.id,
+        itrStatus: 'PENDING FOR TAX AUDIT',
+        assignedEmployeeId: updated.assignedEmployeeId,
+        assignedEmployeeName: updated.assignedEmployeeName
+      });
+    }
   }
 }
 

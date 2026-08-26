@@ -599,10 +599,14 @@ export default function V2GST({
       )}
 
       {/* =========================================================================
-          TAB 6: EXTENSION LOGS & SETTINGS
+          TAB 6: GST LOGIN CHROME EXTENSION SETTINGS
           ========================================================================= */}
       {activeTab === 'SETTINGS' && (
-        <GSTExtensionLogsSettings />
+        <GSTExtensionLogsSettings
+          clients={clients}
+          onTriggerGstLogin={handleTriggerGstLogin}
+          onRefreshClients={() => setClients(getV2GstClients())}
+        />
       )}
 
       {/* =========================================================================

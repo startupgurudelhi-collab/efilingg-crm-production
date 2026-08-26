@@ -298,7 +298,7 @@ export default function MasterExecutiveLanding({
                   SALES & MARKETING
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug line-clamp-2">
-                  Lead Management, Sales Pipeline, Followups, Quotations, Proposals, AI Sales Agent
+                  Lead Pipeline, Followups, Proposals, Service Catalogue, Proposal Designer, AI Qualified Leads
                 </p>
               </div>
 
@@ -426,7 +426,7 @@ export default function MasterExecutiveLanding({
                   SETTINGS & CONTROL CENTER
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug line-clamp-2">
-                  System Controls, Recovery Center, AI Settings, WhatsApp Webhook, Security Telemetry
+                  System Controls, AI Sales Agent, Recovery Center, WhatsApp Webhook, Security Telemetry
                 </p>
               </div>
 
@@ -438,7 +438,7 @@ export default function MasterExecutiveLanding({
               {/* Sub-items list tags */}
               <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800">
                 <div className="flex flex-wrap gap-1">
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">AI Settings</span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">AI Sales Agent</span>
                   <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">WhatsApp</span>
                   <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">Recovery</span>
                   <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">Security</span>
@@ -481,7 +481,7 @@ export default function MasterExecutiveLanding({
                   HR & WORKFORCE
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug line-clamp-2">
-                  Employees Roster, Payroll Approvals, Leaves, Attendance, Service Catalogue
+                  Employees Roster, Payroll Approvals, Leaves, Attendance Audit & Time Logs
                 </p>
               </div>
 
@@ -496,8 +496,7 @@ export default function MasterExecutiveLanding({
                   <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">Staff ({totalEmployees})</span>
                   <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">Payroll</span>
                   <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">Attendance</span>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">Proposals</span>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-pink-50 dark:bg-pink-950/60 text-pink-700 dark:text-pink-300">Services</span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">Leave Requests</span>
                 </div>
               </div>
             </div>

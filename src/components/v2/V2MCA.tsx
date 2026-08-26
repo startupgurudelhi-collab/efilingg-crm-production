@@ -23,32 +23,43 @@ import { getCurrentSession, setStorageString } from '../../lib/db';
 import ConfirmModal from './ConfirmModal';
 import { 
   Building2, Users, Receipt, Calendar, Plus, Download, UploadCloud, Search, Check, AlertTriangle, ShieldAlert,
-  Edit2, UserCheck, X, Trash2
+  Edit2, UserCheck, X, Trash2, LayoutDashboard, Filter
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import McaDashboardView from './McaDashboardView';
 
 export default function V2MCA({
-  initialActiveTab = 'mca',
+  initialActiveTab = 'dashboard',
   initialRocSubTab,
   initialShowAddForm = false,
   initialShowImport = false,
-  initialClientTypeFilter
+  initialClientTypeFilter = 'ALL',
+  initialEmployeeIdFilter
 }: {
   key?: any;
-  initialActiveTab?: 'mca' | 'roc';
+  initialActiveTab?: 'dashboard' | 'companies' | 'mca' | 'roc' | 'roc_companies' | 'roc_llp' | 'din_kyc' | 'post_compliance';
   initialRocSubTab?: 'NGO' | 'PVT' | 'LLP';
   initialShowAddForm?: boolean;
   initialShowImport?: boolean;
-  initialClientTypeFilter?: 'PRIVATE LIMITED COMPANY' | 'LLP' | 'SECTION 8 NGO';
+  initialClientTypeFilter?: 'PRIVATE LIMITED COMPANY' | 'LLP' | 'SECTION 8 NGO' | 'ALL';
+  initialEmployeeIdFilter?: string;
 } = {}) {
-  const [activeTab, setActiveTab] = useState<'mca' | 'roc'>(initialActiveTab);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'companies' | 'mca' | 'roc' | 'roc_companies' | 'roc_llp' | 'din_kyc' | 'post_compliance'>(
+    (initialActiveTab as any) || 'dashboard'
+  );
+  const [clientTypeFilter, setClientTypeFilter] = useState<'ALL' | 'PRIVATE LIMITED COMPANY' | 'LLP' | 'SECTION 8 NGO'>(
+    initialClientTypeFilter || 'ALL'
+  );
+  const [employeeIdFilter, setEmployeeIdFilter] = useState<string>(initialEmployeeIdFilter || '');
   const [clients, setClients] = useState<V2McaClient[]>(getV2McaClients());
   const [returns, setReturns] = useState<V2McaRocReturn[]>(getV2McaRocReturns());
   const [search, setSearch] = useState('');
   
   // ROC specific states
   const [selectedFY, setSelectedFY] = useState('25-26');
-  const [rocSubTab, setRocSubTab] = useState<'NGO' | 'PVT' | 'LLP'>(initialRocSubTab || 'PVT');
+  const [rocSubTab, setRocSubTab] = useState<'NGO' | 'PVT' | 'LLP'>(
+    initialRocSubTab || (initialActiveTab === 'roc_llp' ? 'LLP' : 'PVT')
+  );
 
   const auditors = getV2Auditors();
 
@@ -62,6 +73,35 @@ export default function V2MCA({
   useEffect(() => {
     setCurrentUser(getCurrentSession());
   }, []);
+
+  useEffect(() => {
+    if (initialActiveTab === 'roc_companies') {
+      setActiveTab('roc');
+      setRocSubTab('PVT');
+    } else if (initialActiveTab === 'roc_llp') {
+      setActiveTab('roc');
+      setRocSubTab('LLP');
+    } else if (initialActiveTab) {
+      setActiveTab(initialActiveTab as any);
+    }
+    if (initialRocSubTab) {
+      setRocSubTab(initialRocSubTab);
+    }
+    if (initialClientTypeFilter) {
+      setClientTypeFilter(initialClientTypeFilter);
+    }
+    if (initialEmployeeIdFilter !== undefined) {
+      setEmployeeIdFilter(initialEmployeeIdFilter);
+    }
+    if (initialShowAddForm) {
+      setShowAddForm(true);
+      setShowImport(false);
+    }
+    if (initialShowImport) {
+      setShowImport(true);
+      setShowAddForm(false);
+    }
+  }, [initialActiveTab, initialRocSubTab, initialClientTypeFilter, initialEmployeeIdFilter, initialShowAddForm, initialShowImport]);
 
   // Reusable custom confirm modal state
   const [confirmModal, setConfirmModal] = useState<{
@@ -423,14 +463,21 @@ export default function V2MCA({
     exportToCSVFile(`roc_report_fy_${selectedFY}_sub_${rocSubTab}.csv`, headers, rows);
   };
 
-  // Searching clients
+  // Searching and filtering clients
   const filteredMcaClients = clients.filter(c => {
-    if (currentUser && currentUser.role !== 'admin') {
-      if (c.assignedEmployeeId !== currentUser.id) return false;
+    if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'super_admin') {
+      if (c.assignedEmployeeId !== currentUser.id && c.assignedEmployeeName !== currentUser.name) return false;
+    }
+    if (employeeIdFilter && c.assignedEmployeeId !== employeeIdFilter) {
+      return false;
+    }
+    if (clientTypeFilter !== 'ALL' && c.clientType !== clientTypeFilter) {
+      return false;
     }
     return c.clientName.toLowerCase().includes(search.toLowerCase()) || 
       c.clientType.toLowerCase().includes(search.toLowerCase()) ||
-      c.incomeTaxId.toLowerCase().includes(search.toLowerCase());
+      c.incomeTaxId.toLowerCase().includes(search.toLowerCase()) ||
+      (c.clientState || '').toLowerCase().includes(search.toLowerCase());
   });
 
   const getRocRow = (mcaClientId: string) => {
@@ -454,43 +501,45 @@ export default function V2MCA({
   return (
     <div className="space-y-6">
       
-      {/* Top Header Selector */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-        <button
-          onClick={() => setActiveTab('mca')}
-          className={`px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-xl transition ${
-            activeTab === 'mca' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
-          }`}
-        >
-          🏙️ MCA Client Registry (LLP / Private Ltd)
-        </button>
-        <button
-          onClick={() => setActiveTab('roc')}
-          className={`px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-xl transition ${
-            activeTab === 'roc' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
-          }`}
-        >
-          📜 ROC Annual Filings Ledger (PVT / LLP)
-        </button>
-        <button
-          onClick={() => setActiveTab('din_kyc' as any)}
-          className={`px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-xl transition ${
-            activeTab === ('din_kyc' as any) ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
-          }`}
-        >
-          🆔 DIN KYC Panel
-        </button>
-        <button
-          onClick={() => setActiveTab('post_compliance' as any)}
-          className={`px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-xl transition ${
-            activeTab === ('post_compliance' as any) ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
-          }`}
-        >
-          ⚓ Post Incorporation Compliance
-        </button>
-      </div>
+      {/* DASHBOARD TAB (Master Admin or Employee View) */}
+      {activeTab === 'dashboard' && (
+        <McaDashboardView
+          clients={clients}
+          returns={returns}
+          auditors={auditors}
+          allEmployees={allEmployees}
+          currentUser={currentUser}
+          onNavigateTab={(tab, typeFilter, empId) => {
+            if (tab === 'companies') {
+              setActiveTab('mca');
+              if (typeFilter) setClientTypeFilter(typeFilter as any);
+              if (empId) setEmployeeIdFilter(empId);
+            } else if (tab === 'roc_companies') {
+              setActiveTab('roc');
+              setRocSubTab('PVT');
+            } else if (tab === 'roc_llp') {
+              setActiveTab('roc');
+              setRocSubTab('LLP');
+            } else {
+              setActiveTab(tab as any);
+            }
+          }}
+          onUpdateClient={handleUpdateClient}
+          onUpdateRocStatus={(clientId, field, value) => {
+            const curReturn = getRocRow(clientId);
+            const updated = { ...curReturn, [field]: value };
+            saveV2McaRocReturn(updated);
+            setReturns(getV2McaRocReturns());
+          }}
+          onOpenAddClient={() => {
+            setActiveTab('mca');
+            setShowAddForm(true);
+            setShowImport(false);
+          }}
+        />
+      )}
 
-      {activeTab === 'mca' && (
+      {(activeTab === 'mca' || activeTab === 'companies') && (
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-slate-50 dark:bg-slate-950 p-4 rounded-3xl border border-slate-100 dark:border-slate-850">
             <div>
@@ -877,10 +926,52 @@ export default function V2MCA({
             </form>
           )}
 
-          {/* Search bar */}
-          <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-850 px-3 py-1.5 rounded-2xl max-w-md text-xs">
-            <Search className="h-4 w-4 text-slate-400 shrink-0" />
-            <input type="text" placeholder="Search companies, PAN IDs, structural type..." value={search} onChange={e => setSearch(e.target.value)} className="bg-transparent border-0 w-full focus:ring-0 p-0" />
+          {/* Search bar & Type Filter Pills */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-850 px-3 py-1.5 rounded-2xl w-full md:max-w-md text-xs">
+              <Search className="h-4 w-4 text-slate-400 shrink-0" />
+              <input 
+                type="text" 
+                placeholder="Search companies, PAN IDs, state, directors..." 
+                value={search} 
+                onChange={e => setSearch(e.target.value)} 
+                className="bg-transparent border-0 w-full focus:ring-0 p-0 text-xs" 
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Type Filter Pills */}
+              <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-[10px] font-bold">
+                {(['ALL', 'PRIVATE LIMITED COMPANY', 'LLP', 'SECTION 8 NGO'] as const).map(t => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setClientTypeFilter(t)}
+                    className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                      clientTypeFilter === t 
+                        ? 'bg-white dark:bg-slate-900 text-purple-600 shadow-xs font-black' 
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    {t === 'ALL' ? 'All Companies' : t === 'PRIVATE LIMITED COMPANY' ? 'Pvt Ltd' : t === 'SECTION 8 NGO' ? 'Section 8' : 'LLP'}
+                  </button>
+                ))}
+              </div>
+
+              {/* Active Employee Filter chip */}
+              {employeeIdFilter && (
+                <div className="flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-2.5 py-1 rounded-xl text-[10px] font-bold">
+                  <span>Filtered: {allEmployees.find(e => e.id === employeeIdFilter)?.name || 'Employee'}</span>
+                  <button 
+                    type="button" 
+                    onClick={() => setEmployeeIdFilter('')}
+                    className="hover:text-rose-600 cursor-pointer"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Grid Layout of Company Files */}

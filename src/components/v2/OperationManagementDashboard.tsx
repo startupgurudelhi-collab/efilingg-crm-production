@@ -11,6 +11,9 @@ import V2Masters from './V2Masters';
 import V2GST from './V2GST';
 import V2MCA from './V2MCA';
 import V2ITR from './V2ITR';
+import V2TrustNGO from './V2TrustNGO';
+import V2DSCManagement from './V2DSCManagement';
+import V2RegistrationLicenses from './V2RegistrationLicenses';
 import V2Tasks from './V2Tasks';
 import V2TrademarkCopyright from './V2TrademarkCopyright';
 import V2ClientMapper from './V2ClientMapper';
@@ -85,10 +88,11 @@ export default function OperationManagementDashboard({
     itrShowAddTrust?: boolean;
     itrShowAddDsc?: boolean;
 
-    mcaActiveTab?: 'mca' | 'roc';
+    mcaActiveTab?: 'dashboard' | 'companies' | 'mca' | 'roc' | 'roc_companies' | 'roc_llp' | 'din_kyc' | 'post_compliance';
+    mcaRocSubTab?: 'NGO' | 'PVT' | 'LLP';
     mcaShowAddForm?: boolean;
     mcaShowImport?: boolean;
-    mcaClientTypeFilter?: 'PRIVATE LIMITED COMPANY' | 'LLP' | 'SECTION 8 NGO';
+    mcaClientTypeFilter?: 'PRIVATE LIMITED COMPANY' | 'LLP' | 'SECTION 8 NGO' | 'ALL';
   }>({});
 
   const [navigationKey, setNavigationKey] = useState<number>(0);
@@ -138,52 +142,65 @@ export default function OperationManagementDashboard({
       setNavTarget({ section: 'gst', subTab: 'SETTINGS' });
       setActiveConfig(prev => ({ ...prev, gstSubTab: 'SETTINGS' }));
     } else if (activeNavTarget === 'ops_itr_dashboard' || activeNavTarget === 'ops_itr') {
-      setNavTarget({ section: 'itr', subTab: 'itr' });
-      setActiveConfig(prev => ({ ...prev, itrSubTab: 'itr' }));
+      setNavTarget({ section: 'itr', subTab: 'dashboard' });
+      setActiveConfig(prev => ({ ...prev, itrSubTab: 'dashboard' }));
     } else if (activeNavTarget === 'ops_itr_individual') {
-      setNavTarget({ section: 'itr', subTab: 'itr', filter: 'INDIVIDUAL' });
-      setActiveConfig(prev => ({ ...prev, itrSubTab: 'itr' }));
+      setNavTarget({ section: 'itr', subTab: 'individual', filter: 'INDIVIDUAL' });
+      setActiveConfig(prev => ({ ...prev, itrSubTab: 'individual' }));
     } else if (activeNavTarget === 'ops_itr_business') {
-      setNavTarget({ section: 'itr', subTab: 'itr', filter: 'BUSINESS' });
-      setActiveConfig(prev => ({ ...prev, itrSubTab: 'itr' }));
+      setNavTarget({ section: 'itr', subTab: 'business', filter: 'BUSINESS' });
+      setActiveConfig(prev => ({ ...prev, itrSubTab: 'business' }));
     } else if (activeNavTarget === 'ops_itr_audit') {
       setNavTarget({ section: 'itr', subTab: 'audit' });
       setActiveConfig(prev => ({ ...prev, itrSubTab: 'audit' }));
-    } else if (activeNavTarget === 'ops_itr_notices') {
-      setNavTarget({ section: 'itr', subTab: 'itr', filter: 'NOTICES' });
-      setActiveConfig(prev => ({ ...prev, itrSubTab: 'itr' }));
     } else if (activeNavTarget === 'ops_mca_dashboard' || activeNavTarget === 'ops_mca') {
-      setNavTarget({ section: 'mca', subTab: 'mca' });
-      setActiveConfig(prev => ({ ...prev, mcaActiveTab: 'mca' }));
-    } else if (activeNavTarget === 'ops_mca_roc') {
-      setNavTarget({ section: 'mca', subTab: 'roc' });
-      setActiveConfig(prev => ({ ...prev, mcaActiveTab: 'roc' }));
-    } else if (activeNavTarget === 'ops_mca_llp') {
-      setNavTarget({ section: 'mca', subTab: 'mca', filter: 'LLP' });
-      setActiveConfig(prev => ({ ...prev, mcaActiveTab: 'mca', mcaClientTypeFilter: 'LLP' }));
+      setNavTarget({ section: 'mca', subTab: 'dashboard' });
+      setActiveConfig(prev => ({ ...prev, mcaActiveTab: 'dashboard', mcaClientTypeFilter: 'ALL' }));
+      setNavigationKey(prev => prev + 1);
+    } else if (activeNavTarget === 'ops_mca_pvt_ltd') {
+      setNavTarget({ section: 'mca', subTab: 'companies', filter: 'PRIVATE LIMITED COMPANY' });
+      setActiveConfig(prev => ({ ...prev, mcaActiveTab: 'companies', mcaClientTypeFilter: 'PRIVATE LIMITED COMPANY' }));
+      setNavigationKey(prev => prev + 1);
+    } else if (activeNavTarget === 'ops_mca_llp_clients' || activeNavTarget === 'ops_mca_llp') {
+      setNavTarget({ section: 'mca', subTab: 'companies', filter: 'LLP' });
+      setActiveConfig(prev => ({ ...prev, mcaActiveTab: 'companies', mcaClientTypeFilter: 'LLP' }));
+      setNavigationKey(prev => prev + 1);
+    } else if (activeNavTarget === 'ops_mca_section8') {
+      setNavTarget({ section: 'mca', subTab: 'companies', filter: 'SECTION 8 NGO' });
+      setActiveConfig(prev => ({ ...prev, mcaActiveTab: 'companies', mcaClientTypeFilter: 'SECTION 8 NGO' }));
+      setNavigationKey(prev => prev + 1);
     } else if (activeNavTarget === 'ops_mca_kyc') {
-      setNavTarget({ section: 'mca', subTab: 'roc', filter: 'KYC' });
-      setActiveConfig(prev => ({ ...prev, mcaActiveTab: 'roc' }));
-    } else if (activeNavTarget === 'ops_mca_aoc4') {
-      setNavTarget({ section: 'mca', subTab: 'roc', filter: 'AOC-4' });
-      setActiveConfig(prev => ({ ...prev, mcaActiveTab: 'roc' }));
-    } else if (activeNavTarget === 'ops_mca_mgt7') {
-      setNavTarget({ section: 'mca', subTab: 'roc', filter: 'MGT-7' });
-      setActiveConfig(prev => ({ ...prev, mcaActiveTab: 'roc' }));
-    } else if (activeNavTarget === 'ops_mca_inc20a') {
-      setNavTarget({ section: 'mca', subTab: 'mca', filter: 'INC-20A' });
-      setActiveConfig(prev => ({ ...prev, mcaActiveTab: 'mca' }));
-    } else if (activeNavTarget === 'ops_trust_dashboard' || activeNavTarget.startsWith('ops_trust_')) {
-      setNavTarget({ section: 'trust', subTab: 'trust' });
-      setActiveConfig(prev => ({ ...prev, itrSubTab: 'trust' }));
+      setNavTarget({ section: 'mca', subTab: 'din_kyc' });
+      setActiveConfig(prev => ({ ...prev, mcaActiveTab: 'din_kyc' }));
+      setNavigationKey(prev => prev + 1);
+    } else if (activeNavTarget === 'ops_mca_post_inc' || activeNavTarget === 'ops_mca_inc20a') {
+      setNavTarget({ section: 'mca', subTab: 'post_compliance' });
+      setActiveConfig(prev => ({ ...prev, mcaActiveTab: 'post_compliance' }));
+      setNavigationKey(prev => prev + 1);
+    } else if (activeNavTarget === 'ops_mca_roc' || activeNavTarget === 'ops_mca_roc_companies' || activeNavTarget === 'ops_mca_aoc4' || activeNavTarget === 'ops_mca_mgt7') {
+      setNavTarget({ section: 'mca', subTab: 'roc_companies' });
+      setActiveConfig(prev => ({ ...prev, mcaActiveTab: 'roc_companies', mcaRocSubTab: 'PVT' }));
+      setNavigationKey(prev => prev + 1);
+    } else if (activeNavTarget === 'ops_mca_roc_llp') {
+      setNavTarget({ section: 'mca', subTab: 'roc_llp' });
+      setActiveConfig(prev => ({ ...prev, mcaActiveTab: 'roc_llp', mcaRocSubTab: 'LLP' }));
+      setNavigationKey(prev => prev + 1);
+    } else if (activeNavTarget === 'ops_trust_dashboard') {
+      setNavTarget({ section: 'trust', subTab: 'dashboard', filter: 'ALL' });
+      setNavigationKey(prev => prev + 1);
+    } else if (activeNavTarget === 'ops_trust_12a_80g' || activeNavTarget === 'ops_trust_12a' || activeNavTarget === 'ops_trust_80g') {
+      setNavTarget({ section: 'trust', subTab: '12a_80g', filter: '12A_80G' });
+      setNavigationKey(prev => prev + 1);
+    } else if (activeNavTarget.startsWith('ops_trust_')) {
+      const filter = activeNavTarget.replace('ops_trust_', '').toUpperCase();
+      setNavTarget({ section: 'trust', subTab: 'trust', filter });
+      setNavigationKey(prev => prev + 1);
     } else if (activeNavTarget.startsWith('ops_dsc_')) {
       const type = activeNavTarget.replace('ops_dsc_', '').toUpperCase();
       setNavTarget({ section: 'dsc', subTab: 'dsc', filter: type });
-      setActiveConfig(prev => ({ ...prev, itrSubTab: 'dsc' }));
     } else if (activeNavTarget.startsWith('ops_license_')) {
       const type = activeNavTarget.replace('ops_license_', '').toUpperCase();
-      setNavTarget({ section: 'license', subTab: 'others', filter: type });
-      setActiveConfig(prev => ({ ...prev, itrSubTab: 'others' }));
+      setNavTarget({ section: 'license', subTab: 'license', filter: type });
     } else if (activeNavTarget === 'ops_clients_master' || activeNavTarget === 'ops_clients_mapping' || activeNavTarget === 'ops_clients') {
       setNavTarget({ section: 'clients' });
     } else if (activeNavTarget === 'ops_clients_allocation') {
@@ -590,8 +607,31 @@ export default function OperationManagementDashboard({
         case 'QUARTERLY': return 'Quarterly Returns';
         case 'REPORTS': return 'GST Reports';
         case 'SETTINGS':
-        case 'EXTENSION_ADMIN': return 'Extension Logs & Settings';
+        case 'EXTENSION_ADMIN': return 'GST Chrome Extension';
         default: return sub;
+      }
+    }
+    if (sec === 'mca') {
+      switch (sub.toLowerCase()) {
+        case 'dashboard': return 'Companies Master Dashboard';
+        case 'companies':
+        case 'mca': return 'Company Registry';
+        case 'din_kyc': return 'Director DIN KYC Control Panel';
+        case 'post_compliance': return 'Post Incorporation Compliance Desk';
+        case 'roc_companies': return 'Companies Annual ROC (AOC-4 & MGT-7)';
+        case 'roc_llp': return 'LLP Statutory Filings (Form 11 & Form 8)';
+        case 'roc': return 'ROC Annual Filings';
+        default: return sub;
+      }
+    }
+    if (sec === 'trust') {
+      switch (sub.toLowerCase()) {
+        case 'dashboard':
+        case 'trust': return 'NGOs & Trusts Master Control';
+        case '12a_80g':
+        case '12a':
+        case '80g': return '12A & 80G Statutory Registry';
+        default: return 'Trusts & NGOs Compliance';
       }
     }
     return sub;
@@ -752,31 +792,63 @@ export default function OperationManagementDashboard({
       {navTarget.section === 'mca' && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-5 shadow-xs">
           <V2MCA
-            key={`v2mca-${navigationKey}`}
-            initialActiveTab={activeConfig.mcaActiveTab}
+            key={`v2mca-${activeNavTarget || ''}-${activeConfig.mcaActiveTab || navTarget.subTab || 'dashboard'}-${activeConfig.mcaClientTypeFilter || navTarget.filter || 'ALL'}-${activeConfig.mcaRocSubTab || ''}-${navigationKey}`}
+            initialActiveTab={activeConfig.mcaActiveTab || (navTarget.subTab as any) || 'dashboard'}
+            initialRocSubTab={activeConfig.mcaRocSubTab || (navTarget.subTab === 'roc_llp' ? 'LLP' : 'PVT')}
             initialShowAddForm={activeConfig.mcaShowAddForm}
             initialShowImport={activeConfig.mcaShowImport}
-            initialClientTypeFilter={activeConfig.mcaClientTypeFilter}
+            initialClientTypeFilter={activeConfig.mcaClientTypeFilter || (navTarget.filter as any) || 'ALL'}
           />
         </div>
       )}
 
       {/* =========================================================================
-          SUB-VIEW 4: ITR, AUDIT, TRUST, DSC, LICENSES
+          SUB-VIEW 4: INCOME TAX & AUDIT MODULE
           ========================================================================= */}
-      {(navTarget.section === 'itr' || navTarget.section === 'trust' || navTarget.section === 'dsc' || navTarget.section === 'license') && (
+      {navTarget.section === 'itr' && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-5 shadow-xs">
           <V2ITR
-            key={`v2itr-${navigationKey}`}
-            initialSubTab={
-              navTarget.section === 'trust' ? 'trust' :
-              navTarget.section === 'dsc' ? 'dsc' :
-              navTarget.section === 'license' ? 'others' :
-              (activeConfig.itrSubTab || 'itr')
-            }
+            key={`v2itr-${navigationKey}-${navTarget.subTab || 'dashboard'}`}
+            initialSubTab={navTarget.subTab as any}
             initialShowAddItr={activeConfig.itrShowAddItr}
-            initialShowAddTrust={activeConfig.itrShowAddTrust}
-            initialShowAddDsc={activeConfig.itrShowAddDsc}
+          />
+        </div>
+      )}
+
+      {/* =========================================================================
+          SUB-VIEW: TRUST & NGO LEDGER
+          ========================================================================= */}
+      {navTarget.section === 'trust' && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-5 shadow-xs">
+          <V2TrustNGO
+            key={`v2trust-${navigationKey}`}
+            initialFilter={navTarget.filter}
+            initialShowAdd={activeConfig.itrShowAddTrust}
+          />
+        </div>
+      )}
+
+      {/* =========================================================================
+          SUB-VIEW: DSC MANAGEMENT
+          ========================================================================= */}
+      {navTarget.section === 'dsc' && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-5 shadow-xs">
+          <V2DSCManagement
+            key={`v2dsc-${navigationKey}-${navTarget.filter || 'ALL'}`}
+            initialFilter={navTarget.filter}
+            initialShowAdd={activeConfig.itrShowAddDsc}
+          />
+        </div>
+      )}
+
+      {/* =========================================================================
+          SUB-VIEW: REGISTRATIONS & LICENSES (MISCELLANEOUS)
+          ========================================================================= */}
+      {navTarget.section === 'license' && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-5 shadow-xs">
+          <V2RegistrationLicenses
+            key={`v2license-${navigationKey}-${navTarget.filter || 'ALL'}`}
+            initialFilter={navTarget.filter}
           />
         </div>
       )}

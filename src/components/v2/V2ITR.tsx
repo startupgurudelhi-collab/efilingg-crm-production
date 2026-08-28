@@ -91,14 +91,34 @@ export default function V2ITR({
     setCurrentUser(getCurrentSession());
   }, []);
 
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
+  const isAdminOrTL = currentUser && (
+    currentUser.role === 'admin' || 
+    currentUser.role === 'super_admin' || 
+    currentUser.role === 'team_leader' || 
+    currentUser.role === 'team_lead'
+  );
+
+  const isAssignedToUser = (assignedId?: string, assignedName?: string) => {
+    if (!assignedId && !assignedName) return false;
+    return (
+      (assignedId && (
+        assignedId === currentUser?.id || 
+        assignedId.toLowerCase() === (currentUser?.id || '').toLowerCase() ||
+        (currentUser?.employeeCode && assignedId.toLowerCase() === currentUser.employeeCode.toLowerCase())
+      )) ||
+      (currentUser?.name && assignedName && assignedName.toLowerCase() === currentUser.name.toLowerCase()) ||
+      (currentUser?.name && assignedId && assignedId.toLowerCase() === currentUser.name.toLowerCase())
+    );
+  };
+
   const taxAudits = getV2TaxAuditClients();
 
-  // Role-based filtering: Master Admin sees all (with optional employee filter), Employee strictly sees allotted clients
+  // Role-based filtering: Master Admin/TL sees all (with optional employee filter), Employee strictly sees allotted clients
   const roleBaseFilteredClients = itrClients.filter(c => {
-    if (!isAdmin && currentUser) {
+    if (!isAdminOrTL && currentUser) {
       // Employee strict filter
-      return c.assignedEmployeeId === currentUser.id;
+      return isAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName);
     }
     // Admin filter
     if (selectedEmployeeFilter !== 'ALL') {
@@ -140,8 +160,8 @@ export default function V2ITR({
 
   // Filtered Tax Audits
   const filteredTaxAudits = taxAudits.filter(a => {
-    if (!isAdmin && currentUser) {
-      if (a.assignedEmployeeId !== currentUser.id) return false;
+    if (!isAdminOrTL && currentUser) {
+      if (!isAssignedToUser(a.assignedEmployeeId, a.assignedEmployeeName)) return false;
     } else if (selectedEmployeeFilter !== 'ALL') {
       if (selectedEmployeeFilter === 'UNASSIGNED') {
         if (a.assignedEmployeeId) return false;

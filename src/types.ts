@@ -151,7 +151,7 @@ export interface Employee extends VersionedRecord {
   incentivePerConversion: number; // Set by admin only
   attendanceDays?: number; // e.g. out of 30 days
   monthlyAttendance?: Record<string, number>; // Monthwise attendance, e.g. {"April 2026": 26}
-  department?: 'Sales & Marketing' | 'Operation Management';
+  department?: 'Sales & Marketing' | 'Operation Management' | string;
   exitDate?: string;
   exitReason?: string;
   exitStatus?: 'resigned' | 'terminated' | 'none';
@@ -209,6 +209,7 @@ export interface Lead extends VersionedRecord {
 export interface FollowUp {
   id: string;
   leadId: string;
+  assignedTo?: string; // Optional employee ID
   followUpDate: string; // YYYY-MM-DD
   followUpTime: string; // HH:MM
   remarks: string;
@@ -451,6 +452,8 @@ export const PREDEFINED_PRICING: Record<string, { price: number; code: string; s
 
 export interface OfferLetterTemplate extends VersionedRecord {
   companyName: string;
+  tagline?: string;
+  officeAddress?: string;
   contactNumber: string;
   email: string;
   website: string;

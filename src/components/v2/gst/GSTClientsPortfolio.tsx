@@ -11,6 +11,7 @@ import {
   exportToCSVFile
 } from '../../../lib/v2_db';
 import { Employee } from '../../../types';
+import { getCurrentSession } from '../../../lib/db';
 import { 
   Building2, Plus, Search, Filter, Download, UploadCloud, 
   Edit2, Trash2, Eye, EyeOff, UserCheck, Shield, Key, 
@@ -73,9 +74,22 @@ export default function GSTClientsPortfolio({
     onConfirm: () => {}
   });
 
+  const currentUser = getCurrentSession();
+  const isAdminOrTL = currentUser?.role === 'admin' || (currentUser?.role as any) === 'team_leader' || (currentUser?.role as any) === 'super_admin';
+
   // Filtered Client List
   const filteredClients = useMemo(() => {
     return clients.filter(c => {
+      // Role isolation: Standard employees ONLY see their allotted clients
+      if (!isAdminOrTL && currentUser) {
+        const matchesId = c.assignedEmployeeId === currentUser.id || (currentUser.employeeCode && c.assignedEmployeeId === currentUser.employeeCode);
+        const matchesName = currentUser.name && (
+          c.assignedEmployeeName?.toLowerCase() === currentUser.name.toLowerCase() ||
+          c.assignedEmployeeId?.toLowerCase() === currentUser.name.toLowerCase()
+        );
+        if (!matchesId && !matchesName) return false;
+      }
+
       const q = search.toLowerCase();
       const matchSearch = !search || 
         c.clientName.toLowerCase().includes(q) ||
@@ -91,7 +105,7 @@ export default function GSTClientsPortfolio({
 
       return matchSearch && matchReturnType && matchStructure && matchEmployee;
     });
-  }, [clients, search, returnTypeFilter, structureFilter, employeeFilter]);
+  }, [clients, search, returnTypeFilter, structureFilter, employeeFilter, isAdminOrTL, currentUser]);
 
   // Bulk Delete
   const handleBulkDelete = () => {

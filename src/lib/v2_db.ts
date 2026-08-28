@@ -112,7 +112,7 @@ export interface V2McaRocReturn {
 export interface V2ItrClient {
   id: string;
   taxpayerName: string;
-  taxpayerType: 'INDIVIDUAL' | 'LLP' | 'PRIVATE LIMITED' | 'TRUST & SOCIETY' | 'SECTION 8';
+  taxpayerType: 'INDIVIDUAL' | 'LLP' | 'PRIVATE LIMITED' | 'TRUST & SOCIETY' | 'SECTION 8' | 'COMPANY' | 'FIRM' | 'HUF' | string;
   panNumber: string;
   typeOfItr: 'ITR-1' | 'ITR-2' | 'ITR-3' | 'ITR-4' | 'ITR-5' | 'ITR-6' | 'ITR-7';
   address: string;
@@ -209,6 +209,9 @@ export interface V2Task {
   createdAt: string;
   dueDate: string;
   status: 'pending' | 'completed';
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
+  category?: string;
+  clientName?: string;
 }
 
 // Storage keys
@@ -987,6 +990,14 @@ export function completeV2Task(id: string) {
   const idx = list.findIndex(t => t.id === id);
   if (idx !== -1) {
     list[idx].status = 'completed';
+    saveV2Items(KEY_V2_TASKS, list);
+  }
+}
+export function updateV2Task(updated: V2Task) {
+  const list = getV2Tasks();
+  const idx = list.findIndex(t => t.id === updated.id);
+  if (idx !== -1) {
+    list[idx] = updated;
     saveV2Items(KEY_V2_TASKS, list);
   }
 }

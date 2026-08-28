@@ -155,8 +155,8 @@ export default function GSTReports({
       ];
       employeeReportData.forEach(row => {
         wsData.push([
-          row.employeeName, row.employeeCode, row.totalClients,
-          row.gstr1Filed, row.gstr3bFiled, row.pendingReturns, `${row.successRate}%`
+          row.employeeName, row.employeeCode, String(row.totalClients),
+          String(row.gstr1Filed), String(row.gstr3bFiled), String(row.pendingReturns), `${row.successRate}%`
         ]);
       });
       const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -191,7 +191,15 @@ export default function GSTReports({
       exportToCSVFile(`GST_Quarterly_Report_${reportPeriod.replace(' ', '_')}.csv`, headers, rows);
     } else if (reportType === 'EMPLOYEE') {
       const headers = ['Officer Name', 'Code', 'Total Clients', 'GSTR-1 Filed', 'GSTR-3B Filed', 'Pending Returns', 'Success Rate %'];
-      const rows = employeeReportData.map(r => [r.employeeName, r.employeeCode, r.totalClients, r.gstr1Filed, r.gstr3bFiled, r.pendingReturns, `${r.successRate}%`]);
+      const rows = employeeReportData.map(r => [
+        r.employeeName,
+        r.employeeCode,
+        String(r.totalClients),
+        String(r.gstr1Filed),
+        String(r.gstr3bFiled),
+        String(r.pendingReturns),
+        `${r.successRate}%`
+      ]);
       exportToCSVFile(`GST_Employee_Report_${reportPeriod.replace(' ', '_')}.csv`, headers, rows);
     } else {
       const headers = ['Client Name', 'Firm Name', 'GSTIN', 'Return Mode', 'Assigned Officer'];

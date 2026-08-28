@@ -10,6 +10,7 @@ import {
   exportToCSVFile
 } from '../../../lib/v2_db';
 import { Employee } from '../../../types';
+import { getCurrentSession } from '../../../lib/db';
 import { 
   CheckCircle2, Clock, Calendar, UserCheck, ExternalLink, 
   Edit3, Search, Filter, Download, FileSpreadsheet, X, Check
@@ -45,10 +46,24 @@ export default function GSTQuarterlyReturns({
     'January-March 2027'
   ];
 
-  // Filter to Quarterly Clients only
+  const currentUser = getCurrentSession();
+  const isAdminOrTL = currentUser?.role === 'admin' || (currentUser?.role as any) === 'team_leader' || (currentUser?.role as any) === 'super_admin';
+
+  // Filter to Quarterly Clients only (isolated to allotted for standard employees)
   const quarterlyClients = useMemo(() => {
-    return clients.filter(c => c.returnsMode === 'QUARTERLY');
-  }, [clients]);
+    return clients.filter(c => {
+      if (c.returnsMode !== 'QUARTERLY') return false;
+      if (!isAdminOrTL && currentUser) {
+        const matchesId = c.assignedEmployeeId === currentUser.id || (currentUser.employeeCode && c.assignedEmployeeId === currentUser.employeeCode);
+        const matchesName = currentUser.name && (
+          c.assignedEmployeeName?.toLowerCase() === currentUser.name.toLowerCase() ||
+          c.assignedEmployeeId?.toLowerCase() === currentUser.name.toLowerCase()
+        );
+        if (!matchesId && !matchesName) return false;
+      }
+      return true;
+    });
+  }, [clients, isAdminOrTL, currentUser]);
 
   // Quarter filing statistics
   const stats = useMemo(() => {

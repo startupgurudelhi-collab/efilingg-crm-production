@@ -92,12 +92,31 @@ export default function V2TrustNGO({
     }
   }, [initialFilter]);
 
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
+  const isAdminOrTL = currentUser && (
+    currentUser.role === 'admin' || 
+    currentUser.role === 'super_admin' || 
+    currentUser.role === 'team_leader' || 
+    currentUser.role === 'team_lead'
+  );
+
+  const isAssignedToUser = (assignedId?: string, assignedName?: string) => {
+    if (!assignedId && !assignedName) return false;
+    return (
+      (assignedId && (
+        assignedId === currentUser?.id || 
+        assignedId.toLowerCase() === (currentUser?.id || '').toLowerCase() ||
+        (currentUser?.employeeCode && assignedId.toLowerCase() === currentUser.employeeCode.toLowerCase())
+      )) ||
+      (currentUser?.name && assignedName && assignedName.toLowerCase() === currentUser.name.toLowerCase()) ||
+      (currentUser?.name && assignedId && assignedId.toLowerCase() === currentUser.name.toLowerCase())
+    );
+  };
 
   // Strict role filtering: Employee only sees allotted clients
   const filteredTrustClients = trustClients.filter(c => {
-    if (!isAdmin && currentUser) {
-      if (c.assignedEmployeeId !== currentUser.id) return false;
+    if (!isAdminOrTL && currentUser) {
+      if (!isAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName)) return false;
     }
 
     // Search query filter
@@ -696,7 +715,7 @@ export default function V2TrustNGO({
                 <label className="text-[10px] uppercase font-bold text-slate-500">Exempt Category Type *</label>
                 <select 
                   value={editingTrustClient.typeOfEntity} 
-                  onChange={e => setEditingTrustClient({ ...editingTrustClient, typeOfEntity: e.target.value })} 
+                  onChange={e => setEditingTrustClient({ ...editingTrustClient, typeOfEntity: e.target.value as 'Trust' | 'Society' })} 
                   className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-xs"
                 >
                   <option value="Trust">Trust Registered File (Exempt)</option>

@@ -123,7 +123,11 @@ export default function V2MCA({
 
   // Form parameters
   const [name, setName] = useState('');
-  const [type, setType] = useState<V2McaClient['clientType']>(initialClientTypeFilter || 'PRIVATE LIMITED COMPANY');
+  const [type, setType] = useState<V2McaClient['clientType']>(
+    initialClientTypeFilter && initialClientTypeFilter !== 'ALL' 
+      ? (initialClientTypeFilter as V2McaClient['clientType']) 
+      : 'PRIVATE LIMITED COMPANY'
+  );
   const [regDate, setRegDate] = useState('2025-10-01');
   const [email, setEmail] = useState('');
   const [mobile, setMobile] = useState('');
@@ -181,8 +185,8 @@ export default function V2MCA({
       'Director 2 KYC Status'
     ];
     const rows = clients.map(c => {
-      const d1 = c.directors[0] || {};
-      const d2 = c.directors[1] || {};
+      const d1 = (c.directors && c.directors[0]) ? c.directors[0] : ({} as any);
+      const d2 = (c.directors && c.directors[1]) ? c.directors[1] : ({} as any);
       return [
         c.clientName,
         c.clientType,
@@ -463,11 +467,35 @@ export default function V2MCA({
     exportToCSVFile(`roc_report_fy_${selectedFY}_sub_${rocSubTab}.csv`, headers, rows);
   };
 
-  // Searching and filtering clients
-  const filteredMcaClients = clients.filter(c => {
-    if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'super_admin') {
-      if (c.assignedEmployeeId !== currentUser.id && c.assignedEmployeeName !== currentUser.name) return false;
+  const isAdminOrTL = currentUser && (
+    currentUser.role === 'admin' || 
+    currentUser.role === 'super_admin' || 
+    currentUser.role === 'team_leader' || 
+    currentUser.role === 'team_lead'
+  );
+
+  const isAssignedToCurrentEmp = (assignedId?: string, assignedName?: string) => {
+    if (!assignedId && !assignedName) return false;
+    return (
+      (assignedId && (
+        assignedId === currentUser?.id || 
+        assignedId.toLowerCase() === (currentUser?.id || '').toLowerCase() ||
+        (currentUser?.employeeCode && assignedId.toLowerCase() === currentUser.employeeCode.toLowerCase())
+      )) ||
+      (currentUser?.name && assignedName && assignedName.toLowerCase() === currentUser.name.toLowerCase()) ||
+      (currentUser?.name && assignedId && assignedId.toLowerCase() === currentUser.name.toLowerCase())
+    );
+  };
+
+  const accessibleClients = clients.filter(c => {
+    if (!isAdminOrTL && currentUser) {
+      return isAssignedToCurrentEmp(c.assignedEmployeeId, c.assignedEmployeeName);
     }
+    return true;
+  });
+
+  // Searching and filtering clients
+  const filteredMcaClients = accessibleClients.filter(c => {
     if (employeeIdFilter && c.assignedEmployeeId !== employeeIdFilter) {
       return false;
     }
@@ -504,7 +532,7 @@ export default function V2MCA({
       {/* DASHBOARD TAB (Master Admin or Employee View) */}
       {activeTab === 'dashboard' && (
         <McaDashboardView
-          clients={clients}
+          clients={accessibleClients}
           returns={returns}
           auditors={auditors}
           allEmployees={allEmployees}
@@ -1130,7 +1158,7 @@ export default function V2MCA({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-150 dark:divide-slate-850">
-                    {clients.filter(c => c.clientType === 'LLP').map(cl => {
+                    {accessibleClients.filter(c => c.clientType === 'LLP').map(cl => {
                       const r = getRocRow(cl.id);
                       return (
                         <tr key={cl.id} className="hover:bg-slate-50/50">
@@ -1184,7 +1212,7 @@ export default function V2MCA({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-150 dark:divide-slate-850">
-                    {clients.filter(c => rocSubTab === 'NGO' ? c.clientType === 'SECTION 8 NGO' : c.clientType === 'PRIVATE LIMITED COMPANY').map(cl => {
+                    {accessibleClients.filter(c => rocSubTab === 'NGO' ? c.clientType === 'SECTION 8 NGO' : c.clientType === 'PRIVATE LIMITED COMPANY').map(cl => {
                       const r = getRocRow(cl.id);
                       const aud = auditors.find(a => a.id === cl.auditorFirmId);
                       return (
@@ -1283,22 +1311,22 @@ export default function V2MCA({
             <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
               <span className="p-1 px-2 bg-slate-100 dark:bg-slate-800 text-slate-655 dark:text-slate-300 rounded-lg">
                 Total: {
-                  clients.flatMap(c => c.directors || []).length
+                  accessibleClients.flatMap(c => c.directors || []).length
                 }
               </span>
               <span className="p-1 px-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-lg">
                 Approved: {
-                  clients.flatMap(c => c.directors || []).filter(d => d.dinKycStatus === 'Approved').length
+                  accessibleClients.flatMap(c => c.directors || []).filter(d => d.dinKycStatus === 'Approved').length
                 }
               </span>
               <span className="p-1 px-2 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded-lg">
                 Pending with CA: {
-                  clients.flatMap(c => c.directors || []).filter(d => d.dinKycStatus === 'Pending with CA').length
+                  accessibleClients.flatMap(c => c.directors || []).filter(d => d.dinKycStatus === 'Pending with CA').length
                 }
               </span>
               <span className="p-1 px-2 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-455 rounded-lg">
                 Pending: {
-                  clients.flatMap(c => c.directors || []).filter(d => !d.dinKycStatus || d.dinKycStatus === 'Pending').length
+                  accessibleClients.flatMap(c => c.directors || []).filter(d => !d.dinKycStatus || d.dinKycStatus === 'Pending').length
                 }
               </span>
             </div>
@@ -1317,7 +1345,7 @@ export default function V2MCA({
               </thead>
               <tbody className="divide-y divide-slate-150 dark:divide-slate-850">
                 {(() => {
-                  const allDirs = clients.flatMap(c => 
+                  const allDirs = accessibleClients.flatMap(c => 
                     (c.directors || []).map((d, dIdx) => ({
                       ...d,
                       clientId: c.id,

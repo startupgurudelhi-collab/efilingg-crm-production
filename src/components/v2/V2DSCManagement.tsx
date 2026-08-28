@@ -75,7 +75,26 @@ export default function V2DSCManagement({
     setCurrentUser(getCurrentSession());
   }, []);
 
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
+  const isAdminOrTL = currentUser && (
+    currentUser.role === 'admin' || 
+    currentUser.role === 'super_admin' || 
+    currentUser.role === 'team_leader' || 
+    currentUser.role === 'team_lead'
+  );
+
+  const isAssignedToUser = (assignedId?: string, assignedName?: string) => {
+    if (!assignedId && !assignedName) return false;
+    return (
+      (assignedId && (
+        assignedId === currentUser?.id || 
+        assignedId.toLowerCase() === (currentUser?.id || '').toLowerCase() ||
+        (currentUser?.employeeCode && assignedId.toLowerCase() === currentUser.employeeCode.toLowerCase())
+      )) ||
+      (currentUser?.name && assignedName && assignedName.toLowerCase() === currentUser.name.toLowerCase()) ||
+      (currentUser?.name && assignedId && assignedId.toLowerCase() === currentUser.name.toLowerCase())
+    );
+  };
 
   // Cross-reference directors from MCA
   const mcaClients = getV2McaClients();
@@ -134,8 +153,8 @@ export default function V2DSCManagement({
   };
 
   const filteredDsc = allDisplayDscList.filter(d => {
-    if (!isAdmin && currentUser) {
-      if (d.assignedEmployeeId !== currentUser.id) return false;
+    if (!isAdminOrTL && currentUser) {
+      if (!isAssignedToUser(d.assignedEmployeeId, d.assignedEmployeeName)) return false;
     }
 
     const matchesSearch = 

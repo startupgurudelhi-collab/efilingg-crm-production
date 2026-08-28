@@ -23,7 +23,14 @@ import {
   FileText,
   Lock,
   ArrowUpRight,
-  ChevronRight
+  ChevronRight,
+  ListTodo,
+  CheckSquare,
+  ExternalLink,
+  Building2,
+  Award,
+  Tag,
+  Check
 } from 'lucide-react';
 import { Employee, Lead, FollowUp, Proposal, ActivityLog } from '../types';
 import { hasModuleAccess } from '../lib/permissions';
@@ -32,7 +39,13 @@ import {
   getV2GstReturnStatuses,
   getV2McaClients,
   getV2ItrClients,
-  getV2Tasks
+  getV2TrustClients,
+  getV2DscClients,
+  getV2Trademarks,
+  getV2OtherServiceClients,
+  getV2Tasks,
+  completeV2Task,
+  V2Task
 } from '../lib/v2_db';
 import { getAttendances, getISTDateString, getLeaveRequests } from '../lib/db';
 import {
@@ -68,11 +81,25 @@ export default function MasterExecutiveLanding({
   onTriggerProposalDraft
 }: MasterExecutiveLandingProps) {
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [completedTaskIdLocal, setCompletedTaskIdLocal] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const handleQuickCompleteTask = (taskId: string) => {
+    try {
+      completeV2Task(taskId);
+      setCompletedTaskIdLocal(taskId);
+      setTimeout(() => {
+        onRefreshData();
+        setCompletedTaskIdLocal(null);
+      }, 500);
+    } catch (e) {
+      console.error('Error completing task:', e);
+    }
+  };
 
   // Compute key stats
   const totalEmployees = employees.length;
@@ -87,8 +114,61 @@ export default function MasterExecutiveLanding({
   const gstClients = getV2GstClients();
   const mcaClients = getV2McaClients();
   const itrClients = getV2ItrClients();
+  const trustClients = getV2TrustClients();
+  const dscClients = getV2DscClients();
+  const trademarkClients = getV2Trademarks();
+  const otherClients = getV2OtherServiceClients();
   const v2Tasks = getV2Tasks();
   const gstReturns = getV2GstReturnStatuses();
+
+  const isAssignedToUser = (assignedId?: string, assignedName?: string) => {
+    if (!assignedId && !assignedName) return false;
+    return (
+      (assignedId && (
+        assignedId === sessionUser.id || 
+        assignedId.toLowerCase() === sessionUser.id.toLowerCase() ||
+        (sessionUser.employeeCode && assignedId.toLowerCase() === sessionUser.employeeCode.toLowerCase())
+      )) ||
+      (sessionUser.name && assignedName && assignedName.toLowerCase() === sessionUser.name.toLowerCase()) ||
+      (sessionUser.name && assignedId && assignedId.toLowerCase() === sessionUser.name.toLowerCase())
+    );
+  };
+
+  const myGstClients = gstClients.filter(c => isAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName));
+  const myMcaClients = mcaClients.filter(c => isAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName));
+  const myItrClients = itrClients.filter(c => isAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName));
+  const myTrustClients = trustClients.filter(c => isAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName));
+  const myDscClients = dscClients.filter(c => isAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName));
+  const myTrademarkClients = trademarkClients.filter(c => isAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName));
+  const myOtherClients = otherClients.filter(c => isAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName));
+
+  const myAllottedClientsList = [
+    ...myGstClients.map(c => ({ id: c.id, name: c.clientName, subtitle: c.firmName || c.gstin || 'GST Regular Account', category: 'GST Filing', status: c.returnsMode, phone: c.clientMobile, target: 'gst' })),
+    ...myMcaClients.map(c => ({ id: c.id, name: c.clientName, subtitle: c.clientType, category: 'MCA / ROC', status: c.isInc20aFiled ? 'Inc-20A Filed' : 'Pending', phone: c.clientMobile, target: 'mca' })),
+    ...myItrClients.map(c => ({ id: c.id, name: c.taxpayerName, subtitle: c.panNumber ? `PAN: ${c.panNumber}` : c.typeOfItr, category: 'Income Tax', status: c.itrStatus, phone: c.mobileNumber || '', target: 'itr' })),
+    ...myTrustClients.map(c => ({ id: c.id, name: c.entityName, subtitle: c.typeOfEntity, category: 'Trust & NGO', status: c.complianceStatus, phone: c.mobileNumber || '', target: 'trust' })),
+    ...myDscClients.map(c => ({ id: c.id, name: c.clientName, subtitle: `${c.issuerName} • ${c.tokenName}`, category: 'DSC Token', status: `Exp: ${c.expiryDate}`, phone: '', target: 'dsc' })),
+    ...myTrademarkClients.map(c => ({ id: c.id, name: c.clientName, subtitle: `${c.brandName} (Class ${c.classNumber})`, category: 'Trademark', status: c.stage, phone: '', target: 'trademark' })),
+    ...myOtherClients.map(c => ({ id: c.id, name: c.clientName, subtitle: c.serviceAvailed, category: 'Other Licenses', status: 'Active', phone: c.mobileNumber || '', target: 'license' }))
+  ];
+
+  const myAllottedClientsCount = myAllottedClientsList.length;
+
+  const myTasksList = v2Tasks.filter((t) => {
+    return (
+      t.assignedTo === sessionUser.id ||
+      t.assignedTo === 'ALL' ||
+      (t.assignedToName && sessionUser.name && t.assignedToName.toLowerCase() === sessionUser.name.toLowerCase()) ||
+      (t.assignedTo && sessionUser.name && t.assignedTo.toLowerCase() === sessionUser.name.toLowerCase())
+    );
+  });
+
+  // Today string for calculations
+  const todayStr = getISTDateString();
+
+  const myPendingV2TasksList = myTasksList.filter(t => t.status === 'pending');
+  const myCompletedV2TasksList = myTasksList.filter(t => t.status === 'completed');
+  const myTodayDueV2TasksList = myTasksList.filter(t => t.dueDate === todayStr && t.status !== 'completed');
 
   // Unique clients count across CRM
   const totalClientsCount = new Set([
@@ -103,7 +183,7 @@ export default function MasterExecutiveLanding({
   const pendingTasksCount = v2Tasks.filter((t) => t.status === 'pending').length;
   const totalPendingOps = pendingGstCount + pendingItrCount + pendingTasksCount;
   const completedOpsCount = v2Tasks.filter((t) => t.status === 'completed').length + gstReturns.filter((r) => r.gstr1 === 'FILED' && r.gstr3b === 'FILED').length;
-  const todayDueCount = v2Tasks.filter((t) => t.dueDate === getISTDateString() && t.status !== 'completed').length;
+  const todayDueCount = v2Tasks.filter((t) => t.dueDate === todayStr && t.status !== 'completed').length;
 
   // Total pending tasks (leads + ops)
   const totalExecutivePendingTasks = pendingFollowupsCount + totalPendingOps;
@@ -114,7 +194,6 @@ export default function MasterExecutiveLanding({
     .reduce((sum, p) => sum + (p.finalAmount || 0), 0);
 
   // Attendance summary for today
-  const todayStr = getISTDateString();
   const allAttendances = getAttendances().filter((a) => a.date === todayStr);
   const presentTodayCount = allAttendances.filter((a) => a.status === 'Present').length;
   const leavesTodayCount = getLeaveRequests().filter((l) => l.status === 'approved' && todayStr >= l.startDate && todayStr <= l.endDate).length;
@@ -262,14 +341,18 @@ export default function MasterExecutiveLanding({
               )}
             </div>
 
-            {/* 5. Total Clients / My Assigned Leads */}
+            {/* 5. Total Clients / My Allotted Clients */}
             <div className="px-2.5 py-1.5 rounded-xl bg-white/5 border border-white/10 backdrop-blur-md flex flex-col justify-center min-h-[46px]">
               <div className="flex items-center space-x-1 text-slate-400 text-[9.5px] font-medium leading-none truncate">
                 <Briefcase className="h-3 w-3 text-purple-400 shrink-0" />
-                <span>{isMasterOrTL ? 'Total Clients' : 'My Leads'}</span>
+                <span>{isMasterOrTL ? 'Total Clients' : hasModuleAccess(sessionUser, 'sales_marketing') ? 'My Leads' : 'My Allotted Clients'}</span>
               </div>
               <p className="text-xs sm:text-sm font-bold text-white tracking-tight leading-tight mt-0.5">
-                {isMasterOrTL ? (totalClientsCount || totalLeads) : myAssignedLeads.length}
+                {isMasterOrTL 
+                  ? (totalClientsCount || totalLeads) 
+                  : hasModuleAccess(sessionUser, 'sales_marketing') 
+                    ? myAssignedLeads.length 
+                    : myAllottedClientsCount}
               </p>
             </div>
 
@@ -277,10 +360,12 @@ export default function MasterExecutiveLanding({
             <div className="px-2.5 py-1.5 rounded-xl bg-white/5 border border-white/10 backdrop-blur-md flex flex-col justify-center min-h-[46px]">
               <div className="flex items-center space-x-1 text-slate-400 text-[9.5px] font-medium leading-none truncate">
                 <AlertTriangle className="h-3 w-3 text-rose-400 shrink-0" />
-                <span>{isMasterOrTL ? 'Pending Tasks' : 'My Pending'}</span>
+                <span>{isMasterOrTL ? 'Pending Tasks' : 'My Pending Tasks'}</span>
               </div>
               <p className="text-xs sm:text-sm font-bold text-rose-300 tracking-tight leading-tight mt-0.5">
-                {isMasterOrTL ? totalExecutivePendingTasks : myPendingTasksCount}
+                {isMasterOrTL 
+                  ? totalExecutivePendingTasks 
+                  : (myPendingV2TasksList.length + (hasModuleAccess(sessionUser, 'sales_marketing') ? myPendingFollowups : 0))}
               </p>
             </div>
           </div>
@@ -433,20 +518,34 @@ export default function MasterExecutiveLanding({
                 {/* Statistics Grid */}
                 <div className="grid grid-cols-2 gap-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
                   <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
-                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Active Clients</span>
-                    <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-200 font-mono leading-tight">{gstClients.length + mcaClients.length + itrClients.length}</span>
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">
+                      {isMasterOrTL ? 'Active Clients' : 'My Clients'}
+                    </span>
+                    <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-200 font-mono leading-tight">
+                      {isMasterOrTL ? (gstClients.length + mcaClients.length + itrClients.length) : myAllottedClientsCount}
+                    </span>
                   </div>
                   <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
-                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Pending Ops</span>
-                    <span className="text-xs sm:text-sm font-black text-rose-500 font-mono leading-tight">{totalPendingOps}</span>
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">
+                      {isMasterOrTL ? 'Pending Ops' : 'My Tasks'}
+                    </span>
+                    <span className="text-xs sm:text-sm font-black text-rose-500 font-mono leading-tight">
+                      {isMasterOrTL ? totalPendingOps : myPendingV2TasksList.length}
+                    </span>
                   </div>
                   <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
-                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Completed</span>
-                    <span className="text-xs sm:text-sm font-black text-indigo-600 dark:text-indigo-400 font-mono leading-tight">{completedOpsCount}</span>
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">
+                      {isMasterOrTL ? 'Completed' : 'My Done'}
+                    </span>
+                    <span className="text-xs sm:text-sm font-black text-indigo-600 dark:text-indigo-400 font-mono leading-tight">
+                      {isMasterOrTL ? completedOpsCount : myCompletedV2TasksList.length}
+                    </span>
                   </div>
                   <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
                     <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Due Today</span>
-                    <span className="text-xs sm:text-sm font-black text-amber-500 font-mono leading-tight">{todayDueCount}</span>
+                    <span className="text-xs sm:text-sm font-black text-amber-500 font-mono leading-tight">
+                      {isMasterOrTL ? todayDueCount : myTodayDueV2TasksList.length}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -582,144 +681,184 @@ export default function MasterExecutiveLanding({
           ============================================================== */}
       {!isMasterOrTL && (
         <section className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
-              <h2 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
-                My Workspace & Priority Queue
+              <h2 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-slate-100 tracking-tight flex items-center space-x-2">
+                <ListTodo className="h-4.5 w-4.5 text-indigo-600 dark:text-indigo-400" />
+                <span>My Assigned Workload & Priority Tasks</span>
               </h2>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Your assigned client leads, scheduled calls and workflow tasks for today
+                Your live operational task queue and clients allotted specifically to your portfolio
               </p>
             </div>
             <div className="flex items-center space-x-2">
               <button
-                onClick={() => onTriggerLeadDetail(null)}
-                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                onClick={() => onNavigateModule('ops', 'tasks')}
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
               >
-                <span>+ Register New Lead</span>
+                <CheckSquare className="h-3.5 w-3.5" />
+                <span>Open Task Command Center</span>
               </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             
-            {/* PANEL 1: My Scheduled Follow-ups & Calls */}
-            <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
+            {/* PANEL 1: Dedicated Task Queue (Shows pending tasks & who assigned them) */}
+            <div className={`p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3.5 ${
+              hasModuleAccess(sessionUser, 'sales_marketing') ? 'lg:col-span-6' : 'lg:col-span-7'
+            }`}>
+              <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
                 <div className="flex items-center space-x-2">
-                  <div className="h-8 w-8 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 flex items-center justify-center">
-                    <PhoneCall className="h-4 w-4" />
+                  <div className="h-8 w-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                    <ListTodo className="h-4 w-4" />
                   </div>
                   <div>
-                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">Scheduled Follow-ups</h4>
-                    <p className="text-[10px] text-slate-400">Calls & touchpoints due for response</p>
+                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">Assigned Task Queue</h4>
+                    <p className="text-[10px] text-slate-400">Pending tasks assigned to you by Management & TLs</p>
                   </div>
                 </div>
-                <span className="text-xs font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/60 px-2.5 py-1 rounded-full font-mono">
-                  {myPendingFollowups} Pending
+                <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-1 rounded-full font-mono">
+                  {myPendingV2TasksList.length} Pending
                 </span>
               </div>
 
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {followups.filter((f) => f.status === 'pending' && myAssignedLeads.some((l) => l.id === f.leadId)).length === 0 ? (
-                  <div className="p-6 text-center rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700">
-                    <CheckCircle className="h-6 w-6 text-emerald-500 mx-auto mb-1.5" />
-                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">All Follow-ups Completed</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">No pending customer calls scheduled right now.</p>
+              <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                {myPendingV2TasksList.length === 0 ? (
+                  <div className="p-8 text-center rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700">
+                    <CheckCircle className="h-7 w-7 text-emerald-500 mx-auto mb-2" />
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">All Tasks Completed!</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">No pending task queue assigned to you right now.</p>
                   </div>
                 ) : (
-                  followups
-                    .filter((f) => f.status === 'pending' && myAssignedLeads.some((l) => l.id === f.leadId))
-                    .slice(0, 5)
-                    .map((fu) => {
-                      const relatedLead = myAssignedLeads.find((l) => l.id === fu.leadId);
-                      return (
-                        <div
-                          key={fu.id}
-                          onClick={() => {
-                            if (relatedLead) onTriggerLeadDetail(relatedLead.id);
-                          }}
-                          className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer border border-slate-100 dark:border-slate-750"
-                        >
-                          <div className="min-w-0 flex-1 pr-2">
-                            <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                              {relatedLead ? (relatedLead.customerName || relatedLead.businessName) : 'Customer Call'}
-                            </p>
-                            <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1">
-                              {fu.remarks || fu.customerResponse || 'Scheduled Follow-up discussion'}
-                            </p>
-                            <span className="text-[9px] font-mono text-amber-600 dark:text-amber-400 font-semibold">
-                              Due: {fu.followUpDate} {fu.followUpTime || ''}
+                  myPendingV2TasksList.map((task) => {
+                    const isCompleting = completedTaskIdLocal === task.id;
+                    return (
+                      <div
+                        key={task.id}
+                        className={`p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all border border-slate-200/70 dark:border-slate-750 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
+                          isCompleting ? 'opacity-50 scale-98' : ''
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded font-mono uppercase ${
+                              task.priority === 'urgent' || (task.priority as any) === 'CRITICAL' 
+                                ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800' 
+                                : task.priority === 'high' || (task.priority as any) === 'HIGH' 
+                                ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800' 
+                                : 'bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                            }`}>
+                              {task.priority || 'Normal'}
                             </span>
+                            <span className="text-[9px] font-semibold px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                              {task.category || 'General'}
+                            </span>
+                            {task.dueDate && (
+                              <span className="text-[9px] font-medium text-slate-500 dark:text-slate-400 flex items-center gap-0.5">
+                                <Clock className="h-2.5 w-2.5" />
+                                <span>Due: {task.dueDate}</span>
+                              </span>
+                            )}
                           </div>
-                          <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-1 rounded-lg shrink-0 flex items-center space-x-1">
-                            <span>Open</span>
-                            <ChevronRight className="h-3 w-3" />
-                          </span>
+
+                          <p className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-snug">
+                            {task.title}
+                          </p>
+
+                          {task.description && (
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                              {task.description}
+                            </p>
+                          )}
+
+                          <div className="flex items-center gap-2 pt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+                            <span className="inline-flex items-center gap-1 font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 px-1.5 py-0.5 rounded">
+                              <UserCheck className="h-3 w-3" />
+                              <span>Assigned by: <strong>{task.createdByName || 'Master Admin'}</strong></span>
+                            </span>
+                            {task.clientName && (
+                              <span className="truncate">
+                                Client: <strong>{task.clientName}</strong>
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      );
-                    })
+
+                        <div className="flex sm:flex-col items-center gap-1.5 shrink-0 self-end sm:self-center">
+                          <button
+                            onClick={() => handleQuickCompleteTask(task.id)}
+                            className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition-all shadow-xs cursor-pointer"
+                            title="Mark as Completed"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            <span>Mark Done</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
                 )}
               </div>
 
               <button
-                onClick={() => onNavigateModule('sales', 'followups')}
+                onClick={() => onNavigateModule('ops', 'tasks')}
                 className="w-full py-2 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
               >
-                <span>View All My Follow-up Calls</span>
+                <span>View Full Task Management Workspace</span>
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
 
-            {/* PANEL 2: My Assigned Leads Pipeline */}
-            <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
+            {/* PANEL 2: My Allotted Clients Portfolio (Isolated to this employee) */}
+            <div className={`p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3.5 ${
+              hasModuleAccess(sessionUser, 'sales_marketing') ? 'lg:col-span-6' : 'lg:col-span-5'
+            }`}>
+              <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
                 <div className="flex items-center space-x-2">
-                  <div className="h-8 w-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center">
-                    <TrendingUp className="h-4 w-4" />
+                  <div className="h-8 w-8 rounded-xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+                    <Briefcase className="h-4 w-4" />
                   </div>
                   <div>
-                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">My Active Leads</h4>
-                    <p className="text-[10px] text-slate-400">Direct client deals assigned to you</p>
+                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">My Allotted Clients</h4>
+                    <p className="text-[10px] text-slate-400">Clients allotted to your account across departments</p>
                   </div>
                 </div>
-                <span className="text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-full font-mono">
-                  {myAssignedLeads.length} Total
+                <span className="text-xs font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 px-2.5 py-1 rounded-full font-mono">
+                  {myAllottedClientsCount} Total
                 </span>
               </div>
 
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {myAssignedLeads.length === 0 ? (
-                  <div className="p-6 text-center rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700">
-                    <Briefcase className="h-6 w-6 text-slate-400 mx-auto mb-1.5" />
-                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No Leads Assigned Yet</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">Click Register New Lead or request allocations from Team Leader.</p>
+              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                {myAllottedClientsCount === 0 ? (
+                  <div className="p-8 text-center rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700">
+                    <Building2 className="h-7 w-7 text-slate-400 mx-auto mb-2" />
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No Clients Allotted Yet</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Your manager/admin will allot specific clients to your account.</p>
                   </div>
                 ) : (
-                  myAssignedLeads.slice(0, 5).map((lead) => (
+                  myAllottedClientsList.slice(0, 7).map((client) => (
                     <div
-                      key={lead.id}
-                      onClick={() => onTriggerLeadDetail(lead.id)}
+                      key={`${client.category}-${client.id}`}
+                      onClick={() => onNavigateModule('ops', client.target)}
                       className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer border border-slate-100 dark:border-slate-750"
                     >
                       <div className="min-w-0 flex-1 pr-2">
-                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                          {lead.customerName || lead.businessName}
-                        </p>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
-                          {lead.serviceRequired || lead.businessName || 'General Consultation'} • {lead.mobile}
+                        <div className="flex items-center space-x-1.5">
+                          <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                            {client.name}
+                          </p>
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 shrink-0">
+                            {client.category}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                          {client.subtitle} {client.phone ? `• ${client.phone}` : ''}
                         </p>
                       </div>
-                      <span
-                        className={`text-[9px] font-bold px-2 py-0.5 rounded-md shrink-0 ${
-                          lead.stage === 'Converted'
-                            ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300'
-                            : lead.stage === 'Interested'
-                            ? 'bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300'
-                            : 'bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300'
-                        }`}
-                      >
-                        {lead.stage || 'New'}
+                      <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 px-2 py-1 rounded-lg shrink-0 flex items-center space-x-1">
+                        <span>Open</span>
+                        <ChevronRight className="h-3 w-3" />
                       </span>
                     </div>
                   ))
@@ -727,10 +866,10 @@ export default function MasterExecutiveLanding({
               </div>
 
               <button
-                onClick={() => onNavigateModule('sales', 'leads')}
+                onClick={() => onNavigateModule('ops')}
                 className="w-full py-2 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
               >
-                <span>Open Full Leads Table</span>
+                <span>Open Operations Workspace</span>
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>

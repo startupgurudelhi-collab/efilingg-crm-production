@@ -136,13 +136,42 @@ export default function V2TrademarkCopyright({
   const [selectedTm, setSelectedTm] = useState<V2TrademarkClient | null>(null);
   const [selectedCp, setSelectedCp] = useState<CopyrightRecord | null>(null);
 
+  const isAdminOrTL = currentUser && (
+    currentUser.role === 'admin' || 
+    currentUser.role === 'super_admin' || 
+    currentUser.role === 'team_leader' || 
+    currentUser.role === 'team_lead'
+  );
+
+  const isAssignedToUser = (assignedId?: string, assignedName?: string) => {
+    if (!assignedId && !assignedName) return false;
+    return (
+      (assignedId && (
+        assignedId === currentUser?.id || 
+        assignedId.toLowerCase() === (currentUser?.id || '').toLowerCase() ||
+        (currentUser?.employeeCode && assignedId.toLowerCase() === currentUser.employeeCode.toLowerCase())
+      )) ||
+      (currentUser?.name && assignedName && assignedName.toLowerCase() === currentUser.name.toLowerCase()) ||
+      (currentUser?.name && assignedId && assignedId.toLowerCase() === currentUser.name.toLowerCase())
+    );
+  };
+
+  const accessibleTrademarks = useMemo(() => {
+    return trademarks.filter(tm => {
+      if (!isAdminOrTL && currentUser) {
+        if (!isAssignedToUser(tm.assignedEmployeeId, tm.assignedEmployeeName)) return false;
+      }
+      return true;
+    });
+  }, [trademarks, currentUser, isAdminOrTL]);
+
   // Compute live trademark stats
   const stats = useMemo(() => {
-    const total = trademarks.length;
-    const applied = trademarks.filter(t => t.stage === 'Applied').length;
-    const objected = trademarks.filter(t => t.stage === 'Objected').length;
-    const hearings = trademarks.filter(t => t.stage === 'Hearing').length;
-    const approved = trademarks.filter(t => t.stage === 'Approved').length;
+    const total = accessibleTrademarks.length;
+    const applied = accessibleTrademarks.filter(t => t.stage === 'Applied').length;
+    const objected = accessibleTrademarks.filter(t => t.stage === 'Objected').length;
+    const hearings = accessibleTrademarks.filter(t => t.stage === 'Hearing').length;
+    const approved = accessibleTrademarks.filter(t => t.stage === 'Approved').length;
     const totalCopyrights = copyrights.length;
     const copyrightsRegistered = copyrights.filter(c => c.status === 'Registered Certificate Issued').length;
 
@@ -156,16 +185,11 @@ export default function V2TrademarkCopyright({
       copyrightsRegistered,
       successRate: total > 0 ? Math.round((approved / total) * 100) : 0
     };
-  }, [trademarks, copyrights]);
+  }, [accessibleTrademarks, copyrights]);
 
   // Filtered Trademark list
   const filteredTrademarks = useMemo(() => {
-    return trademarks.filter(tm => {
-      // Role filtering
-      if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'team_leader') {
-        if (tm.assignedEmployeeId && tm.assignedEmployeeId !== currentUser.id) return false;
-      }
-
+    return accessibleTrademarks.filter(tm => {
       // Search Query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -190,22 +214,22 @@ export default function V2TrademarkCopyright({
 
       return true;
     });
-  }, [trademarks, currentUser, searchQuery, classFilter, stageFilter]);
+  }, [accessibleTrademarks, searchQuery, classFilter, stageFilter]);
 
   // Objections subset
   const objectedTrademarks = useMemo(() => {
-    return trademarks.filter(tm => tm.stage === 'Objected');
-  }, [trademarks]);
+    return accessibleTrademarks.filter(tm => tm.stage === 'Objected');
+  }, [accessibleTrademarks]);
 
   // Hearings subset
   const hearingTrademarks = useMemo(() => {
-    return trademarks.filter(tm => tm.stage === 'Hearing');
-  }, [trademarks]);
+    return accessibleTrademarks.filter(tm => tm.stage === 'Hearing');
+  }, [accessibleTrademarks]);
 
   // Approved subset
   const registeredTrademarks = useMemo(() => {
-    return trademarks.filter(tm => tm.stage === 'Approved');
-  }, [trademarks]);
+    return accessibleTrademarks.filter(tm => tm.stage === 'Approved');
+  }, [accessibleTrademarks]);
 
   // Actions
   const handleCreateTrademark = (e: React.FormEvent) => {

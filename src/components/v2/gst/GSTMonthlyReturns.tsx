@@ -11,6 +11,7 @@ import {
   exportToCSVFile
 } from '../../../lib/v2_db';
 import { Employee } from '../../../types';
+import { getCurrentSession } from '../../../lib/db';
 import { 
   CheckCircle2, Clock, AlertCircle, Search, Filter, 
   Download, Calendar, UserCheck, ExternalLink, Edit3, 
@@ -68,10 +69,24 @@ export default function GSTMonthlyReturns({
     'September 2026', 'October 2026', 'November 2026', 'December 2026'
   ];
 
-  // Filter to Monthly Clients only
+  const currentUser = getCurrentSession();
+  const isAdminOrTL = currentUser?.role === 'admin' || (currentUser?.role as any) === 'team_leader' || (currentUser?.role as any) === 'super_admin';
+
+  // Filter to Monthly Clients only (isolated to allotted for standard employees)
   const monthlyClients = useMemo(() => {
-    return clients.filter(c => c.returnsMode === 'MONTHLY');
-  }, [clients]);
+    return clients.filter(c => {
+      if (c.returnsMode !== 'MONTHLY') return false;
+      if (!isAdminOrTL && currentUser) {
+        const matchesId = c.assignedEmployeeId === currentUser.id || (currentUser.employeeCode && c.assignedEmployeeId === currentUser.employeeCode);
+        const matchesName = currentUser.name && (
+          c.assignedEmployeeName?.toLowerCase() === currentUser.name.toLowerCase() ||
+          c.assignedEmployeeId?.toLowerCase() === currentUser.name.toLowerCase()
+        );
+        if (!matchesId && !matchesName) return false;
+      }
+      return true;
+    });
+  }, [clients, isAdminOrTL, currentUser]);
 
   // Statistics for top ribbon
   const stats = useMemo(() => {

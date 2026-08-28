@@ -83,16 +83,16 @@ export default function OperationManagementDashboard({
     gstShowImport?: boolean;
     gstSearch?: string;
 
-    itrSubTab?: 'itr' | 'audit' | 'trust' | 'dsc' | 'others';
+    itrSubTab?: 'itr' | 'audit' | 'trust' | 'dsc' | 'others' | 'dashboard' | 'individual' | 'business' | string;
     itrShowAddItr?: boolean;
     itrShowAddTrust?: boolean;
     itrShowAddDsc?: boolean;
 
-    mcaActiveTab?: 'dashboard' | 'companies' | 'mca' | 'roc' | 'roc_companies' | 'roc_llp' | 'din_kyc' | 'post_compliance';
+    mcaActiveTab?: 'dashboard' | 'companies' | 'mca' | 'roc' | 'roc_companies' | 'roc_llp' | 'din_kyc' | 'post_compliance' | string;
     mcaRocSubTab?: 'NGO' | 'PVT' | 'LLP';
     mcaShowAddForm?: boolean;
     mcaShowImport?: boolean;
-    mcaClientTypeFilter?: 'PRIVATE LIMITED COMPANY' | 'LLP' | 'SECTION 8 NGO' | 'ALL';
+    mcaClientTypeFilter?: 'PRIVATE LIMITED COMPANY' | 'LLP' | 'SECTION 8 NGO' | 'ALL' | string;
   }>({});
 
   const [navigationKey, setNavigationKey] = useState<number>(0);

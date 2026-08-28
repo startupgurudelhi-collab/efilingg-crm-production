@@ -497,7 +497,7 @@ export default function AdminDashboard({
     }
 
     if (dateStr < tlTodayStr) {
-      const joiningDate = tlSelfEmployee.dateOfJoining || tlSelfEmployee.joinedDate || '';
+      const joiningDate = (tlSelfEmployee as any).dateOfJoining || (tlSelfEmployee as any).joinedDate || '';
       if (joiningDate && dateStr < joiningDate) {
         return { status: 'Inactive' as const, reason: 'Prior to Joining' };
       }

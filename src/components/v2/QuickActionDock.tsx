@@ -8,12 +8,24 @@ import {
   PlusCircle, FileSpreadsheet, Building2, Shield, Landmark,
   UserCheck, Users, FilePlus, Zap, Sparkles
 } from 'lucide-react';
+import { Employee } from '../../types';
+import { hasModuleAccess } from '../../lib/permissions';
 
 interface QuickActionDockProps {
   onAction: (action: string) => void;
+  sessionUser?: Employee | null;
 }
 
-export default function QuickActionDock({ onAction }: QuickActionDockProps) {
+export default function QuickActionDock({ onAction, sessionUser }: QuickActionDockProps) {
+  const isAdmin = !sessionUser || sessionUser.role === 'admin';
+  const canGst = isAdmin || hasModuleAccess(sessionUser, 'gst');
+  const canMca = isAdmin || hasModuleAccess(sessionUser, 'mca_roc');
+  const canItr = isAdmin || hasModuleAccess(sessionUser, 'income_tax');
+  const canTrust = isAdmin || hasModuleAccess(sessionUser, 'trust_ngo');
+  const canHr = isAdmin || hasModuleAccess(sessionUser, 'hr_workforce');
+  const canClients = isAdmin || hasModuleAccess(sessionUser, 'client_master');
+  const canServices = isAdmin || hasModuleAccess(sessionUser, 'registration_license');
+
   return (
     <div
       id="quick-action-dock"
@@ -36,8 +48,9 @@ export default function QuickActionDock({ onAction }: QuickActionDockProps) {
         </span>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
         {/* 1. New GST Task */}
+        {canGst && (
         <button
           id="dock-btn-gst-task"
           onClick={() => onAction('new_gst_task')}
@@ -46,8 +59,10 @@ export default function QuickActionDock({ onAction }: QuickActionDockProps) {
           <FileSpreadsheet className="h-4 w-4 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
           <span className="text-[10.5px] font-extrabold leading-tight">New GST Task</span>
         </button>
+        )}
 
         {/* 2. New MCA Task */}
+        {canMca && (
         <button
           id="dock-btn-mca-task"
           onClick={() => onAction('new_mca_task')}
@@ -56,8 +71,10 @@ export default function QuickActionDock({ onAction }: QuickActionDockProps) {
           <Building2 className="h-4 w-4 text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform" />
           <span className="text-[10.5px] font-extrabold leading-tight">New MCA Task</span>
         </button>
+        )}
 
         {/* 3. New ITR Task */}
+        {canItr && (
         <button
           id="dock-btn-itr-task"
           onClick={() => onAction('new_itr_task')}
@@ -66,8 +83,10 @@ export default function QuickActionDock({ onAction }: QuickActionDockProps) {
           <Shield className="h-4 w-4 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform" />
           <span className="text-[10.5px] font-extrabold leading-tight">New ITR Task</span>
         </button>
+        )}
 
         {/* 4. New NGO Task */}
+        {canTrust && (
         <button
           id="dock-btn-ngo-task"
           onClick={() => onAction('new_ngo_task')}
@@ -76,8 +95,10 @@ export default function QuickActionDock({ onAction }: QuickActionDockProps) {
           <Landmark className="h-4 w-4 text-teal-600 dark:text-teal-400 group-hover:scale-110 transition-transform" />
           <span className="text-[10.5px] font-extrabold leading-tight">New NGO Task</span>
         </button>
+        )}
 
         {/* 5. Assign Employee */}
+        {canHr && (
         <button
           id="dock-btn-assign-employee"
           onClick={() => onAction('assign_employee')}
@@ -86,8 +107,10 @@ export default function QuickActionDock({ onAction }: QuickActionDockProps) {
           <UserCheck className="h-4 w-4 text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform" />
           <span className="text-[10.5px] font-extrabold leading-tight">Assign Staff</span>
         </button>
+        )}
 
         {/* 6. Open Client Master */}
+        {canClients && (
         <button
           id="dock-btn-open-clients"
           onClick={() => onAction('open_clients')}
@@ -96,8 +119,10 @@ export default function QuickActionDock({ onAction }: QuickActionDockProps) {
           <Users className="h-4 w-4 text-amber-600 dark:text-amber-400 group-hover:scale-110 transition-transform" />
           <span className="text-[10.5px] font-extrabold leading-tight">Client Master</span>
         </button>
+        )}
 
         {/* 7. Create Service Request */}
+        {canServices && (
         <button
           id="dock-btn-create-service-request"
           onClick={() => onAction('create_service_request')}
@@ -106,6 +131,7 @@ export default function QuickActionDock({ onAction }: QuickActionDockProps) {
           <FilePlus className="h-4 w-4 text-rose-600 dark:text-rose-400 group-hover:scale-110 transition-transform" />
           <span className="text-[10.5px] font-extrabold leading-tight">Service Request</span>
         </button>
+        )}
       </div>
     </div>
   );

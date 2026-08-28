@@ -9,6 +9,8 @@ import {
   FileCheck2, ChevronDown, ArrowUpRight, TrendingUp, CheckCircle,
   Clock, AlertTriangle, ArrowRight
 } from 'lucide-react';
+import { Employee } from '../../types';
+import { hasModuleAccess } from '../../lib/permissions';
 
 export interface GstGridData {
   totalClients: number;
@@ -76,6 +78,7 @@ interface ComplianceControlGridProps {
   selectedMonth: string;
   onSelectMonth: (month: string) => void;
   onNavigate: (section: string, subTab?: string, filter?: string) => void;
+  sessionUser?: Employee | null;
 }
 
 const MONTH_OPTIONS = [
@@ -96,8 +99,15 @@ export default function ComplianceControlGrid({
   licenseData,
   selectedMonth,
   onSelectMonth,
-  onNavigate
+  onNavigate,
+  sessionUser
 }: ComplianceControlGridProps) {
+  const canAccessGst = !sessionUser || sessionUser.role === 'admin' || hasModuleAccess(sessionUser, 'gst');
+  const canAccessMca = !sessionUser || sessionUser.role === 'admin' || hasModuleAccess(sessionUser, 'mca_roc');
+  const canAccessItr = !sessionUser || sessionUser.role === 'admin' || hasModuleAccess(sessionUser, 'income_tax');
+  const canAccessTrust = !sessionUser || sessionUser.role === 'admin' || hasModuleAccess(sessionUser, 'trust_ngo');
+  const canAccessDsc = !sessionUser || sessionUser.role === 'admin' || hasModuleAccess(sessionUser, 'dsc');
+  const canAccessLicense = !sessionUser || sessionUser.role === 'admin' || hasModuleAccess(sessionUser, 'registration_license');
   return (
     <section id="compliance-control-grid" className="space-y-2.5 select-none">
       <div className="flex items-center justify-between px-1">
@@ -118,6 +128,7 @@ export default function ComplianceControlGrid({
         {/* =========================================================================
             ROW 1 - CARD 1: GST COMMAND CENTER
             ========================================================================= */}
+        {canAccessGst && (
         <div
           id="card-kpi-gst"
           className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between relative overflow-hidden group"
@@ -213,10 +224,12 @@ export default function ComplianceControlGrid({
             </div>
           </div>
         </div>
+        )}
 
         {/* =========================================================================
             ROW 1 - CARD 2: MCA & ROC COMMAND CENTER
             ========================================================================= */}
+        {canAccessMca && (
         <div
           id="card-kpi-mca"
           className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between relative overflow-hidden group"
@@ -293,10 +306,12 @@ export default function ComplianceControlGrid({
             </button>
           </div>
         </div>
+        )}
 
         {/* =========================================================================
             ROW 1 - CARD 3: INCOME TAX COMMAND CENTER
             ========================================================================= */}
+        {canAccessItr && (
         <div
           id="card-kpi-itr"
           className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between relative overflow-hidden group"
@@ -372,10 +387,12 @@ export default function ComplianceControlGrid({
             </button>
           </div>
         </div>
+        )}
 
         {/* =========================================================================
             ROW 2 - CARD 4: TRUST & NGO COMMAND CENTER
             ========================================================================= */}
+        {canAccessTrust && (
         <div
           id="card-kpi-trust"
           className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between relative overflow-hidden group"
@@ -450,10 +467,12 @@ export default function ComplianceControlGrid({
             </button>
           </div>
         </div>
+        )}
 
         {/* =========================================================================
             ROW 2 - CARD 5: DSC COMMAND CENTER
             ========================================================================= */}
+        {canAccessDsc && (
         <div
           id="card-kpi-dsc"
           className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between relative overflow-hidden group"
@@ -528,10 +547,12 @@ export default function ComplianceControlGrid({
             </button>
           </div>
         </div>
+        )}
 
         {/* =========================================================================
             ROW 2 - CARD 6: LICENSES & REGISTRATION
             ========================================================================= */}
+        {canAccessLicense && (
         <div
           id="card-kpi-license"
           className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between relative overflow-hidden group"
@@ -608,7 +629,7 @@ export default function ComplianceControlGrid({
             </button>
           </div>
         </div>
-      </div>
+        )}</div>
     </section>
   );
 }

@@ -710,6 +710,7 @@ export default function OperationManagementDashboard({
             selectedMonth={selectedMonth}
             onSelectMonth={setSelectedMonth}
             onNavigate={(sec, subTab, filter) => handleNavigate({ section: sec as any, subTab, filter })}
+            sessionUser={sessionUser}
           />
 
           {/* 4. Operations Task War Room */}
@@ -750,14 +751,15 @@ export default function OperationManagementDashboard({
             <div className="space-y-4">
               {/* Quick Action Dock */}
               <QuickActionDock
+                sessionUser={sessionUser}
                 onAction={(act) => {
-                  if (act === 'gst') handleNavigate({ section: 'gst', subTab: 'MONTHLY', action: 'NEW' });
-                  else if (act === 'mca') handleNavigate({ section: 'mca', subTab: 'mca', action: 'NEW' });
-                  else if (act === 'itr') handleNavigate({ section: 'itr', subTab: 'itr', action: 'NEW' });
-                  else if (act === 'trust') handleNavigate({ section: 'trust', subTab: 'trust', action: 'NEW' });
-                  else if (act === 'assign') setIsQuickTaskOpen(true);
-                  else if (act === 'clients') handleNavigate({ section: 'clients' });
-                  else if (act === 'service') handleNavigate({ section: 'masters' });
+                  if (act === 'gst' || act === 'new_gst_task') handleNavigate({ section: 'gst', subTab: 'MONTHLY', action: 'NEW' });
+                  else if (act === 'mca' || act === 'new_mca_task') handleNavigate({ section: 'mca', subTab: 'mca', action: 'NEW' });
+                  else if (act === 'itr' || act === 'new_itr_task') handleNavigate({ section: 'itr', subTab: 'itr', action: 'NEW' });
+                  else if (act === 'trust' || act === 'new_ngo_task') handleNavigate({ section: 'trust', subTab: 'trust', action: 'NEW' });
+                  else if (act === 'assign' || act === 'assign_employee') setIsQuickTaskOpen(true);
+                  else if (act === 'clients' || act === 'open_clients') handleNavigate({ section: 'clients' });
+                  else if (act === 'service' || act === 'create_service_request') handleNavigate({ section: 'masters' });
                 }}
               />
 

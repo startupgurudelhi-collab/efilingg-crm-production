@@ -142,6 +142,25 @@ export default function MasterExecutiveLanding({
     { label: 'Converted Client', count: convertedLeadsCount, color: 'from-emerald-500 to-teal-500' }
   ];
 
+  const isMasterOrTL = sessionUser.role === 'admin' || sessionUser.role === 'team_leader';
+
+  // Employee personal metrics (so employees only see their assigned work, never company-wide sensitive financials or telemetry)
+  const myAssignedLeads = leads.filter((l) => {
+    if (!l.assignedTo) return false;
+    return (
+      l.assignedTo === sessionUser.id ||
+      l.assignedTo.toLowerCase() === sessionUser.id.toLowerCase() ||
+      (sessionUser.email && l.assignedTo.toLowerCase() === sessionUser.email.toLowerCase()) ||
+      (sessionUser.name && l.assignedTo.toLowerCase() === sessionUser.name.toLowerCase())
+    );
+  });
+  const myConvertedLeads = myAssignedLeads.filter((l) => l.stage === 'Converted').length;
+  const myConversionRate = myAssignedLeads.length ? Math.round((myConvertedLeads / myAssignedLeads.length) * 100) : 0;
+  const myPendingFollowups = followups.filter((f) => f.status === 'pending' && myAssignedLeads.some((l) => l.id === f.leadId)).length;
+  const myV2Tasks = v2Tasks.filter((t) => t.assignedTo === sessionUser.id && t.status === 'pending').length;
+  const myPendingTasksCount = myPendingFollowups + myV2Tasks;
+  const isMyAttendancePresent = allAttendances.some((a) => a.employeeId === sessionUser.id && a.status === 'Present');
+
   return (
     <div className="space-y-4 sm:space-y-4.5 animate-fade-in pb-8 font-sans">
       {/* ==============================================================
@@ -159,14 +178,16 @@ export default function MasterExecutiveLanding({
               <div className="flex flex-wrap items-center gap-2">
                 <div className="inline-flex items-center space-x-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 text-[10px] font-mono font-bold tracking-wider uppercase">
                   <Sparkles className="h-3 w-3" />
-                  <span>Executive Command Center</span>
+                  <span>{isMasterOrTL ? 'Executive Command Center' : 'Employee Workspace Portal'}</span>
                 </div>
               </div>
               <h1 className="text-base sm:text-lg md:text-xl font-extrabold tracking-tight text-white leading-tight">
                 Welcome to Legomark & Efilingg Office Management
               </h1>
               <p className="text-slate-300 text-[11px] sm:text-xs leading-normal line-clamp-1">
-                Unified Business Operations, Sales Intelligence, Compliance Management & Workforce Control Center
+                {isMasterOrTL
+                  ? 'Unified Business Operations, Sales Intelligence, Compliance Management & Workforce Control Center'
+                  : 'Assigned Workspaces, Task Queue & Department Operations'}
               </p>
             </div>
 
@@ -180,7 +201,7 @@ export default function MasterExecutiveLanding({
                 <RefreshCw className="h-3.5 w-3.5 text-emerald-400" />
                 <span>Sync Live Data</span>
               </button>
-              {onTriggerLeadDetail && (
+              {onTriggerLeadDetail && hasModuleAccess(sessionUser, 'sales_marketing') && (
                 <button
                   onClick={() => onTriggerLeadDetail(null)}
                   className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold shadow-md shadow-emerald-900/30 transition-all cursor-pointer"
@@ -223,34 +244,44 @@ export default function MasterExecutiveLanding({
               </p>
             </div>
 
-            {/* 4. Active Employees */}
+            {/* 4. Active Employees / My Attendance Status */}
             <div className="px-2.5 py-1.5 rounded-xl bg-white/5 border border-white/10 backdrop-blur-md flex flex-col justify-center min-h-[46px]">
               <div className="flex items-center space-x-1 text-slate-400 text-[9.5px] font-medium leading-none truncate">
                 <Users className="h-3 w-3 text-cyan-400 shrink-0" />
-                <span>Active Force</span>
+                <span>{isMasterOrTL ? 'Active Force' : 'My Attendance'}</span>
               </div>
-              <div className="flex items-baseline space-x-1 leading-tight mt-0.5">
-                <span className="text-xs sm:text-sm font-bold text-white">{activeEmployeesCount}</span>
-                <span className="text-[9.5px] text-slate-400">/ {totalEmployees} Total</span>
-              </div>
+              {isMasterOrTL ? (
+                <div className="flex items-baseline space-x-1 leading-tight mt-0.5">
+                  <span className="text-xs sm:text-sm font-bold text-white">{activeEmployeesCount}</span>
+                  <span className="text-[9.5px] text-slate-400">/ {totalEmployees} Total</span>
+                </div>
+              ) : (
+                <p className="text-xs sm:text-sm font-bold text-emerald-300 tracking-tight leading-tight mt-0.5 truncate">
+                  {isMyAttendancePresent ? 'Present On Duty' : 'Shift Active'}
+                </p>
+              )}
             </div>
 
-            {/* 5. Total Clients */}
+            {/* 5. Total Clients / My Assigned Leads */}
             <div className="px-2.5 py-1.5 rounded-xl bg-white/5 border border-white/10 backdrop-blur-md flex flex-col justify-center min-h-[46px]">
               <div className="flex items-center space-x-1 text-slate-400 text-[9.5px] font-medium leading-none truncate">
                 <Briefcase className="h-3 w-3 text-purple-400 shrink-0" />
-                <span>Total Clients</span>
+                <span>{isMasterOrTL ? 'Total Clients' : 'My Leads'}</span>
               </div>
-              <p className="text-xs sm:text-sm font-bold text-white tracking-tight leading-tight mt-0.5">{totalClientsCount || totalLeads}</p>
+              <p className="text-xs sm:text-sm font-bold text-white tracking-tight leading-tight mt-0.5">
+                {isMasterOrTL ? (totalClientsCount || totalLeads) : myAssignedLeads.length}
+              </p>
             </div>
 
             {/* 6. Pending Tasks */}
             <div className="px-2.5 py-1.5 rounded-xl bg-white/5 border border-white/10 backdrop-blur-md flex flex-col justify-center min-h-[46px]">
               <div className="flex items-center space-x-1 text-slate-400 text-[9.5px] font-medium leading-none truncate">
                 <AlertTriangle className="h-3 w-3 text-rose-400 shrink-0" />
-                <span>Pending Tasks</span>
+                <span>{isMasterOrTL ? 'Pending Tasks' : 'My Pending'}</span>
               </div>
-              <p className="text-xs sm:text-sm font-bold text-rose-300 tracking-tight leading-tight mt-0.5">{totalExecutivePendingTasks}</p>
+              <p className="text-xs sm:text-sm font-bold text-rose-300 tracking-tight leading-tight mt-0.5">
+                {isMasterOrTL ? totalExecutivePendingTasks : myPendingTasksCount}
+              </p>
             </div>
           </div>
         </div>
@@ -312,20 +343,36 @@ export default function MasterExecutiveLanding({
                 {/* Statistics Grid */}
                 <div className="grid grid-cols-2 gap-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
                   <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
-                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Total Leads</span>
-                    <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-200 font-mono leading-tight">{totalLeads}</span>
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">
+                      {isMasterOrTL ? 'Total Leads' : 'My Leads'}
+                    </span>
+                    <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-200 font-mono leading-tight">
+                      {isMasterOrTL ? totalLeads : myAssignedLeads.length}
+                    </span>
                   </div>
                   <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
-                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Converted</span>
-                    <span className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 font-mono leading-tight">{convertedLeadsCount}</span>
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">
+                      {isMasterOrTL ? 'Converted' : 'My Conv.'}
+                    </span>
+                    <span className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 font-mono leading-tight">
+                      {isMasterOrTL ? convertedLeadsCount : myConvertedLeads}
+                    </span>
                   </div>
                   <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
-                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Conversion</span>
-                    <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-200 font-mono leading-tight">{conversionRate}%</span>
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">
+                      {isMasterOrTL ? 'Conversion' : 'Conv. Rate'}
+                    </span>
+                    <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-200 font-mono leading-tight">
+                      {isMasterOrTL ? conversionRate : myConversionRate}%
+                    </span>
                   </div>
                   <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
-                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Pending F/U</span>
-                    <span className="text-xs sm:text-sm font-black text-amber-500 font-mono leading-tight">{pendingFollowupsCount}</span>
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">
+                      {isMasterOrTL ? 'Pending F/U' : 'My F/U'}
+                    </span>
+                    <span className="text-xs sm:text-sm font-black text-amber-500 font-mono leading-tight">
+                      {isMasterOrTL ? pendingFollowupsCount : myPendingFollowups}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -531,449 +578,615 @@ export default function MasterExecutiveLanding({
       </section>
 
       {/* ==============================================================
+          3. EMPLOYEE DEDICATED WORKSPACE (VISIBLE ONLY FOR EMPLOYEES)
+          ============================================================== */}
+      {!isMasterOrTL && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
+                My Workspace & Priority Queue
+              </h2>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Your assigned client leads, scheduled calls and workflow tasks for today
+              </p>
+            </div>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => onTriggerLeadDetail(null)}
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+              >
+                <span>+ Register New Lead</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            
+            {/* PANEL 1: My Scheduled Follow-ups & Calls */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="h-8 w-8 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 flex items-center justify-center">
+                    <PhoneCall className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">Scheduled Follow-ups</h4>
+                    <p className="text-[10px] text-slate-400">Calls & touchpoints due for response</p>
+                  </div>
+                </div>
+                <span className="text-xs font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/60 px-2.5 py-1 rounded-full font-mono">
+                  {myPendingFollowups} Pending
+                </span>
+              </div>
+
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {followups.filter((f) => f.status === 'pending' && myAssignedLeads.some((l) => l.id === f.leadId)).length === 0 ? (
+                  <div className="p-6 text-center rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700">
+                    <CheckCircle className="h-6 w-6 text-emerald-500 mx-auto mb-1.5" />
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">All Follow-ups Completed</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">No pending customer calls scheduled right now.</p>
+                  </div>
+                ) : (
+                  followups
+                    .filter((f) => f.status === 'pending' && myAssignedLeads.some((l) => l.id === f.leadId))
+                    .slice(0, 5)
+                    .map((fu) => {
+                      const relatedLead = myAssignedLeads.find((l) => l.id === fu.leadId);
+                      return (
+                        <div
+                          key={fu.id}
+                          onClick={() => {
+                            if (relatedLead) onTriggerLeadDetail(relatedLead.id);
+                          }}
+                          className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer border border-slate-100 dark:border-slate-750"
+                        >
+                          <div className="min-w-0 flex-1 pr-2">
+                            <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                              {relatedLead ? (relatedLead.customerName || relatedLead.businessName) : 'Customer Call'}
+                            </p>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1">
+                              {fu.remarks || fu.customerResponse || 'Scheduled Follow-up discussion'}
+                            </p>
+                            <span className="text-[9px] font-mono text-amber-600 dark:text-amber-400 font-semibold">
+                              Due: {fu.followUpDate} {fu.followUpTime || ''}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-1 rounded-lg shrink-0 flex items-center space-x-1">
+                            <span>Open</span>
+                            <ChevronRight className="h-3 w-3" />
+                          </span>
+                        </div>
+                      );
+                    })
+                )}
+              </div>
+
+              <button
+                onClick={() => onNavigateModule('sales', 'followups')}
+                className="w-full py-2 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
+              >
+                <span>View All My Follow-up Calls</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            {/* PANEL 2: My Assigned Leads Pipeline */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="h-8 w-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center">
+                    <TrendingUp className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">My Active Leads</h4>
+                    <p className="text-[10px] text-slate-400">Direct client deals assigned to you</p>
+                  </div>
+                </div>
+                <span className="text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-full font-mono">
+                  {myAssignedLeads.length} Total
+                </span>
+              </div>
+
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {myAssignedLeads.length === 0 ? (
+                  <div className="p-6 text-center rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700">
+                    <Briefcase className="h-6 w-6 text-slate-400 mx-auto mb-1.5" />
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No Leads Assigned Yet</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Click Register New Lead or request allocations from Team Leader.</p>
+                  </div>
+                ) : (
+                  myAssignedLeads.slice(0, 5).map((lead) => (
+                    <div
+                      key={lead.id}
+                      onClick={() => onTriggerLeadDetail(lead.id)}
+                      className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer border border-slate-100 dark:border-slate-750"
+                    >
+                      <div className="min-w-0 flex-1 pr-2">
+                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                          {lead.customerName || lead.businessName}
+                        </p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                          {lead.serviceRequired || lead.businessName || 'General Consultation'} • {lead.mobile}
+                        </p>
+                      </div>
+                      <span
+                        className={`text-[9px] font-bold px-2 py-0.5 rounded-md shrink-0 ${
+                          lead.stage === 'Converted'
+                            ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300'
+                            : lead.stage === 'Interested'
+                            ? 'bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300'
+                            : 'bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300'
+                        }`}
+                      >
+                        {lead.stage || 'New'}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <button
+                onClick={() => onNavigateModule('sales', 'leads')}
+                className="w-full py-2 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
+              >
+                <span>Open Full Leads Table</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+          </div>
+        </section>
+      )}
+
+      {/* ==============================================================
           3. QUICK INSIGHT BAR (BUSINESS SNAPSHOT - COMPACT)
           ============================================================== */}
-      <section className="space-y-2">
-        <div className="flex items-center justify-between pb-0.5">
-          <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
-            Business Snapshot
-          </h3>
-          <span className="text-[10px] text-slate-400 font-mono font-semibold">Live KPIs & Performance Gauges</span>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-2.5">
-          
-          {/* Card 1: Total Leads */}
-          <div className="p-2.5 sm:p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[9px] uppercase font-bold text-slate-400 font-mono truncate">Total Leads</span>
-              <div className="h-6 w-6 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center shrink-0">
-                <TrendingUp className="h-3.5 w-3.5" />
-              </div>
-            </div>
-            <div>
-              <p className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono leading-tight">{totalLeads}</p>
-              <div className="flex items-center space-x-0.5 text-[9px] text-emerald-600 font-semibold mt-0.5 truncate">
-                <ArrowUpRight className="h-3 w-3 shrink-0" />
-                <span>+14.2% MoM</span>
-              </div>
-            </div>
+      {isMasterOrTL && (
+        <section className="space-y-2">
+          <div className="flex items-center justify-between pb-0.5">
+            <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
+              Business Snapshot
+            </h3>
+            <span className="text-[10px] text-slate-400 font-mono font-semibold">Live KPIs & Performance Gauges</span>
           </div>
 
-          {/* Card 2: Active Clients */}
-          <div className="p-2.5 sm:p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[9px] uppercase font-bold text-slate-400 font-mono truncate">Active Clients</span>
-              <div className="h-6 w-6 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 flex items-center justify-center shrink-0">
-                <Briefcase className="h-3.5 w-3.5" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-2.5">
+            
+            {/* Card 1: Total Leads */}
+            <div className="p-2.5 sm:p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] uppercase font-bold text-slate-400 font-mono truncate">Total Leads</span>
+                <div className="h-6 w-6 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center shrink-0">
+                  <TrendingUp className="h-3.5 w-3.5" />
+                </div>
+              </div>
+              <div>
+                <p className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono leading-tight">{totalLeads}</p>
+                <div className="flex items-center space-x-0.5 text-[9px] text-emerald-600 font-semibold mt-0.5 truncate">
+                  <ArrowUpRight className="h-3 w-3 shrink-0" />
+                  <span>+14.2% MoM</span>
+                </div>
               </div>
             </div>
-            <div>
-              <p className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono leading-tight">{totalClientsCount || totalLeads}</p>
-              <div className="flex items-center space-x-0.5 text-[9px] text-indigo-600 font-semibold mt-0.5 truncate">
-                <ArrowUpRight className="h-3 w-3 shrink-0" />
-                <span>+8.5% Growth</span>
-              </div>
-            </div>
-          </div>
 
-          {/* Card 3: Monthly Revenue */}
-          <div className="p-2.5 sm:p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[9px] uppercase font-bold text-slate-400 font-mono truncate">Monthly Rev.</span>
-              <div className="h-6 w-6 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center shrink-0">
-                <DollarSign className="h-3.5 w-3.5" />
+            {/* Card 2: Active Clients */}
+            <div className="p-2.5 sm:p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] uppercase font-bold text-slate-400 font-mono truncate">Active Clients</span>
+                <div className="h-6 w-6 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 flex items-center justify-center shrink-0">
+                  <Briefcase className="h-3.5 w-3.5" />
+                </div>
+              </div>
+              <div>
+                <p className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono leading-tight">{totalClientsCount || totalLeads}</p>
+                <div className="flex items-center space-x-0.5 text-[9px] text-indigo-600 font-semibold mt-0.5 truncate">
+                  <ArrowUpRight className="h-3 w-3 shrink-0" />
+                  <span>+8.5% Growth</span>
+                </div>
               </div>
             </div>
-            <div>
-              <p className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono truncate leading-tight">
-                ₹{convertedRevenue ? (convertedRevenue / 1000).toFixed(1) + 'k' : '1.4M'}
-              </p>
-              <div className="flex items-center space-x-0.5 text-[9px] text-emerald-600 font-semibold mt-0.5 truncate">
-                <ArrowUpRight className="h-3 w-3 shrink-0" />
-                <span>+22.8% Target</span>
-              </div>
-            </div>
-          </div>
 
-          {/* Card 4: Pending Operations */}
-          <div className="p-2.5 sm:p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[9px] uppercase font-bold text-slate-400 font-mono truncate">Pending Ops</span>
-              <div className="h-6 w-6 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 flex items-center justify-center shrink-0">
-                <Activity className="h-3.5 w-3.5" />
+            {/* Card 3: Monthly Revenue */}
+            <div className="p-2.5 sm:p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] uppercase font-bold text-slate-400 font-mono truncate">Monthly Rev.</span>
+                <div className="h-6 w-6 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center shrink-0">
+                  <DollarSign className="h-3.5 w-3.5" />
+                </div>
+              </div>
+              <div>
+                <p className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono truncate leading-tight">
+                  ₹{convertedRevenue ? (convertedRevenue / 1000).toFixed(1) + 'k' : '1.4M'}
+                </p>
+                <div className="flex items-center space-x-0.5 text-[9px] text-emerald-600 font-semibold mt-0.5 truncate">
+                  <ArrowUpRight className="h-3 w-3 shrink-0" />
+                  <span>+22.8% Target</span>
+                </div>
               </div>
             </div>
-            <div>
-              <p className="text-base sm:text-lg font-black text-rose-600 dark:text-rose-400 font-mono leading-tight">{totalPendingOps}</p>
-              <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate">
-                {pendingGstCount} GST • {pendingItrCount} ITR
-              </div>
-            </div>
-          </div>
 
-          {/* Card 5: Employees Online */}
-          <div className="p-2.5 sm:p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[9px] uppercase font-bold text-slate-400 font-mono truncate">Duty Online</span>
-              <div className="h-6 w-6 rounded-lg bg-purple-50 dark:bg-purple-950/50 text-purple-600 flex items-center justify-center shrink-0">
-                <Users className="h-3.5 w-3.5" />
+            {/* Card 4: Pending Operations */}
+            <div className="p-2.5 sm:p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] uppercase font-bold text-slate-400 font-mono truncate">Pending Ops</span>
+                <div className="h-6 w-6 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 flex items-center justify-center shrink-0">
+                  <Activity className="h-3.5 w-3.5" />
+                </div>
+              </div>
+              <div>
+                <p className="text-base sm:text-lg font-black text-rose-600 dark:text-rose-400 font-mono leading-tight">{totalPendingOps}</p>
+                <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate">
+                  {pendingGstCount} GST • {pendingItrCount} ITR
+                </div>
               </div>
             </div>
-            <div>
-              <p className="text-base sm:text-lg font-black text-purple-600 dark:text-purple-400 font-mono leading-tight">{presentTodayCount || activeEmployeesCount}</p>
-              <div className="text-[9px] text-emerald-600 font-semibold mt-0.5 truncate">
-                ● Active Shifts
-              </div>
-            </div>
-          </div>
 
-          {/* Card 6: Today's Tasks */}
-          <div className="p-2.5 sm:p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[9px] uppercase font-bold text-slate-400 font-mono truncate">Today's Tasks</span>
-              <div className="h-6 w-6 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 flex items-center justify-center shrink-0">
-                <CheckCircle className="h-3.5 w-3.5" />
+            {/* Card 5: Employees Online */}
+            <div className="p-2.5 sm:p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] uppercase font-bold text-slate-400 font-mono truncate">Duty Online</span>
+                <div className="h-6 w-6 rounded-lg bg-purple-50 dark:bg-purple-950/50 text-purple-600 flex items-center justify-center shrink-0">
+                  <Users className="h-3.5 w-3.5" />
+                </div>
+              </div>
+              <div>
+                <p className="text-base sm:text-lg font-black text-purple-600 dark:text-purple-400 font-mono leading-tight">{presentTodayCount || activeEmployeesCount}</p>
+                <div className="text-[9px] text-emerald-600 font-semibold mt-0.5 truncate">
+                  ● Active Shifts
+                </div>
               </div>
             </div>
-            <div>
-              <p className="text-base sm:text-lg font-black text-amber-600 dark:text-amber-400 font-mono leading-tight">{todayDueCount || pendingTasksCount}</p>
-              <div className="text-[9px] text-amber-600 font-medium mt-0.5 truncate">
-                Scheduled Today
-              </div>
-            </div>
-          </div>
 
-        </div>
-      </section>
+            {/* Card 6: Today's Tasks */}
+            <div className="p-2.5 sm:p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] uppercase font-bold text-slate-400 font-mono truncate">Today's Tasks</span>
+                <div className="h-6 w-6 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 flex items-center justify-center shrink-0">
+                  <CheckCircle className="h-3.5 w-3.5" />
+                </div>
+              </div>
+              <div>
+                <p className="text-base sm:text-lg font-black text-amber-600 dark:text-amber-400 font-mono leading-tight">{todayDueCount || pendingTasksCount}</p>
+                <div className="text-[9px] text-amber-600 font-medium mt-0.5 truncate">
+                  Scheduled Today
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </section>
+      )}
 
       {/* ==============================================================
           4. EXECUTIVE DASHBOARD WIDGETS
           ============================================================== */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
-              Executive Analytics & System Telemetry
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Real-time conversion pipeline, operational health, workforce rosters, compliance milestones & cloud resilience
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* WIDGET 1: Sales Performance (Conversion Funnel) */}
-          <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-lg space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <div className="h-8 w-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center">
-                  <TrendingUp className="h-4 w-4" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Sales Performance</h4>
-                  <p className="text-[10px] text-slate-400">Lead Conversion Funnel</p>
-                </div>
-              </div>
-              <span className="text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-full font-mono">
-                {conversionRate}% Conv.
-              </span>
+      {isMasterOrTL && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
+                Executive Analytics & System Telemetry
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Real-time conversion pipeline, operational health, workforce rosters, compliance milestones & cloud resilience
+              </p>
             </div>
+          </div>
 
-            <div className="space-y-3 pt-2">
-              {funnelStages.map((stage, idx) => {
-                const maxCount = totalLeads || 1;
-                const ratio = Math.max(8, Math.round((stage.count / maxCount) * 100));
-                return (
-                  <div key={idx} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      <span>{stage.label}</span>
-                      <span className="font-mono">{stage.count} Leads</span>
-                    </div>
-                    <div className="w-full bg-slate-100 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full bg-gradient-to-r ${stage.color} transition-all duration-500`}
-                        style={{ width: `${ratio}%` }}
-                      />
-                    </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* WIDGET 1: Sales Performance (Conversion Funnel) */}
+            <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-lg space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="h-8 w-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center">
+                    <TrendingUp className="h-4 w-4" />
                   </div>
-                );
-              })}
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">Sales Performance</h4>
+                    <p className="text-[10px] text-slate-400">Lead Conversion Funnel</p>
+                  </div>
+                </div>
+                <span className="text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-full font-mono">
+                  {conversionRate}% Conv.
+                </span>
+              </div>
+
+              <div className="space-y-3 pt-2">
+                {funnelStages.map((stage, idx) => {
+                  const maxCount = totalLeads || 1;
+                  const ratio = Math.max(8, Math.round((stage.count / maxCount) * 100));
+                  return (
+                    <div key={idx} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        <span>{stage.label}</span>
+                        <span className="font-mono">{stage.count} Leads</span>
+                      </div>
+                      <div className="w-full bg-slate-100 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full bg-gradient-to-r ${stage.color} transition-all duration-500`}
+                          style={{ width: `${ratio}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <button
+                onClick={() => onNavigateModule('sales', 'leads')}
+                className="w-full py-2 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
+              >
+                <span>Inspect Full Sales Pipeline</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
             </div>
 
-            <button
-              onClick={() => onNavigateModule('sales', 'leads')}
-              className="w-full py-2 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
-            >
-              <span>Inspect Full Sales Pipeline</span>
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-          </div>
-
-          {/* WIDGET 2: Operations Health (Pending vs Completed) */}
-          <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-lg space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <div className="h-8 w-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 flex items-center justify-center">
-                  <Briefcase className="h-4 w-4" />
+            {/* WIDGET 2: Operations Health (Pending vs Completed) */}
+            <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-lg space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="h-8 w-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 flex items-center justify-center">
+                    <Briefcase className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">Operations Health</h4>
+                    <p className="text-[10px] text-slate-400">Processing & Delivery Queue</p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Operations Health</h4>
-                  <p className="text-[10px] text-slate-400">Processing & Delivery Queue</p>
+                <span className="text-xs font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-1 rounded-full font-mono">
+                  {completedOpsCount} Done
+                </span>
+              </div>
+
+              <div className="space-y-4 pt-1">
+                <div className="grid grid-cols-2 gap-3 text-center">
+                  <div className="p-3 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30">
+                    <span className="text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 block">Pending Queue</span>
+                    <span className="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono">{totalPendingOps}</span>
+                  </div>
+                  <div className="p-3 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/30">
+                    <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 block">Completed / Filed</span>
+                    <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">{completedOpsCount}</span>
+                  </div>
+                </div>
+
+                {/* Progress Breakdown */}
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                    <span>GST Return Compliance</span>
+                    <span className="font-bold text-slate-900 dark:text-white">{gstReturns.length ? Math.round(((gstReturns.length - pendingGstCount) / gstReturns.length) * 100) : 100}%</span>
+                  </div>
+                  <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                    <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${gstReturns.length ? Math.max(10, ((gstReturns.length - pendingGstCount) / gstReturns.length) * 100) : 100}%` }} />
+                  </div>
+
+                  <div className="flex justify-between text-slate-600 dark:text-slate-400 pt-1">
+                    <span>ITR Direct Tax Clearance</span>
+                    <span className="font-bold text-slate-900 dark:text-white">{itrClients.length ? Math.round(((itrClients.length - pendingItrCount) / itrClients.length) * 100) : 100}%</span>
+                  </div>
+                  <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                    <div className="bg-blue-500 h-full rounded-full" style={{ width: `${itrClients.length ? Math.max(10, ((itrClients.length - pendingItrCount) / itrClients.length) * 100) : 100}%` }} />
+                  </div>
                 </div>
               </div>
-              <span className="text-xs font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-1 rounded-full font-mono">
-                {completedOpsCount} Done
-              </span>
+
+              <button
+                onClick={() => onNavigateModule('ops')}
+                className="w-full py-2 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
+              >
+                <span>Access Operations Control</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
             </div>
 
-            <div className="space-y-4 pt-1">
-              <div className="grid grid-cols-2 gap-3 text-center">
-                <div className="p-3 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30">
-                  <span className="text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 block">Pending Queue</span>
-                  <span className="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono">{totalPendingOps}</span>
+            {/* WIDGET 3: Employee Activity (Attendance Summary) */}
+            <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-lg space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="h-8 w-8 rounded-xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 flex items-center justify-center">
+                    <Users className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">Employee Activity</h4>
+                    <p className="text-[10px] text-slate-400">Attendance Roster Today</p>
+                  </div>
                 </div>
-                <div className="p-3 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/30">
-                  <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 block">Completed / Filed</span>
-                  <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">{completedOpsCount}</span>
+                <span className="text-xs font-bold text-purple-600 bg-purple-50 dark:bg-purple-950/60 px-2.5 py-1 rounded-full font-mono">
+                  {activeEmployeesCount} Active
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/30 flex items-center space-x-2.5">
+                  <div className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Present On Duty</span>
+                    <span className="text-base font-black text-emerald-700 dark:text-emerald-300 font-mono">{presentTodayCount || activeEmployeesCount}</span>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/30 flex items-center space-x-2.5">
+                  <div className="h-2.5 w-2.5 rounded-full bg-blue-500" />
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Approved Leave</span>
+                    <span className="text-base font-black text-blue-700 dark:text-blue-300 font-mono">{leavesTodayCount}</span>
+                  </div>
                 </div>
               </div>
 
-              {/* Progress Breakdown */}
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                  <span>GST Return Compliance</span>
-                  <span className="font-bold text-slate-900 dark:text-white">{gstReturns.length ? Math.round(((gstReturns.length - pendingGstCount) / gstReturns.length) * 100) : 100}%</span>
-                </div>
-                <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                  <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${gstReturns.length ? Math.max(10, ((gstReturns.length - pendingGstCount) / gstReturns.length) * 100) : 100}%` }} />
-                </div>
-
-                <div className="flex justify-between text-slate-600 dark:text-slate-400 pt-1">
-                  <span>ITR Direct Tax Clearance</span>
-                  <span className="font-bold text-slate-900 dark:text-white">{itrClients.length ? Math.round(((itrClients.length - pendingItrCount) / itrClients.length) * 100) : 100}%</span>
-                </div>
-                <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                  <div className="bg-blue-500 h-full rounded-full" style={{ width: `${itrClients.length ? Math.max(10, ((itrClients.length - pendingItrCount) / itrClients.length) * 100) : 100}%` }} />
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={() => onNavigateModule('ops')}
-              className="w-full py-2 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
-            >
-              <span>Access Operations Control</span>
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-          </div>
-
-          {/* WIDGET 3: Employee Activity (Attendance Summary) */}
-          <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-lg space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <div className="h-8 w-8 rounded-xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 flex items-center justify-center">
-                  <Users className="h-4 w-4" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Employee Activity</h4>
-                  <p className="text-[10px] text-slate-400">Attendance Roster Today</p>
-                </div>
-              </div>
-              <span className="text-xs font-bold text-purple-600 bg-purple-50 dark:bg-purple-950/60 px-2.5 py-1 rounded-full font-mono">
-                {activeEmployeesCount} Active
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/30 flex items-center space-x-2.5">
-                <div className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-500 block">Present On Duty</span>
-                  <span className="text-base font-black text-emerald-700 dark:text-emerald-300 font-mono">{presentTodayCount || activeEmployeesCount}</span>
-                </div>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/30 flex items-center space-x-2.5">
-                <div className="h-2.5 w-2.5 rounded-full bg-blue-500" />
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-500 block">Approved Leave</span>
-                  <span className="text-base font-black text-blue-700 dark:text-blue-300 font-mono">{leavesTodayCount}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Quick Leaderboard Snippet */}
-            <div className="space-y-2 pt-1">
-              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider font-mono block">Top Performers This Cycle</span>
-              <div className="space-y-1.5">
-                {employees.slice(0, 3).map((emp, i) => (
-                  <div key={emp.id} className="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/40 text-xs">
-                    <div className="flex items-center space-x-2">
-                      <span className="h-5 w-5 rounded-md bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-[10px] font-bold flex items-center justify-center">
-                        #{i + 1}
+              {/* Quick Leaderboard Snippet */}
+              <div className="space-y-2 pt-1">
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider font-mono block">Top Performers This Cycle</span>
+                <div className="space-y-1.5">
+                  {employees.slice(0, 3).map((emp, i) => (
+                    <div key={emp.id} className="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/40 text-xs">
+                      <div className="flex items-center space-x-2">
+                        <span className="h-5 w-5 rounded-md bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-[10px] font-bold flex items-center justify-center">
+                          #{i + 1}
+                        </span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">{emp.name}</span>
+                      </div>
+                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-md">
+                        {emp.role.toUpperCase()}
                       </span>
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">{emp.name}</span>
                     </div>
-                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-md">
-                      {emp.role.toUpperCase()}
-                    </span>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
+
+              <button
+                onClick={() => onNavigateModule('hr', 'employees')}
+                className="w-full py-2 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
+              >
+                <span>Manage Associates & Payroll</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
             </div>
 
-            <button
-              onClick={() => onNavigateModule('hr', 'employees')}
-              className="w-full py-2 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
-            >
-              <span>Manage Associates & Payroll</span>
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
           </div>
 
-        </div>
-
-        {/* BOTTOM ROW: Compliance Calendar & System Health */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          
-          {/* Compliance Calendar */}
-          <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-lg space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <div className="h-8 w-8 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 flex items-center justify-center">
-                  <Calendar className="h-4 w-4" />
+          {/* BOTTOM ROW: Compliance Calendar & System Health */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            {/* Compliance Calendar */}
+            <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-lg space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="h-8 w-8 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 flex items-center justify-center">
+                    <Calendar className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">Compliance Calendar</h4>
+                    <p className="text-[10px] text-slate-400">Statutory Deadlines & Filing Windows</p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Compliance Calendar</h4>
-                  <p className="text-[10px] text-slate-400">Statutory Deadlines & Filing Windows</p>
+                <span className="text-[10px] font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/60 px-2.5 py-1 rounded-full font-mono uppercase">
+                  Indian Tax Cycle
+                </span>
+              </div>
+
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-amber-50/40 dark:bg-amber-955/20 border border-amber-200/60 dark:border-amber-900/30">
+                  <div className="flex items-center space-x-3">
+                    <div className="h-9 w-9 rounded-xl bg-amber-500 text-white font-bold text-xs flex flex-col items-center justify-center leading-none shadow-xs">
+                      <span className="text-[9px] uppercase font-semibold">DAY</span>
+                      <span className="text-sm font-black">11</span>
+                    </div>
+                    <div>
+                      <h5 className="text-xs font-bold text-slate-900 dark:text-white">GSTR-1 Monthly Return Filing</h5>
+                      <p className="text-[10px] text-slate-500">Outward supplies summary for regular taxpayers</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300">
+                    Monthly
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-blue-50/40 dark:bg-blue-955/20 border border-blue-200/60 dark:border-blue-900/30">
+                  <div className="flex items-center space-x-3">
+                    <div className="h-9 w-9 rounded-xl bg-blue-600 text-white font-bold text-xs flex flex-col items-center justify-center leading-none shadow-xs">
+                      <span className="text-[9px] uppercase font-semibold">DAY</span>
+                      <span className="text-sm font-black">20</span>
+                    </div>
+                    <div>
+                      <h5 className="text-xs font-bold text-slate-900 dark:text-white">GSTR-3B Summary Return & Tax Pay</h5>
+                      <p className="text-[10px] text-slate-500">Monthly tax liability discharge and ITC reconciliation</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300">
+                    Critical
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-purple-50/40 dark:bg-purple-955/20 border border-purple-200/60 dark:border-purple-900/30">
+                  <div className="flex items-center space-x-3">
+                    <div className="h-9 w-9 rounded-xl bg-purple-600 text-white font-bold text-xs flex flex-col items-center justify-center leading-none shadow-xs">
+                      <span className="text-[9px] uppercase font-semibold">ANNUAL</span>
+                      <span className="text-sm font-black">ROC</span>
+                    </div>
+                    <div>
+                      <h5 className="text-xs font-bold text-slate-900 dark:text-white">MCA AOC-4 & MGT-7 Annual Filing</h5>
+                      <p className="text-[10px] text-slate-500">Company financial statements and Director KYC returns</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300">
+                    Annual
+                  </span>
                 </div>
               </div>
-              <span className="text-[10px] font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/60 px-2.5 py-1 rounded-full font-mono uppercase">
-                Indian Tax Cycle
-              </span>
             </div>
 
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-amber-50/40 dark:bg-amber-955/20 border border-amber-200/60 dark:border-amber-900/30">
-                <div className="flex items-center space-x-3">
-                  <div className="h-9 w-9 rounded-xl bg-amber-500 text-white font-bold text-xs flex flex-col items-center justify-center leading-none shadow-xs">
-                    <span className="text-[9px] uppercase font-semibold">DAY</span>
-                    <span className="text-sm font-black">11</span>
+            {/* System Health & Cloud Architecture Telemetry */}
+            <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-lg space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="h-8 w-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center">
+                    <Database className="h-4 w-4" />
                   </div>
                   <div>
-                    <h5 className="text-xs font-bold text-slate-900 dark:text-white">GSTR-1 Monthly Return Filing</h5>
-                    <p className="text-[10px] text-slate-500">Outward supplies summary for regular taxpayers</p>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">System & Cloud Resilience</h4>
+                    <p className="text-[10px] text-slate-400">Zero Data Loss Telemetry</p>
                   </div>
                 </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300">
-                  Monthly
+                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-full font-mono">
+                  99.9% Uptime
                 </span>
               </div>
 
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-blue-50/40 dark:bg-blue-955/20 border border-blue-200/60 dark:border-blue-900/30">
-                <div className="flex items-center space-x-3">
-                  <div className="h-9 w-9 rounded-xl bg-blue-600 text-white font-bold text-xs flex flex-col items-center justify-center leading-none shadow-xs">
-                    <span className="text-[9px] uppercase font-semibold">DAY</span>
-                    <span className="text-sm font-black">20</span>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-bold text-slate-400">Postgres Sync</span>
+                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
                   </div>
-                  <div>
-                    <h5 className="text-xs font-bold text-slate-900 dark:text-white">GSTR-3B Summary Return & Tax Pay</h5>
-                    <p className="text-[10px] text-slate-500">Monthly tax liability discharge and ITC reconciliation</p>
-                  </div>
+                  <span className="text-sm font-black text-slate-900 dark:text-white block font-mono">
+                    {syncStatus === 'syncing' ? 'Syncing...' : 'Connected'}
+                  </span>
+                  <span className="text-[10px] text-emerald-600 font-semibold">Active Replica Node</span>
                 </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300">
-                  Critical
-                </span>
+
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-bold text-slate-400">Recovery Status</span>
+                    <Lock className="h-3 w-3 text-blue-500" />
+                  </div>
+                  <span className="text-sm font-black text-slate-900 dark:text-white block font-mono">
+                    Protected
+                  </span>
+                  <span className="text-[10px] text-blue-500 font-semibold">SHA-256 Checksums</span>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">OCC Concurrency</span>
+                  <span className="text-sm font-black text-slate-900 dark:text-white block font-mono">
+                    Active (vN)
+                  </span>
+                  <span className="text-[10px] text-slate-400">Multi-user collision guard</span>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Database Firewall</span>
+                  <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 block font-mono">
+                    Enforced
+                  </span>
+                  <span className="text-[10px] text-emerald-600 font-semibold">20% Drop Protection</span>
+                </div>
               </div>
 
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-purple-50/40 dark:bg-purple-955/20 border border-purple-200/60 dark:border-purple-900/30">
-                <div className="flex items-center space-x-3">
-                  <div className="h-9 w-9 rounded-xl bg-purple-600 text-white font-bold text-xs flex flex-col items-center justify-center leading-none shadow-xs">
-                    <span className="text-[9px] uppercase font-semibold">ANNUAL</span>
-                    <span className="text-sm font-black">ROC</span>
-                  </div>
-                  <div>
-                    <h5 className="text-xs font-bold text-slate-900 dark:text-white">MCA AOC-4 & MGT-7 Annual Filing</h5>
-                    <p className="text-[10px] text-slate-500">Company financial statements and Director KYC returns</p>
-                  </div>
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300">
-                  Annual
-                </span>
-              </div>
+              <button
+                onClick={() => onNavigateModule('settings', 'recovery_center')}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 shadow-md transition-colors cursor-pointer"
+              >
+                <Shield className="h-3.5 w-3.5" />
+                <span>Open Recovery Center & Snapshots</span>
+              </button>
             </div>
+
           </div>
-
-          {/* System Health & Cloud Architecture Telemetry */}
-          <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-lg space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <div className="h-8 w-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center">
-                  <Database className="h-4 w-4" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">System & Cloud Resilience</h4>
-                  <p className="text-[10px] text-slate-400">Zero Data Loss Telemetry</p>
-                </div>
-              </div>
-              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-full font-mono">
-                99.9% Uptime
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Postgres Sync</span>
-                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                </div>
-                <span className="text-sm font-black text-slate-900 dark:text-white block font-mono">
-                  {syncStatus === 'syncing' ? 'Syncing...' : 'Connected'}
-                </span>
-                <span className="text-[10px] text-emerald-600 font-semibold">Active Replica Node</span>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Recovery Status</span>
-                  <Lock className="h-3 w-3 text-blue-500" />
-                </div>
-                <span className="text-sm font-black text-slate-900 dark:text-white block font-mono">
-                  Protected
-                </span>
-                <span className="text-[10px] text-blue-500 font-semibold">SHA-256 Checksums</span>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">OCC Concurrency</span>
-                <span className="text-sm font-black text-slate-900 dark:text-white block font-mono">
-                  Active (vN)
-                </span>
-                <span className="text-[10px] text-slate-400">Multi-user collision guard</span>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">Database Firewall</span>
-                <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 block font-mono">
-                  Enforced
-                </span>
-                <span className="text-[10px] text-emerald-600 font-semibold">20% Drop Protection</span>
-              </div>
-            </div>
-
-            <button
-              onClick={() => onNavigateModule('settings', 'recovery_center')}
-              className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 shadow-md transition-colors cursor-pointer"
-            >
-              <Shield className="h-3.5 w-3.5" />
-              <span>Open Recovery Center & Snapshots</span>
-            </button>
-          </div>
-
-        </div>
-      </section>
+        </section>
+      )}
     </div>
   );
 }

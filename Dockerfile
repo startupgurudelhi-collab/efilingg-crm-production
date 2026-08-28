@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install all dependencies (development dependencies are required to run vite build and esbuild)
-RUN npm ci
+RUN npm install
 
 # Copy application source files
 COPY . .
@@ -27,7 +27,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install only production dependencies for smaller image footprint and lower security risk
-RUN npm ci --only=production
+RUN npm install --omit=dev
 
 # Copy compiled artifacts from builder stage (the entire dist directory containing frontend static files and server.cjs)
 COPY --from=builder /app/dist ./dist
@@ -39,7 +39,7 @@ RUN mkdir -p /app/data /app/uploads
 # Expose production port (must be 3000 to match reverse proxy and Cloud Run ingress)
 EXPOSE 3000
 
-ENV PORT=3050
+ENV PORT=3000
 ENV NODE_ENV=production
 
 # Boot the unified production application

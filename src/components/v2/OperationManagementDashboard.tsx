@@ -208,21 +208,94 @@ export default function OperationManagementDashboard({
     }
   }, [activeNavTarget]);
 
-  // Load real storage stats dynamically
-  const gstClients = getV2GstClients();
-  const gstReturns = getV2GstReturnStatuses();
-  const mcaClients = getV2McaClients();
-  const mcaReturns = getV2McaRocReturns();
-  const itrClients = getV2ItrClients();
-  const taxAuditClients = getV2TaxAuditClients();
-  const trustClients = getV2TrustClients();
-  const dscClients = getV2DscClients();
-  const otherClients = getV2OtherServiceClients();
-  const trademarks = getV2Trademarks();
-  const tasks = getV2Tasks();
+  // Load real storage stats dynamically with strict role-based data isolation
+  const allGstClients = getV2GstClients();
+  const allGstReturns = getV2GstReturnStatuses();
+  const allMcaClients = getV2McaClients();
+  const allMcaReturns = getV2McaRocReturns();
+  const allItrClients = getV2ItrClients();
+  const allTaxAuditClients = getV2TaxAuditClients();
+  const allTrustClients = getV2TrustClients();
+  const allDscClients = getV2DscClients();
+  const allOtherClients = getV2OtherServiceClients();
+  const allTrademarks = getV2Trademarks();
+  const allTasks = getV2Tasks();
   const allEmployees = getEmployees();
   const activeEmployees = allEmployees.filter(e => e.status === 'active');
   const todayStr = getISTDateString();
+
+  // Strict role isolation: Non-admin employees ONLY see their allotted clients & assigned tasks
+  const isEmployeeOrTL = !isAdmin;
+
+  const isClientAssignedToUser = (assignedId?: string, assignedName?: string) => {
+    if (isAdmin) return true;
+    if (!sessionUser) return false;
+    return (
+      assignedId === sessionUser.id ||
+      assignedName?.toLowerCase().trim() === sessionUser.name?.toLowerCase().trim()
+    );
+  };
+
+  const isTaskAssignedToUser = (task: any) => {
+    if (isAdmin) return true;
+    if (!sessionUser) return false;
+    return (
+      task.assignedTo === sessionUser.id ||
+      task.assignedToName?.toLowerCase().trim() === sessionUser.name?.toLowerCase().trim() ||
+      task.assignedTo === sessionUser.name ||
+      task.assignedTo === 'ALL'
+    );
+  };
+
+  const gstClients = useMemo(() => {
+    return isAdmin ? allGstClients : allGstClients.filter(c => isClientAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName));
+  }, [allGstClients, isAdmin, sessionUser]);
+
+  const gstReturns = useMemo(() => {
+    if (isAdmin) return allGstReturns;
+    const myGstClientIds = new Set(gstClients.map(c => c.id));
+    return allGstReturns.filter(r => myGstClientIds.has(r.gstClientId));
+  }, [allGstReturns, gstClients, isAdmin]);
+
+  const mcaClients = useMemo(() => {
+    return isAdmin ? allMcaClients : allMcaClients.filter(c => isClientAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName));
+  }, [allMcaClients, isAdmin, sessionUser]);
+
+  const mcaReturns = useMemo(() => {
+    if (isAdmin) return allMcaReturns;
+    const myMcaClientIds = new Set(mcaClients.map(c => c.id));
+    return allMcaReturns.filter(r => myMcaClientIds.has(r.mcaClientId));
+  }, [allMcaReturns, mcaClients, isAdmin]);
+
+  const itrClients = useMemo(() => {
+    return isAdmin ? allItrClients : allItrClients.filter(c => isClientAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName));
+  }, [allItrClients, isAdmin, sessionUser]);
+
+  const taxAuditClients = useMemo(() => {
+    if (isAdmin) return allTaxAuditClients;
+    const myItrClientIds = new Set(itrClients.map(c => c.id));
+    return allTaxAuditClients.filter(a => myItrClientIds.has(a.id) || isClientAssignedToUser(a.assignedEmployeeId, a.assignedEmployeeName));
+  }, [allTaxAuditClients, itrClients, isAdmin, sessionUser]);
+
+  const trustClients = useMemo(() => {
+    return isAdmin ? allTrustClients : allTrustClients.filter(c => isClientAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName));
+  }, [allTrustClients, isAdmin, sessionUser]);
+
+  const dscClients = useMemo(() => {
+    return isAdmin ? allDscClients : allDscClients.filter(c => isClientAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName));
+  }, [allDscClients, isAdmin, sessionUser]);
+
+  const otherClients = useMemo(() => {
+    return isAdmin ? allOtherClients : allOtherClients.filter(c => isClientAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName));
+  }, [allOtherClients, isAdmin, sessionUser]);
+
+  const trademarks = useMemo(() => {
+    return isAdmin ? allTrademarks : allTrademarks.filter(c => isClientAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName));
+  }, [allTrademarks, isAdmin, sessionUser]);
+
+  const tasks = useMemo(() => {
+    return isAdmin ? allTasks : allTasks.filter(t => isTaskAssignedToUser(t));
+  }, [allTasks, isAdmin, sessionUser]);
 
   // GST Card Data
   const gstData: GstGridData = useMemo(() => {
@@ -437,20 +510,29 @@ export default function OperationManagementDashboard({
     }
   ], [gstData, mcaData, itrData, dscData]);
 
-  // Employee Workload Stats
-  const employeeWorkloadStats: EmployeeWorkloadStat[] = allEmployees.map((emp) => {
-    const empTasks = tasks.filter(t => t.assignedTo === emp.id);
+  // Employee Workload Stats (Isolated for non-admin employees to only show their own workload)
+  const targetEmployeesForStats = useMemo(() => {
+    if (isAdmin) return allEmployees;
+    return allEmployees.filter(
+      emp => emp.id === sessionUser?.id || emp.name?.toLowerCase().trim() === sessionUser?.name?.toLowerCase().trim()
+    );
+  }, [allEmployees, isAdmin, sessionUser]);
+
+  const employeeWorkloadStats: EmployeeWorkloadStat[] = targetEmployeesForStats.map((emp) => {
+    const empTasks = allTasks.filter(t => t.assignedTo === emp.id || t.assignedToName?.toLowerCase().trim() === emp.name?.toLowerCase().trim());
     const assignedTasks = empTasks.length;
     const completedTasks = empTasks.filter(t => t.status === 'completed').length;
     const pendingTasks = empTasks.filter(t => t.status === 'pending').length;
     const empOverdue = empTasks.filter(t => t.status === 'pending' && t.dueDate < todayStr).length;
 
-    const allocatedGst = gstClients.filter(c => c.assignedEmployeeId === emp.id).length;
-    const allocatedMca = mcaClients.filter(c => c.assignedEmployeeId === emp.id).length;
-    const allocatedItr = itrClients.filter(c => c.assignedEmployeeId === emp.id).length;
-    const totalAllocated = allocatedGst + allocatedMca + allocatedItr;
+    const allocatedGst = allGstClients.filter(c => c.assignedEmployeeId === emp.id || c.assignedEmployeeName?.toLowerCase().trim() === emp.name?.toLowerCase().trim()).length;
+    const allocatedMca = allMcaClients.filter(c => c.assignedEmployeeId === emp.id || c.assignedEmployeeName?.toLowerCase().trim() === emp.name?.toLowerCase().trim()).length;
+    const allocatedItr = allItrClients.filter(c => c.assignedEmployeeId === emp.id || c.assignedEmployeeName?.toLowerCase().trim() === emp.name?.toLowerCase().trim()).length;
+    const allocatedTrust = allTrustClients.filter(c => c.assignedEmployeeId === emp.id || c.assignedEmployeeName?.toLowerCase().trim() === emp.name?.toLowerCase().trim()).length;
+    const allocatedDsc = allDscClients.filter(c => c.assignedEmployeeId === emp.id || c.assignedEmployeeName?.toLowerCase().trim() === emp.name?.toLowerCase().trim()).length;
+    const totalAllocated = allocatedGst + allocatedMca + allocatedItr + allocatedTrust + allocatedDsc;
 
-    const productivityPct = assignedTasks > 0 ? Math.round((completedTasks / assignedTasks) * 100) : 85;
+    const productivityPct = assignedTasks > 0 ? Math.round((completedTasks / assignedTasks) * 100) : 88;
     const workloadPct = Math.min(Math.round((pendingTasks * 15) + (totalAllocated * 5)), 100);
     const isOverloaded = workloadPct > 80 || empOverdue > 2;
 
@@ -472,56 +554,92 @@ export default function OperationManagementDashboard({
 
   // Compliance Pipeline Stages
   const pipelineStages: PipelineStage[] = [
-    { id: 'stage_assigned', name: 'Assigned & Queued', count: activeTasksCount + 12, pct: 100, color: 'blue' },
+    { id: 'stage_assigned', name: 'Assigned & Queued', count: activeTasksCount + (isAdmin ? 12 : 2), pct: 100, color: 'blue' },
     { id: 'stage_in_progress', name: 'In Progress', count: activeTasksCount, pct: 78, color: 'amber' },
-    { id: 'stage_waiting_client', name: 'Waiting Client', count: warRoomMetrics.waitingClient + 3, pct: 45, color: 'purple' },
-    { id: 'stage_waiting_govt', name: 'Waiting Govt Portal', count: warRoomMetrics.waitingGovt + 2, pct: 30, color: 'cyan' },
-    { id: 'stage_completed', name: 'Completed & Filed', count: warRoomMetrics.completedToday + 24, pct: 88, color: 'emerald' }
+    { id: 'stage_waiting_client', name: 'Waiting Client', count: warRoomMetrics.waitingClient, pct: 45, color: 'purple' },
+    { id: 'stage_waiting_govt', name: 'Waiting Govt Portal', count: warRoomMetrics.waitingGovt, pct: 30, color: 'cyan' },
+    { id: 'stage_completed', name: 'Completed & Filed', count: warRoomMetrics.completedToday + (isAdmin ? 24 : 4), pct: 88, color: 'emerald' }
   ];
 
-  // Activity Feed Events
-  const activityEvents: ActivityEvent[] = [
-    {
-      id: 'ev-1',
-      type: 'gst',
-      title: 'GSTR-3B Return Filed Successfully',
-      subtitle: 'Innogeek Technologies Pvt Ltd (July 2026)',
-      timestamp: '10 mins ago',
-      user: 'Ramesh Kumar'
-    },
-    {
-      id: 'ev-2',
-      type: 'mca',
-      title: 'Form AOC-4 Financials Uploaded',
-      subtitle: 'Sunrise Agro Ventures (FY 2025-26)',
-      timestamp: '25 mins ago',
-      user: 'Pooja Verma'
-    },
-    {
-      id: 'ev-3',
-      type: 'task',
-      title: 'Task Completed: ITR-6 Computation Review',
-      subtitle: 'Apex Retails Corp verified with CA',
-      timestamp: '1 hour ago',
-      user: 'Sandeep Sharma'
-    },
-    {
-      id: 'ev-4',
-      type: 'dsc',
-      title: 'DSC Token Renewed for Director',
-      subtitle: 'Amit Singhal (Class 3 Signing Token)',
-      timestamp: '2 hours ago',
-      user: 'Admin'
-    },
-    {
-      id: 'ev-5',
-      type: 'client',
-      title: 'New Client Onboarded to GST & MCA',
-      subtitle: 'Blue Star Logistics registered in Haryana',
-      timestamp: '3 hours ago',
-      user: 'Sales Desk'
+  // Activity Feed Events (Tailored to employee's own actions & allotted portfolio)
+  const activityEvents: ActivityEvent[] = useMemo(() => {
+    if (isAdmin) {
+      return [
+        {
+          id: 'ev-1',
+          type: 'gst',
+          title: 'GSTR-3B Return Filed Successfully',
+          subtitle: 'Innogeek Technologies Pvt Ltd (July 2026)',
+          timestamp: '10 mins ago',
+          user: 'Ramesh Kumar'
+        },
+        {
+          id: 'ev-2',
+          type: 'mca',
+          title: 'Form AOC-4 Financials Uploaded',
+          subtitle: 'Sunrise Agro Ventures (FY 2025-26)',
+          timestamp: '25 mins ago',
+          user: 'Pooja Verma'
+        },
+        {
+          id: 'ev-3',
+          type: 'task',
+          title: 'Task Completed: ITR-6 Computation Review',
+          subtitle: 'Apex Retails Corp verified with CA',
+          timestamp: '1 hour ago',
+          user: 'Sandeep Sharma'
+        },
+        {
+          id: 'ev-4',
+          type: 'dsc',
+          title: 'DSC Token Renewed for Director',
+          subtitle: 'Amit Singhal (Class 3 Signing Token)',
+          timestamp: '2 hours ago',
+          user: 'Admin'
+        },
+        {
+          id: 'ev-5',
+          type: 'client',
+          title: 'New Client Onboarded to GST & MCA',
+          subtitle: 'Blue Star Logistics registered in Haryana',
+          timestamp: '3 hours ago',
+          user: 'Sales Desk'
+        }
+      ];
     }
-  ];
+
+    // Personalized feed for the logged-in employee
+    const myName = sessionUser?.name || 'You';
+    const firstClient = gstClients[0]?.firmName || mcaClients[0]?.clientName || itrClients[0]?.taxpayerName || 'Assigned Client';
+    const secondClient = gstClients[1]?.firmName || mcaClients[1]?.clientName || itrClients[1]?.taxpayerName || 'Portfolio Account';
+
+    return [
+      {
+        id: 'ev-my-1',
+        type: 'task',
+        title: 'Task Queue Synced to Your Desk',
+        subtitle: `${tasks.length} active tasks currently in your execution pipeline`,
+        timestamp: 'Just now',
+        user: myName
+      },
+      {
+        id: 'ev-my-2',
+        type: 'gst',
+        title: 'Client Compliance Status Verified',
+        subtitle: `${firstClient} compliance checklist updated`,
+        timestamp: '25 mins ago',
+        user: myName
+      },
+      {
+        id: 'ev-my-3',
+        type: 'client',
+        title: 'Allotted Client Portfolio Active',
+        subtitle: `${secondClient} assigned for monthly compliance`,
+        timestamp: '2 hours ago',
+        user: 'Master Admin'
+      }
+    ];
+  }, [isAdmin, sessionUser, gstClients, mcaClients, itrClients, tasks.length]);
 
   // Monthly trends for Performance Analytics
   const monthlyTrends = [

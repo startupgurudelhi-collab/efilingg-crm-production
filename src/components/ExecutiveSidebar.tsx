@@ -548,7 +548,7 @@ export default function ExecutiveSidebar({
             {(!isCollapsed && openAccordions.tasks) && (
               <div className="space-y-0.5 pl-2 border-l border-amber-500/20 ml-2">
                 {renderOpsSubItem('ops_tasks_my', 'My Tasks', opsCounts.myTasks)}
-                {renderOpsSubItem('ops_tasks_team', 'Team Tasks', opsCounts.teamTasks)}
+                {(sessionUser.role === 'admin' || sessionUser.role === 'team_leader') && renderOpsSubItem('ops_tasks_team', 'Team Tasks', opsCounts.teamTasks)}
                 {renderOpsSubItem('ops_tasks_assigned', 'Assigned Tasks', opsCounts.assignedTasks)}
                 {renderOpsSubItem('ops_tasks_duetoday', 'Due Today', opsCounts.dueTodayTasks, 'amber')}
                 {renderOpsSubItem('ops_tasks_overdue', 'Overdue Tasks', opsCounts.overdueTasks, 'red')}

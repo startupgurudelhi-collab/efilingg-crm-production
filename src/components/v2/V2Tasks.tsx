@@ -442,22 +442,24 @@ export default function V2Tasks({ initialFilter }: V2TasksProps) {
           </span>
         </button>
 
-        <button
-          onClick={() => { setActiveView('team_queue'); setStatusFilter('ALL'); setFilterDueCategory('ALL'); }}
-          className={`px-4 py-2 font-bold uppercase rounded-xl text-xs transition cursor-pointer shrink-0 flex items-center gap-2 ${
-            activeView === 'team_queue'
-              ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Users className="h-4 w-4" />
-          <span>Team Queue</span>
-          <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-            activeView === 'team_queue' ? 'bg-slate-950/20 text-slate-950 font-bold' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-          }`}>
-            {tasks.length}
-          </span>
-        </button>
+        {isAdminOrTL && (
+          <button
+            onClick={() => { setActiveView('team_queue'); setStatusFilter('ALL'); setFilterDueCategory('ALL'); }}
+            className={`px-4 py-2 font-bold uppercase rounded-xl text-xs transition cursor-pointer shrink-0 flex items-center gap-2 ${
+              activeView === 'team_queue'
+                ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Users className="h-4 w-4" />
+            <span>Team Queue</span>
+            <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+              activeView === 'team_queue' ? 'bg-slate-950/20 text-slate-950 font-bold' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+            }`}>
+              {tasks.length}
+            </span>
+          </button>
+        )}
 
         {isAdminOrTL && (
           <button
@@ -473,17 +475,19 @@ export default function V2Tasks({ initialFilter }: V2TasksProps) {
           </button>
         )}
 
-        <button
-          onClick={() => setActiveView('allocation')}
-          className={`px-4 py-2 font-bold uppercase rounded-xl text-xs transition cursor-pointer shrink-0 flex items-center gap-2 ${
-            activeView === 'allocation'
-              ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Layers className="h-4 w-4" />
-          <span>Allocation Control Center</span>
-        </button>
+        {isAdminOrTL && (
+          <button
+            onClick={() => setActiveView('allocation')}
+            className={`px-4 py-2 font-bold uppercase rounded-xl text-xs transition cursor-pointer shrink-0 flex items-center gap-2 ${
+              activeView === 'allocation'
+                ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Layers className="h-4 w-4" />
+            <span>Allocation Control Center</span>
+          </button>
+        )}
 
         <button
           onClick={() => setActiveView('daily_report')}

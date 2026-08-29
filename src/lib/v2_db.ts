@@ -1275,5 +1275,124 @@ export function saveV2TaxAuditOverride(clientId: string, status: string, empId?:
   saveV2Items(KEY_V2_TAX_AUDIT_OVERRIDES, list);
 }
 
+export interface ClientTransferResult {
+  success: boolean;
+  message: string;
+  clientName?: string;
+  serviceCategory?: string;
+  fromEmployeeName?: string;
+  toEmployeeName?: string;
+}
+
+export function transferClientAcrossServices(
+  serviceType: 'GST' | 'MCA' | 'ITR' | 'TRUST' | 'DSC' | 'TRADEMARK' | 'OTHER' | string,
+  clientId: string,
+  targetEmployeeId: string,
+  targetEmployeeName: string,
+  reason: string,
+  transferredBy?: { id: string; name: string }
+): ClientTransferResult {
+  const normalizedType = (serviceType || '').toUpperCase().trim();
+  let clientName = 'Client';
+  let fromEmployeeName = transferredBy?.name || 'Unassigned';
+  let success = false;
+
+  if (normalizedType === 'GST') {
+    const list = getV2GstClients();
+    const item = list.find(c => c.id === clientId);
+    if (item) {
+      clientName = item.firmName || item.clientName || 'GST Client';
+      fromEmployeeName = item.assignedEmployeeName || transferredBy?.name || 'Unassigned';
+      item.assignedEmployeeId = targetEmployeeId;
+      item.assignedEmployeeName = targetEmployeeName;
+      updateV2GstClient(item);
+      success = true;
+    }
+  } else if (normalizedType === 'MCA' || normalizedType === 'ROC') {
+    const list = getV2McaClients();
+    const item = list.find(c => c.id === clientId);
+    if (item) {
+      clientName = item.clientName || 'MCA Company';
+      fromEmployeeName = item.assignedEmployeeName || transferredBy?.name || 'Unassigned';
+      item.assignedEmployeeId = targetEmployeeId;
+      item.assignedEmployeeName = targetEmployeeName;
+      updateV2McaClient(item);
+      success = true;
+    }
+  } else if (normalizedType === 'ITR' || normalizedType === 'INCOME TAX') {
+    const list = getV2ItrClients();
+    const item = list.find(c => c.id === clientId);
+    if (item) {
+      clientName = item.taxpayerName || 'ITR Taxpayer';
+      fromEmployeeName = item.assignedEmployeeName || transferredBy?.name || 'Unassigned';
+      item.assignedEmployeeId = targetEmployeeId;
+      item.assignedEmployeeName = targetEmployeeName;
+      updateV2ItrClient(item);
+      success = true;
+    }
+  } else if (normalizedType === 'TRUST' || normalizedType === 'NGO') {
+    const list = getV2TrustClients();
+    const item = list.find(c => c.id === clientId);
+    if (item) {
+      clientName = item.entityName || 'NGO / Trust';
+      fromEmployeeName = item.assignedEmployeeName || transferredBy?.name || 'Unassigned';
+      item.assignedEmployeeId = targetEmployeeId;
+      item.assignedEmployeeName = targetEmployeeName;
+      updateV2TrustClient(item);
+      success = true;
+    }
+  } else if (normalizedType === 'DSC') {
+    const list = getV2DscClients();
+    const item = list.find(c => c.id === clientId);
+    if (item) {
+      clientName = item.clientName || item.tokenName || 'DSC Token';
+      fromEmployeeName = item.assignedEmployeeName || transferredBy?.name || 'Unassigned';
+      item.assignedEmployeeId = targetEmployeeId;
+      item.assignedEmployeeName = targetEmployeeName;
+      updateV2DscClient(item);
+      success = true;
+    }
+  } else if (normalizedType === 'TRADEMARK' || normalizedType === 'IP') {
+    const list = getV2Trademarks();
+    const item = list.find(c => c.id === clientId);
+    if (item) {
+      clientName = `${item.brandName} (${item.clientName || 'Trademark'})`;
+      fromEmployeeName = item.assignedEmployeeName || transferredBy?.name || 'Unassigned';
+      item.assignedEmployeeId = targetEmployeeId;
+      item.assignedEmployeeName = targetEmployeeName;
+      updateV2TrademarkClient(item);
+      success = true;
+    }
+  } else {
+    // Other Licenses & Registrations
+    const list = getV2OtherServiceClients();
+    const item = list.find(c => c.id === clientId);
+    if (item) {
+      clientName = item.clientName || item.serviceAvailed || 'License Application';
+      fromEmployeeName = item.assignedEmployeeName || transferredBy?.name || 'Unassigned';
+      item.assignedEmployeeId = targetEmployeeId;
+      item.assignedEmployeeName = targetEmployeeName;
+      updateV2OtherServiceClient(item);
+      success = true;
+    }
+  }
+
+  if (success) {
+    return {
+      success: true,
+      message: `Client "${clientName}" transferred successfully to ${targetEmployeeName}.`,
+      clientName,
+      serviceCategory: normalizedType,
+      fromEmployeeName,
+      toEmployeeName: targetEmployeeName
+    };
+  }
+
+  return {
+    success: false,
+    message: `Client record not found for ID "${clientId}" in category "${serviceType}".`
+  };
+}
+
 
 

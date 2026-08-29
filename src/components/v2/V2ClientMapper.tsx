@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import ConfirmModal from './ConfirmModal';
+import ClientTransferModal from './ClientTransferModal';
+import { getCurrentSession } from '../../lib/db';
 import { 
   getV1Employees,
   getV2GstClients,
@@ -18,7 +20,8 @@ import {
   updateV2TrademarkClient
 } from '../../lib/v2_db';
 import { 
-  Users, Search, HelpCircle, Check, ShieldAlert, Layers, AppWindow, ArrowRightLeft, Database, CheckCircle2
+  Users, Search, HelpCircle, Check, ShieldAlert, Layers, AppWindow, ArrowRightLeft, Database, CheckCircle2,
+  UserCheck, Sparkles
 } from 'lucide-react';
 
 type ServiceType = 'GST' | 'MCA' | 'ITR' | 'TRUST' | 'DSC' | 'TRADEMARK' | 'OTHER';
@@ -36,11 +39,22 @@ interface MappedClient {
 }
 
 export default function V2ClientMapper() {
+  const sessionUser = getCurrentSession();
+  const isAdmin = sessionUser?.role === 'admin';
+
   const [activeService, setActiveService] = useState<ServiceType>('GST');
   const [searchQuery, setSearchQuery] = useState('');
-  const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'unassigned' | 'assigned'>('all');
+  const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'unassigned' | 'assigned' | 'mine'>('all');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [transferClient, setTransferClient] = useState<{
+    id: string;
+    name: string;
+    subtitle?: string;
+    serviceCategory: string;
+    assignedEmployeeId?: string;
+    assignedEmployeeName?: string;
+  } | null>(null);
 
   // Reusable custom confirm modal state
   const [confirmModal, setConfirmModal] = useState<{
@@ -154,11 +168,19 @@ export default function V2ClientMapper() {
       (c.entityType || '').toLowerCase().includes(searchQuery.toLowerCase());
 
     const isAssigned = !!c.assignedEmployeeId;
+    const isMine = sessionUser && (
+      c.assignedEmployeeId === sessionUser.id ||
+      c.assignedEmployeeName?.toLowerCase().trim() === sessionUser.name?.toLowerCase().trim()
+    );
+
     if (assignmentFilter === 'unassigned') {
       return matchesSearch && !isAssigned;
     }
     if (assignmentFilter === 'assigned') {
       return matchesSearch && isAssigned;
+    }
+    if (assignmentFilter === 'mine') {
+      return matchesSearch && isMine;
     }
     return matchesSearch;
   });
@@ -167,6 +189,9 @@ export default function V2ClientMapper() {
   const totalInService = allClients.length;
   const unassignedCount = allClients.filter(c => !c.assignedEmployeeId).length;
   const assignedCount = allClients.filter(c => !!c.assignedEmployeeId).length;
+  const myClientsCount = allClients.filter(c => 
+    sessionUser && (c.assignedEmployeeId === sessionUser.id || c.assignedEmployeeName?.toLowerCase().trim() === sessionUser.name?.toLowerCase().trim())
+  ).length;
   const assignmentPercentage = totalInService > 0 ? Math.round((assignedCount / totalInService) * 100) : 100;
 
   // Handle updates directly
@@ -389,6 +414,15 @@ export default function V2ClientMapper() {
               </button>
               <button
                 type="button"
+                onClick={() => setAssignmentFilter('mine')}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer flex items-center gap-1 ${
+                  assignmentFilter === 'mine' ? 'bg-indigo-600 text-white shadow-2xs' : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/10'
+                }`}
+              >
+                <UserCheck className="h-3 w-3" /> My Allotted ({myClientsCount})
+              </button>
+              <button
+                type="button"
                 onClick={() => setAssignmentFilter('unassigned')}
                 className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer flex items-center gap-1 ${
                   assignmentFilter === 'unassigned' ? 'bg-red-500 text-white shadow-2xs' : 'text-red-500 hover:bg-red-500/5'
@@ -424,7 +458,7 @@ export default function V2ClientMapper() {
                     <th className="p-3">Ref ID / Reg Registration</th>
                     <th className="p-3">Entity Type / Scope</th>
                     <th className="p-3">Custody Status</th>
-                    <th className="p-3 text-right pr-4">Map To Operational Handler</th>
+                    <th className="p-3 text-right pr-4">Custody Transfer & Assignment</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-150/60 dark:divide-slate-800/60 text-xs">
@@ -476,9 +510,26 @@ export default function V2ClientMapper() {
                           )}
                         </td>
 
-                        {/* Dropdown Allocator */}
+                        {/* Dropdown Allocator + Transfer Hand Button */}
                         <td className="p-3 text-right pr-4">
                           <div className="inline-flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setTransferClient({
+                                id: client.id,
+                                name: client.name,
+                                subtitle: client.secondaryName || client.registrationNumber,
+                                serviceCategory: client.serviceType,
+                                assignedEmployeeId: client.assignedEmployeeId,
+                                assignedEmployeeName: client.assignedEmployeeName
+                              })}
+                              title="Transfer client handover to another employee"
+                              className="px-2 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shrink-0"
+                            >
+                              <ArrowRightLeft className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                              <span className="hidden sm:inline">Transfer Hand</span>
+                            </button>
+
                             <select
                               value={client.assignedEmployeeId || ""}
                               onChange={(e) => handleAssignEmployee(client, e.target.value)}
@@ -487,9 +538,9 @@ export default function V2ClientMapper() {
                                 isUnassigned 
                                   ? 'bg-red-50/30 border-red-300 text-red-750 dark:bg-red-955/20 dark:border-red-900 dark:text-red-300'
                                   : 'bg-slate-50 border-slate-205 dark:bg-slate-900 dark:border-slate-800 text-slate-700 dark:text-slate-300'
-                              } cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 w-44`}
+                              } cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 w-38 sm:w-44`}
                             >
-                              <option value="">-- Click To Select Handler --</option>
+                              <option value="">-- Direct Assign --</option>
                               {opsEmployees.map(emp => (
                                 <option key={emp.id} value={emp.id}>{emp.name} ({emp.employeeCode || 'STF'})</option>
                               ))}
@@ -518,6 +569,17 @@ export default function V2ClientMapper() {
         message={confirmModal.message}
         onConfirm={confirmModal.onConfirm}
         onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
+
+      {/* Client Transfer Modal */}
+      <ClientTransferModal
+        isOpen={!!transferClient}
+        onClose={() => setTransferClient(null)}
+        client={transferClient}
+        onSuccess={() => {
+          setSuccessMessage('Client custody transferred successfully!');
+          setTimeout(() => setSuccessMessage(null), 3000);
+        }}
       />
     </div>
   );

@@ -27,6 +27,27 @@ export interface SendTemplateOptions {
   conversationId?: string;
   senderId?: string;
   senderName?: string;
+  headerText?: string;
+  bodyParameters?: string[];
+}
+
+export interface StandardWhatsAppTemplate {
+  name: string;
+  category: 'UTILITY' | 'MARKETING' | 'AUTHENTICATION';
+  language: string;
+  description: string;
+  bodyText: string;
+  parameterCount: number;
+  sampleParameters: string[];
+}
+
+export interface ConversationWindowStatus {
+  is24hWindowActive: boolean;
+  lastInboundTimestamp?: string;
+  expiresAt?: string;
+  remainingMinutes: number;
+  formattedRemainingTime: string;
+  requiresTemplate: boolean;
 }
 
 export interface SendMediaOptions {

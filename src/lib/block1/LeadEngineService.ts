@@ -27,9 +27,11 @@ import {
   getConversationById,
   saveConversation,
   saveMessage,
+  getMessages,
   saveOpportunity,
   addTimelineEntry,
 } from './db';
+import { ConversationWindowStatus } from './IWhatsAppProvider';
 import { eventBus } from '../eventBus';
 import { AiSalesAgentEngine } from '../aiAgent/AiSalesAgentEngine';
 import { isForbiddenCPaaSPayload, isForbiddenCPaaSPhone } from './cpaasFilter';
@@ -380,5 +382,167 @@ export class LeadEngineService {
       message,
       opportunity,
     };
+  }
+
+  /**
+   * Calculate WhatsApp 24-Hour Customer Service Window Status for a conversation
+   */
+  public static get24HourWindowStatus(conversationId: string): ConversationWindowStatus {
+    const allMessages = getMessages(conversationId);
+    const inboundMessages = allMessages.filter((m) => m.direction === 'INBOUND');
+
+    if (inboundMessages.length === 0) {
+      return {
+        is24hWindowActive: false,
+        lastInboundTimestamp: undefined,
+        expiresAt: undefined,
+        remainingMinutes: 0,
+        formattedRemainingTime: 'Expired / Fresh Contact (Template Required)',
+        requiresTemplate: true,
+      };
+    }
+
+    // Get the most recent inbound message
+    const sortedInbound = [...inboundMessages].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+    const lastInboundMsg = sortedInbound[0];
+    const lastInboundTime = new Date(lastInboundMsg.timestamp).getTime();
+    const expiresAtMs = lastInboundTime + 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const remainingMs = expiresAtMs - now;
+    const is24hWindowActive = remainingMs > 0;
+    const remainingMinutes = Math.max(0, Math.floor(remainingMs / (60 * 1000)));
+    const hours = Math.floor(remainingMinutes / 60);
+    const mins = remainingMinutes % 60;
+
+    return {
+      is24hWindowActive,
+      lastInboundTimestamp: lastInboundMsg.timestamp,
+      expiresAt: new Date(expiresAtMs).toISOString(),
+      remainingMinutes,
+      formattedRemainingTime: is24hWindowActive
+        ? `${hours}h ${mins}m active window remaining`
+        : '24h Window Expired (Template Required)',
+      requiresTemplate: !is24hWindowActive,
+    };
+  }
+
+  /**
+   * Start or retrieve an outbound conversation for any phone number/contact
+   */
+  public static getOrCreateOutboundConversation(options: {
+    phone: string;
+    name?: string;
+    email?: string;
+    companyName?: string;
+    serviceCategory?: string;
+    creatorId?: string;
+    creatorName?: string;
+  }): { conversation: ConversationV2; customer: CustomerV2; lead: LeadV2; isNew: boolean } {
+    const normPhone = CustomerIdentityService.normalizePhone(options.phone);
+    const now = new Date().toISOString();
+
+    // 1. Customer Lookup or Creation
+    const lookup = CustomerIdentityService.findCustomer({
+      phone: normPhone,
+      email: options.email,
+      companyName: options.companyName,
+    });
+
+    let customer: CustomerV2;
+    if (lookup.matchFound && lookup.customer) {
+      customer = lookup.customer;
+      if (options.name && (customer.name.startsWith('WhatsApp Contact') || customer.name === normPhone)) {
+        customer.name = options.name;
+        saveCustomer(customer);
+      }
+    } else {
+      customer = CustomerIdentityService.createCustomer({
+        name: options.name || `WhatsApp Contact (${normPhone})`,
+        phone: normPhone,
+        email: options.email,
+        companyName: options.companyName,
+        tags: ['OUTBOUND_INITIATED'],
+        assignedExecutiveId: options.creatorId || 'EMP-ADMIN',
+        assignedExecutiveName: options.creatorName || 'Master Admin',
+      });
+    }
+
+    // 2. Lead Lookup or Creation
+    const allLeads = getLeads();
+    let openLead = allLeads.find(
+      (l) =>
+        (CustomerIdentityService.isPhoneMatch(l.phone, normPhone) || l.convertedCustomerId === customer.id) &&
+        l.status !== 'DISQUALIFIED'
+    );
+
+    let lead: LeadV2 = openLead!;
+    if (!openLead) {
+      const leadId = `LEAD-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+      lead = {
+        id: leadId,
+        name: customer.name,
+        phone: normPhone,
+        email: options.email || customer.email,
+        companyName: options.companyName || customer.companyName,
+        source: 'OUTBOUND_CHAT_INITIATED',
+        serviceRequested: options.serviceCategory || 'General Consultation',
+        status: 'NEW',
+        assignedExecutiveId: options.creatorId || customer.assignedExecutiveId || 'EMP-ADMIN',
+        assignedExecutiveName: options.creatorName || customer.assignedExecutiveName || 'Master Admin',
+        convertedCustomerId: customer.id,
+        createdAt: now,
+        updatedAt: now,
+      };
+      saveLead(lead);
+    }
+
+    // 3. Conversation Lookup or Creation
+    let conversation = getConversationByContact(normPhone);
+    let isNew = false;
+
+    if (!conversation) {
+      isNew = true;
+      const convId = `CONV-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+      conversation = {
+        id: convId,
+        channel: 'WHATSAPP',
+        contactNumber: normPhone,
+        customerId: customer.id,
+        leadId: lead?.id,
+        customerName: customer.name,
+        state: 'OPEN',
+        assignedExecutiveId: options.creatorId || customer.assignedExecutiveId || 'EMP-ADMIN',
+        assignedExecutiveName: options.creatorName || customer.assignedExecutiveName || 'Master Admin',
+        assignedType: 'HUMAN_EXECUTIVE',
+        serviceCategory: options.serviceCategory || 'General Consultation',
+        unreadCount: 0,
+        mobile: normPhone,
+        contactName: customer.name,
+        createdAt: now,
+        updatedAt: now,
+      };
+      saveConversation(conversation);
+
+      addTimelineEntry(
+        conversation.id,
+        'CONVERSATION_CREATED',
+        `New outbound WhatsApp conversation opened with ${conversation.customerName} by ${options.creatorName || 'Executive'}`,
+        options.creatorName || 'Executive'
+      );
+    } else {
+      // Re-activate conversation if closed or archived
+      if (conversation.state === 'CLOSED') {
+        conversation.state = 'OPEN';
+      }
+      if (conversation.is_archived) {
+        conversation.is_archived = false;
+      }
+      conversation.updatedAt = now;
+      saveConversation(conversation);
+    }
+
+    return { conversation, customer, lead, isNew };
   }
 }

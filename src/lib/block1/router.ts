@@ -15,6 +15,7 @@ import { LeadEngineService } from './LeadEngineService';
 import { WhatsAppService, DEFAULT_WHATSAPP_VERIFY_TOKEN } from './WhatsAppService';
 import { WhatsAppProviderFactory } from './WhatsAppProviderFactory';
 import { WhatsAppMediaService } from './WhatsAppMediaService';
+import { STANDARD_WHATSAPP_TEMPLATES } from './MetaWhatsAppProvider';
 import { isForbiddenCPaaSPayload } from './cpaasFilter';
 import {
   getCustomers,
@@ -839,6 +840,118 @@ block1Router.post('/v2/conversations/:id/messages', async (req: Request, res: Re
     return res.status(500).json({ success: false, error: error.message });
   }
 });
+
+/**
+ * Get Available WhatsApp Approved & Standard Templates (GET /api/v2/whatsapp/templates)
+ */
+block1Router.get('/v2/whatsapp/templates', (req: Request, res: Response) => {
+  try {
+    return res.status(200).json({
+      success: true,
+      templates: STANDARD_WHATSAPP_TEMPLATES,
+      policyNote: 'Meta WhatsApp Cloud API requires approved template messages for initiating fresh conversations and outside the 24-hour customer service window.',
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Get 24-Hour Customer Care Window Status for a Conversation (GET /api/v2/conversations/:id/window-status)
+ */
+block1Router.get('/v2/conversations/:id/window-status', (req: Request, res: Response) => {
+  try {
+    const conversationId = req.params.id;
+    const windowStatus = LeadEngineService.get24HourWindowStatus(conversationId);
+    return res.status(200).json({
+      success: true,
+      conversationId,
+      windowStatus,
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Start New Outbound Conversation (POST /api/v2/conversations/start-chat, POST /api/v2/conversations)
+ * Creates or finds conversation for any phone number and optionally dispatches an initial Template or Direct Text message.
+ */
+const handleStartChat = async (req: Request, res: Response) => {
+  try {
+    const {
+      phone,
+      name,
+      email,
+      companyName,
+      serviceCategory,
+      senderId,
+      senderName,
+      messageType,
+      initialMessage,
+      templateName,
+      templateLanguage,
+      templateComponents,
+    } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({ success: false, error: 'Phone number is required to start a chat.' });
+    }
+
+    // 1. Get or create conversation, customer, and lead
+    const result = LeadEngineService.getOrCreateOutboundConversation({
+      phone,
+      name,
+      email,
+      companyName,
+      serviceCategory,
+      creatorId: senderId,
+      creatorName: senderName,
+    });
+
+    let dispatchedMessage = null;
+
+    // 2. If an initial message or template is specified, dispatch it via Meta Cloud API
+    if (templateName || (messageType === 'TEMPLATE' && templateName)) {
+      dispatchedMessage = await WhatsAppService.sendTemplateMessageAsync({
+        toPhone: phone,
+        templateName: templateName || 'hello_world',
+        languageCode: templateLanguage || 'en_US',
+        components: templateComponents || [],
+        conversationId: result.conversation.id,
+        senderId: senderId || 'EMP-ADMIN',
+        senderName: senderName || 'Executive',
+      });
+    } else if (initialMessage && initialMessage.trim()) {
+      dispatchedMessage = await WhatsAppService.sendOutboundMessageAsync({
+        conversationId: result.conversation.id,
+        senderId: senderId || 'EMP-ADMIN',
+        senderName: senderName || 'Executive',
+        content: initialMessage.trim(),
+      });
+    }
+
+    const windowStatus = LeadEngineService.get24HourWindowStatus(result.conversation.id);
+
+    return res.status(200).json({
+      success: true,
+      conversation: result.conversation,
+      customer: result.customer,
+      lead: result.lead,
+      isNew: result.isNew,
+      dispatchedMessage,
+      windowStatus,
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+block1Router.post('/v2/conversations/start-chat', handleStartChat);
+block1Router.post('/v2/conversations', handleStartChat);
 
 /**
  * Archive / Unarchive Conversation (POST /api/v2/conversations/:id/archive, PATCH /api/v2/conversations/:id/archive)

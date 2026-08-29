@@ -253,11 +253,51 @@ Priority: ${formattedPriority}
 
 If task completed, then Mark as Done in your crm.`;
 
-    return WhatsAppProviderFactory.getProvider().sendDirectTextMessageAsync({
-      toPhone: params.assigneePhone,
-      message,
-      senderId: params.senderId || 'SYSTEM_TASK_NOTIFICATION',
-      senderName: params.creatorName || 'Efilingg Task Notification',
-    });
+    const provider = WhatsAppProviderFactory.getProvider();
+    try {
+      const sentMsg = await provider.sendDirectTextMessageAsync({
+        toPhone: params.assigneePhone,
+        message,
+        senderId: params.senderId || 'SYSTEM_TASK_NOTIFICATION',
+        senderName: params.creatorName || 'Efilingg Task Notification',
+      });
+
+      // If direct text failed due to 24-hour window and a template is available, attempt template dispatch
+      if (
+        sentMsg.deliveryStatus === 'FAILED' &&
+        sentMsg.providerErrorCode === 131047 &&
+        process.env.WHATSAPP_ACCESS_TOKEN
+      ) {
+        console.warn(`[Task WhatsApp 24h Window Fallback] Direct text blocked by Meta 24h policy. Attempting template dispatch for ${params.assigneePhone}...`);
+        const templateName = process.env.WHATSAPP_TASK_TEMPLATE || 'task_notification';
+        try {
+          const tmplMsg = await provider.sendTemplateMessageAsync({
+            toPhone: params.assigneePhone,
+            templateName,
+            languageCode: 'en_US',
+            components: [
+              {
+                type: 'body',
+                parameters: [
+                  { type: 'text', text: recipientGreeting },
+                  { type: 'text', text: details },
+                  { type: 'text', text: formattedPriority },
+                ],
+              },
+            ],
+            senderId: params.senderId || 'SYSTEM_TASK_NOTIFICATION',
+            senderName: params.creatorName || 'Efilingg Task Notification',
+          });
+          return tmplMsg;
+        } catch (tmplErr) {
+          console.error('[Task WhatsApp Template Fallback Error]:', tmplErr);
+        }
+      }
+
+      return sentMsg;
+    } catch (err: any) {
+      console.error('[sendTaskIntimationAsync Error]:', err);
+      throw err;
+    }
   }
 }

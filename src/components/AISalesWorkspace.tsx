@@ -74,6 +74,8 @@ import {
 } from 'lucide-react';
 import { eventBus } from '../lib/eventBus';
 import WhatsAppWebhookSettings from './WhatsAppWebhookSettings';
+import WhatsAppNewChatModal from './WhatsAppNewChatModal';
+import WhatsAppTemplatePickerModal from './WhatsAppTemplatePickerModal';
 import { useWhatsAppNotifications } from '../hooks/useWhatsAppNotifications';
 
 interface AISalesWorkspaceProps {
@@ -810,6 +812,16 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
   const [docChecklist, setDocChecklist] = useState<string[] | null>(null);
   const [newTagInput, setNewTagInput] = useState('');
 
+  // Modals & 24-Hour WhatsApp Policy State
+  const [showNewChatModal, setShowNewChatModal] = useState(false);
+  const [showTemplatePickerModal, setShowTemplatePickerModal] = useState(false);
+  const [windowStatus, setWindowStatus] = useState<{
+    is24hWindowActive: boolean;
+    remainingMinutes: number;
+    formattedRemainingTime: string;
+    requiresTemplate: boolean;
+  } | null>(null);
+
   // Notifications State
   const [notifications, setNotifications] = useState<NotificationAlert[]>([]);
 
@@ -973,6 +985,13 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
         if (tagsRes.ok) {
           const tagsData = await tagsRes.json();
           if (tagsData.tags) setTags(tagsData.tags);
+        }
+
+        // 4. Get 24-Hour WhatsApp Service Window Status
+        const windowRes = await fetch(`/api/v2/conversations/${convId}/window-status`);
+        if (windowRes.ok) {
+          const windowData = await windowRes.json();
+          if (windowData.windowStatus) setWindowStatus(windowData.windowStatus);
         }
       } catch (err) {
         console.warn('Failed to load conversation details:', err);
@@ -1454,7 +1473,7 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
           }`}
         >
           {/* Inbox Header & Search */}
-          <div className="p-3.5 border-b border-slate-800 space-y-3 shrink-0">
+          <div className="p-3.5 border-b border-slate-800 space-y-2.5 shrink-0">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <div className="h-7 w-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
@@ -1485,6 +1504,15 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
                 </button>
               </div>
             </div>
+
+            {/* Quick Action: Start New WhatsApp Chat */}
+            <button
+              onClick={() => setShowNewChatModal(true)}
+              className="w-full py-1.5 px-3 rounded-xl bg-[#00a884] hover:bg-[#008f70] text-white text-xs font-bold flex items-center justify-center space-x-1.5 transition-all cursor-pointer shadow-sm hover:shadow"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Start New WhatsApp Chat</span>
+            </button>
 
             {/* Search Input */}
             <div className="relative">
@@ -1580,6 +1608,43 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
 
                 {/* Header Action Controls */}
                 <div className="flex items-center space-x-2">
+                  {/* Meta 24-Hour Customer Window Status Badge */}
+                  {windowStatus && (
+                    <button
+                      type="button"
+                      onClick={() => setShowTemplatePickerModal(true)}
+                      title="Meta WhatsApp 24-Hour Window Policy: Click to send pre-approved template"
+                      className={`px-2.5 py-1 rounded-xl text-[10.5px] font-bold flex items-center space-x-1.5 transition-colors cursor-pointer border shadow-2xs ${
+                        windowStatus.is24hWindowActive
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                          : 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                      }`}
+                    >
+                      <span
+                        className={`h-2 w-2 rounded-full ${
+                          windowStatus.is24hWindowActive ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                        }`}
+                      />
+                      <span>
+                        {windowStatus.is24hWindowActive
+                          ? `24h Window Active (${Math.floor(windowStatus.remainingMinutes / 60)}h ${
+                              windowStatus.remainingMinutes % 60
+                            }m)`
+                          : '24h Window Closed • Template Needed'}
+                      </span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setShowTemplatePickerModal(true)}
+                    title="Send Pre-Approved WhatsApp Template Message"
+                    className="p-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 transition-colors cursor-pointer text-xs flex items-center space-x-1 px-2.5 shadow-xs font-bold"
+                  >
+                    <Sparkles className="h-3.5 w-3.5 text-emerald-600" />
+                    <span className="hidden sm:inline">Send Template</span>
+                  </button>
+
                   <button
                     onClick={handleToggleTakeover}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-all cursor-pointer ${
@@ -1958,14 +2023,28 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
                                     </span>
                                   )}
                                 </div>
-                                <button
-                                  onClick={() => handleSendMessage(msg.content)}
-                                  className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white font-bold text-[9.5px] cursor-pointer transition-colors shadow-2xs flex items-center space-x-1"
-                                  title="Retry sending this message"
-                                >
-                                  <RotateCw className="h-2.5 w-2.5" />
-                                  <span>Retry</span>
-                                </button>
+                                <div className="flex items-center space-x-1.5">
+                                  {(msg.providerErrorCode === 131047 ||
+                                    (msg.providerErrorMessage &&
+                                      msg.providerErrorMessage.toLowerCase().includes('24-hour'))) && (
+                                    <button
+                                      onClick={() => setShowTemplatePickerModal(true)}
+                                      className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[9.5px] cursor-pointer transition-colors shadow-2xs flex items-center space-x-1"
+                                      title="Send an approved WhatsApp template to bypass 24h window limitation"
+                                    >
+                                      <Sparkles className="h-2.5 w-2.5" />
+                                      <span>Send Template</span>
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleSendMessage(msg.content)}
+                                    className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white font-bold text-[9.5px] cursor-pointer transition-colors shadow-2xs flex items-center space-x-1"
+                                    title="Retry sending this message"
+                                  >
+                                    <RotateCw className="h-2.5 w-2.5" />
+                                    <span>Retry</span>
+                                  </button>
+                                </div>
                               </div>
                               <p className="font-medium text-rose-800 leading-tight">
                                 {msg.providerErrorMessage || msg.failure_reason || 'Provider returned error or unconfirmed delivery status.'}
@@ -2121,6 +2200,26 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
                         </button>
                       </div>
                     ) : null}
+                  </div>
+                )}
+
+                {/* Meta 24-Hour Window Closed Warning Notice */}
+                {windowStatus && !windowStatus.is24hWindowActive && composerMode === 'PUBLIC' && (
+                  <div className="mb-2 p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-center justify-between shadow-xs">
+                    <div className="flex items-center space-x-2">
+                      <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                      <span className="text-[11px] font-medium leading-tight">
+                        <strong>24-Hour Customer Window Closed:</strong> Meta prohibits free-form text until the customer responds. Send a pre-approved template to re-engage.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowTemplatePickerModal(true)}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10.5px] shrink-0 transition-colors cursor-pointer shadow-xs flex items-center space-x-1"
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      <span>Send Template</span>
+                    </button>
                   </div>
                 )}
 
@@ -2286,6 +2385,37 @@ export default function AISalesWorkspace({ currentUserId, currentUserName }: AIS
             <WhatsAppWebhookSettings />
           </div>
         </div>
+      )}
+
+      {/* Start New WhatsApp Chat Modal */}
+      {showNewChatModal && (
+        <WhatsAppNewChatModal
+          isOpen={showNewChatModal}
+          onClose={() => setShowNewChatModal(false)}
+          currentUserId={currentUserId}
+          currentUserName={currentUserName}
+          onChatStarted={(newConvId) => {
+            fetchConversations();
+            setActiveConvId(newConvId);
+            fetchActiveConversationDetails(newConvId);
+          }}
+        />
+      )}
+
+      {/* WhatsApp Template Picker Modal */}
+      {showTemplatePickerModal && activeConv && (
+        <WhatsAppTemplatePickerModal
+          isOpen={showTemplatePickerModal}
+          onClose={() => setShowTemplatePickerModal(false)}
+          conversation={activeConv}
+          currentUserId={currentUserId}
+          currentUserName={currentUserName}
+          onTemplateSent={() => {
+            if (activeConv) {
+              fetchActiveConversationDetails(activeConv.id);
+            }
+          }}
+        />
       )}
     </div>
   );

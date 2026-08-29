@@ -352,10 +352,18 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
         success = false;
         errorCode = parsedResponse?.error?.code || httpStatusCode;
         const rawMsg = parsedResponse?.error?.message || `Meta API HTTP ${httpStatusCode}`;
-        if (rawMsg.includes('API access blocked') || errorCode === 200 || parsedResponse?.error?.type === 'OAuthException') {
+        const errorDetails = parsedResponse?.error?.error_data?.details || '';
+
+        if (errorCode === 131047 || rawMsg.includes('24 hours') || errorDetails.includes('24 hours')) {
+          errorMessage = `Meta WhatsApp 24-Hour Policy (Code 131047): More than 24 hours have passed since customer last replied, or recipient has never messaged this WhatsApp Business Number. You MUST send an approved WhatsApp Template message to re-engage with this number.`;
+        } else if (errorCode === 131026 || rawMsg.includes('undeliverable')) {
+          errorMessage = `Meta WhatsApp Delivery Error (Code 131026): Message undeliverable. The phone number might not be registered on WhatsApp, or the recipient has opted out.`;
+        } else if (errorCode === 132000 || errorCode === 132001 || rawMsg.includes('Template')) {
+          errorMessage = `Meta Template Error (Code ${errorCode}): Template not found or parameter mismatch. Verify template name & language code in Meta WhatsApp Manager.`;
+        } else if (rawMsg.includes('API access blocked') || errorCode === 200 || errorCode === 190 || parsedResponse?.error?.type === 'OAuthException') {
           errorMessage = `API access blocked by Meta (Code ${errorCode}): WHATSAPP_ACCESS_TOKEN expired/invalid, or Meta WABA account restricted. Generate a new Permanent System User Token in Meta Business Manager.`;
         } else {
-          errorMessage = rawMsg;
+          errorMessage = errorDetails ? `${rawMsg} (${errorDetails})` : rawMsg;
         }
       }
     } catch (err: any) {
@@ -425,7 +433,20 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
     // Build standard Meta WhatsApp Cloud API request payload
     let metaPayload: Record<string, unknown> = {};
 
-    if (options.attachments && options.attachments.length > 0) {
+    if (options.templateName) {
+      metaPayload = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: mobile,
+        type: 'template',
+        template: {
+          name: options.templateName,
+          language: { code: options.templateLanguage || 'en_US' },
+          components: options.templateComponents || [],
+        },
+      };
+      outboundMsg.messageType = 'TEMPLATE';
+    } else if (options.attachments && options.attachments.length > 0) {
       const att = options.attachments[0];
       const mediaTypeLower = (att.fileType || 'document').toLowerCase();
       const metaType = ['image', 'document', 'audio', 'video'].includes(mediaTypeLower)
@@ -529,7 +550,9 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
       actor: options.senderName,
     });
 
-    if (result.success) {
+    // NOTE: Only simulate DELIVERED/READ in offline demo mode when WHATSAPP_ACCESS_TOKEN is missing.
+    // In production with a real token, real delivery reports arrive via Meta Webhooks.
+    if (result.success && !process.env.WHATSAPP_ACCESS_TOKEN) {
       setTimeout(() => {
         updateMessageStatus(resolvedMessageId, 'DELIVERED');
         setTimeout(() => {
@@ -760,3 +783,5 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
     return outboundMsg;
   }
 }
+
+export { STANDARD_WHATSAPP_TEMPLATES } from './whatsappTemplates';

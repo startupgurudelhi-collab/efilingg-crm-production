@@ -332,3 +332,68 @@ export function SalesCRMLogo({ className = "h-14 w-14", size = 'md' }: LogoProps
     </div>
   );
 }
+
+// 9. Registration & License Logo
+export function LicenseServiceLogo({ className = "h-14 w-14", size = 'md' }: LogoProps) {
+  return (
+    <div className={`relative flex items-center justify-center shrink-0 ${className}`}>
+      <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full drop-shadow-md">
+        <circle cx="50" cy="50" r="46" fill="#134E4A" stroke="#2DD4BF" strokeWidth="3" />
+        
+        {/* Certificate / License Document */}
+        <rect x="28" y="22" width="44" height="52" rx="4" fill="#CCFBF1" stroke="#0D9488" strokeWidth="2" />
+        <circle cx="50" cy="38" r="7" fill="#0D9488" />
+        <path d="M46 52H54M38 58H62M38 64H56" stroke="#0F766E" strokeWidth="2" strokeLinecap="round" />
+        {/* Ribbon */}
+        <path d="M46 45L42 55L46 53L50 55L46 45Z" fill="#F59E0B" />
+
+        {/* Badge */}
+        <rect x="16" y="72" width="68" height="14" rx="4" fill="#042F2E" stroke="#2DD4BF" strokeWidth="1" />
+        <text
+          x="50"
+          y="82"
+          textAnchor="middle"
+          fill="#5EEAD4"
+          fontSize="7.5"
+          fontWeight="900"
+          fontFamily="system-ui, sans-serif"
+          letterSpacing="0.8"
+        >
+          LICENSES & REG
+        </text>
+      </svg>
+    </div>
+  );
+}
+
+// 10. Client Master Logo
+export function ClientMasterLogo({ className = "h-14 w-14", size = 'md' }: LogoProps) {
+  return (
+    <div className={`relative flex items-center justify-center shrink-0 ${className}`}>
+      <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full drop-shadow-md">
+        <circle cx="50" cy="50" r="46" fill="#312E81" stroke="#818CF8" strokeWidth="3" />
+        
+        {/* Network of clients / Directory */}
+        <circle cx="50" cy="34" r="8" fill="#E0E7FF" stroke="#4F46E5" strokeWidth="2" />
+        <path d="M34 56C34 48 42 46 50 46C58 46 66 48 66 56V62H34V56Z" fill="#C7D2FE" stroke="#4F46E5" strokeWidth="1.5" />
+        <circle cx="28" cy="40" r="5" fill="#A5B4FC" />
+        <circle cx="72" cy="40" r="5" fill="#A5B4FC" />
+
+        {/* Badge */}
+        <rect x="16" y="72" width="68" height="14" rx="4" fill="#1E1B4B" stroke="#818CF8" strokeWidth="1" />
+        <text
+          x="50"
+          y="82"
+          textAnchor="middle"
+          fill="#C7D2FE"
+          fontSize="7.5"
+          fontWeight="900"
+          fontFamily="system-ui, sans-serif"
+          letterSpacing="0.8"
+        >
+          CLIENT MASTER
+        </text>
+      </svg>
+    </div>
+  );
+}

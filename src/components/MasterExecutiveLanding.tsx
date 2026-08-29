@@ -30,7 +30,16 @@ import {
   Building2,
   Award,
   Tag,
-  Check
+  Check,
+  KeyRound,
+  Download,
+  Printer,
+  Settings,
+  HelpCircle,
+  FileCheck2,
+  BadgePercent,
+  Landmark,
+  Scale
 } from 'lucide-react';
 import { Employee, Lead, FollowUp, Proposal, ActivityLog } from '../types';
 import { hasModuleAccess } from '../lib/permissions';
@@ -54,6 +63,16 @@ import {
   AnalyticsIllustration,
   ComplianceSecurityIllustration
 } from './ExecutiveIllustrations';
+import {
+  GSTServiceLogo,
+  IncomeTaxServiceLogo,
+  MCAServiceLogo,
+  NGOServiceLogo,
+  DSCServiceLogo,
+  TrademarkServiceLogo,
+  TaskCommandLogo,
+  SalesCRMLogo
+} from './ServiceLogos';
 
 interface MasterExecutiveLandingProps {
   sessionUser: Employee;
@@ -66,6 +85,7 @@ interface MasterExecutiveLandingProps {
   onRefreshData: () => void;
   onTriggerLeadDetail?: (id: string | null) => void;
   onTriggerProposalDraft?: () => void;
+  onOpenProfileSettings?: () => void;
 }
 
 export default function MasterExecutiveLanding({
@@ -78,7 +98,8 @@ export default function MasterExecutiveLanding({
   onNavigateModule,
   onRefreshData,
   onTriggerLeadDetail,
-  onTriggerProposalDraft
+  onTriggerProposalDraft,
+  onOpenProfileSettings
 }: MasterExecutiveLandingProps) {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [completedTaskIdLocal, setCompletedTaskIdLocal] = useState<string | null>(null);
@@ -222,6 +243,26 @@ export default function MasterExecutiveLanding({
   ];
 
   const isMasterOrTL = sessionUser.role === 'admin' || sessionUser.role === 'team_leader';
+
+  const joiningDateDisplay = sessionUser.dateOfJoining
+    ? new Date(sessionUser.dateOfJoining).toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+      })
+    : '15 Jan 2026';
+
+  const getTenureString = (doj?: string) => {
+    if (!doj) return '6 months active';
+    const start = new Date(doj);
+    const now = new Date();
+    const diffMonths = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
+    if (diffMonths <= 0) return 'New Joiner (< 1 month)';
+    if (diffMonths < 12) return `${diffMonths} month${diffMonths > 1 ? 's' : ''}`;
+    const years = Math.floor(diffMonths / 12);
+    const rem = diffMonths % 12;
+    return `${years} yr${years > 1 ? 's' : ''} ${rem ? `${rem} mo` : ''}`;
+  };
 
   // Employee personal metrics (so employees only see their assigned work, never company-wide sensitive financials or telemetry)
   const myAssignedLeads = leads.filter((l) => {
@@ -375,7 +416,8 @@ export default function MasterExecutiveLanding({
       {/* ==============================================================
           2. PRIMARY MODULE SELECTION (4 COMPACT VISUAL CARDS)
           ============================================================== */}
-      <section className="space-y-2">
+      {isMasterOrTL && (
+        <section className="space-y-2">
         <div className="flex items-center justify-between pb-0.5">
           <div>
             <h2 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
@@ -675,12 +717,403 @@ export default function MasterExecutiveLanding({
 
         </div>
       </section>
+      )}
 
       {/* ==============================================================
-          3. EMPLOYEE DEDICATED WORKSPACE (VISIBLE ONLY FOR EMPLOYEES)
+          3. EMPLOYEE DEDICATED WORKSPACE & SERVICE LOGO GRID (FOR EMPLOYEES)
           ============================================================== */}
       {!isMasterOrTL && (
-        <section className="space-y-4">
+        <div className="space-y-4">
+          {/* A. EMPLOYEE PROFILE & HR CREDENTIALS BAR */}
+          <section className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white border border-indigo-500/30 shadow-md">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3.5">
+              <div className="flex items-center space-x-3">
+                <div className="h-12 w-12 rounded-xl bg-indigo-600 flex items-center justify-center font-black text-base text-white shadow-inner shrink-0 border border-indigo-400/40">
+                  {sessionUser.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm sm:text-base font-bold text-white leading-tight">{sessionUser.name}</h3>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/30 text-indigo-300 border border-indigo-400/40 font-mono">
+                      {sessionUser.employeeCode || 'EMP-EXEC'}
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                      {sessionUser.department || 'Operations'}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-300">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-3.5 w-3.5 text-indigo-400" />
+                      <span>Joined: <strong>{joiningDateDisplay}</strong></span>
+                    </span>
+                    <span className="text-slate-500">•</span>
+                    <span className="text-emerald-300 font-medium">Tenure: {getTenureString(sessionUser.dateOfJoining)}</span>
+                    <span className="text-slate-500">•</span>
+                    <span className="text-slate-400">Shift: {sessionUser.shift || 'General (10 AM - 7 PM)'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick HR Document Actions */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => onOpenProfileSettings && onOpenProfileSettings()}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-semibold backdrop-blur-md transition-all shadow-xs cursor-pointer"
+                  title="View Offer Letter PDF"
+                >
+                  <FileText className="h-3.5 w-3.5 text-emerald-400" />
+                  <span>Offer Letter</span>
+                </button>
+                <button
+                  onClick={() => onOpenProfileSettings && onOpenProfileSettings()}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-semibold backdrop-blur-md transition-all shadow-xs cursor-pointer"
+                  title="Generate and Download Salary Slip"
+                >
+                  <Printer className="h-3.5 w-3.5 text-cyan-400" />
+                  <span>Salary Slip</span>
+                </button>
+                <button
+                  onClick={() => onOpenProfileSettings && onOpenProfileSettings()}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-semibold backdrop-blur-md transition-all shadow-xs cursor-pointer"
+                  title="Change Password"
+                >
+                  <KeyRound className="h-3.5 w-3.5 text-amber-400" />
+                  <span>Change Password</span>
+                </button>
+                <button
+                  onClick={() => onOpenProfileSettings && onOpenProfileSettings()}
+                  className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
+                  title="Account Settings"
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                  <span>Settings</span>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          {/* B. DEPARTMENT SERVICES LOGO DASHBOARD GRID (PUBLISHER DESIGN) */}
+          <section className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+              <div>
+                <h2 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-slate-100 tracking-tight flex items-center space-x-2">
+                  <Landmark className="h-4.5 w-4.5 text-indigo-600 dark:text-indigo-400" />
+                  <span>Department Services & Compliance Dashboards</span>
+                </h2>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Click on any service logo below to instantly access its dedicated live workspace & client records
+                </p>
+              </div>
+              <span className="text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-1 rounded-full w-fit">
+                QUICK SERVICE PORTALS
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              
+              {/* SERVICE 1: GST DASHBOARD */}
+              <div
+                onClick={() => onNavigateModule('ops', 'gst')}
+                className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm hover:shadow-xl transition-all duration-200 hover:-translate-y-1 cursor-pointer flex flex-col justify-between"
+              >
+                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-orange-500 via-slate-200 to-emerald-600" />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <GSTServiceLogo className="h-12 w-12" />
+                    <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-full bg-orange-50 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800">
+                      GSTR-1 & 3B
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors leading-tight">
+                      GST Services Portal
+                    </h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug">
+                      GST Returns (GSTR-1, GSTR-3B), Invoicing, GSTIN Registration & ITC Reconciliation
+                    </p>
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Assigned Portfolio:</span>
+                    <span className="font-bold text-slate-900 dark:text-white font-mono">{myGstClients.length} Clients</span>
+                  </div>
+                </div>
+
+                <div className="pt-3 mt-1 border-t border-slate-100 dark:border-slate-800">
+                  <div className="w-full py-1.5 px-3 rounded-lg bg-indigo-600 group-hover:bg-indigo-500 text-white text-[11px] font-bold flex items-center justify-between shadow-xs transition-all">
+                    <span>Open GST Dashboard</span>
+                    <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                </div>
+              </div>
+
+              {/* SERVICE 2: INCOME TAX DASHBOARD */}
+              <div
+                onClick={() => onNavigateModule('ops', 'itr')}
+                className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm hover:shadow-xl transition-all duration-200 hover:-translate-y-1 cursor-pointer flex flex-col justify-between"
+              >
+                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-600 to-cyan-500" />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <IncomeTaxServiceLogo className="h-12 w-12" />
+                    <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                      ITR 1-7 & AUDIT
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors leading-tight">
+                      Income Tax & ITR
+                    </h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug">
+                      ITR Filing, Form 16, Tax Audit 3CD, AIS/TIS Scrutiny & Computation Statements
+                    </p>
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Assigned Portfolio:</span>
+                    <span className="font-bold text-slate-900 dark:text-white font-mono">{myItrClients.length} Taxpayers</span>
+                  </div>
+                </div>
+
+                <div className="pt-3 mt-1 border-t border-slate-100 dark:border-slate-800">
+                  <div className="w-full py-1.5 px-3 rounded-lg bg-blue-600 group-hover:bg-blue-500 text-white text-[11px] font-bold flex items-center justify-between shadow-xs transition-all">
+                    <span>Open Income Tax Hub</span>
+                    <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                </div>
+              </div>
+
+              {/* SERVICE 3: MCA & ROC DASHBOARD */}
+              <div
+                onClick={() => onNavigateModule('ops', 'mca')}
+                className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm hover:shadow-xl transition-all duration-200 hover:-translate-y-1 cursor-pointer flex flex-col justify-between"
+              >
+                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-600 to-indigo-600" />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <MCAServiceLogo className="h-12 w-12" />
+                    <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                      ROC & DIN
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors leading-tight">
+                      MCA & ROC Portal
+                    </h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug">
+                      Pvt Ltd, LLP, Section 8 NGO, DIN KYC, AOC-4, MGT-7 & Incorporation Compliance
+                    </p>
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Assigned Companies:</span>
+                    <span className="font-bold text-slate-900 dark:text-white font-mono">{myMcaClients.length} Entities</span>
+                  </div>
+                </div>
+
+                <div className="pt-3 mt-1 border-t border-slate-100 dark:border-slate-800">
+                  <div className="w-full py-1.5 px-3 rounded-lg bg-purple-600 group-hover:bg-purple-500 text-white text-[11px] font-bold flex items-center justify-between shadow-xs transition-all">
+                    <span>Open MCA Dashboard</span>
+                    <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                </div>
+              </div>
+
+              {/* SERVICE 4: NGO & TRUST DASHBOARD */}
+              <div
+                onClick={() => onNavigateModule('ops', 'trust')}
+                className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm hover:shadow-xl transition-all duration-200 hover:-translate-y-1 cursor-pointer flex flex-col justify-between"
+              >
+                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-600 to-teal-500" />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <NGOServiceLogo className="h-12 w-12" />
+                    <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                      12A & 80G
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors leading-tight">
+                      NGO & Trust Foundation
+                    </h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug">
+                      12A / 80G Tax Exemption, CSR-1, NGO Darpan, Form 10B/10BB & Trust Audits
+                    </p>
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Assigned Trusts:</span>
+                    <span className="font-bold text-slate-900 dark:text-white font-mono">{myTrustClients.length} Trusts</span>
+                  </div>
+                </div>
+
+                <div className="pt-3 mt-1 border-t border-slate-100 dark:border-slate-800">
+                  <div className="w-full py-1.5 px-3 rounded-lg bg-emerald-600 group-hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center justify-between shadow-xs transition-all">
+                    <span>Open NGO Dashboard</span>
+                    <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                </div>
+              </div>
+
+              {/* SERVICE 5: DIGITAL SIGNATURE (DSC) */}
+              <div
+                onClick={() => onNavigateModule('ops', 'dsc')}
+                className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm hover:shadow-xl transition-all duration-200 hover:-translate-y-1 cursor-pointer flex flex-col justify-between"
+              >
+                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-500 to-blue-500" />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <DSCServiceLogo className="h-12 w-12" />
+                    <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-full bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800">
+                      CLASS 3 TOKEN
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors leading-tight">
+                      DSC Management
+                    </h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug">
+                      Class 3 Signing & Encryption Tokens, USB Dongles, Validity Tracker & Renewals
+                    </p>
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Active Tokens:</span>
+                    <span className="font-bold text-slate-900 dark:text-white font-mono">{myDscClients.length} Keys</span>
+                  </div>
+                </div>
+
+                <div className="pt-3 mt-1 border-t border-slate-100 dark:border-slate-800">
+                  <div className="w-full py-1.5 px-3 rounded-lg bg-cyan-600 group-hover:bg-cyan-500 text-white text-[11px] font-bold flex items-center justify-between shadow-xs transition-all">
+                    <span>Open DSC Workspace</span>
+                    <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                </div>
+              </div>
+
+              {/* SERVICE 6: TRADEMARK & IP */}
+              <div
+                onClick={() => onNavigateModule('ops', 'trademark')}
+                className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm hover:shadow-xl transition-all duration-200 hover:-translate-y-1 cursor-pointer flex flex-col justify-between"
+              >
+                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-fuchsia-600 to-purple-600" />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <TrademarkServiceLogo className="h-12 w-12" />
+                    <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-full bg-fuchsia-50 dark:bg-fuchsia-950/60 text-fuchsia-700 dark:text-fuchsia-300 border border-fuchsia-200 dark:border-fuchsia-800">
+                      IP & REGISTRY
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white group-hover:text-fuchsia-600 dark:group-hover:text-fuchsia-400 transition-colors leading-tight">
+                      Trademark & IP Registry
+                    </h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug">
+                      Trademark Search, TM Application Filing, Examination Reports, Objections & Hearings
+                    </p>
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Assigned Brands:</span>
+                    <span className="font-bold text-slate-900 dark:text-white font-mono">{myTrademarkClients.length} Cases</span>
+                  </div>
+                </div>
+
+                <div className="pt-3 mt-1 border-t border-slate-100 dark:border-slate-800">
+                  <div className="w-full py-1.5 px-3 rounded-lg bg-fuchsia-600 group-hover:bg-fuchsia-500 text-white text-[11px] font-bold flex items-center justify-between shadow-xs transition-all">
+                    <span>Open Trademark Hub</span>
+                    <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                </div>
+              </div>
+
+              {/* SERVICE 7: TASK COMMAND CENTER */}
+              <div
+                onClick={() => onNavigateModule('ops', 'tasks')}
+                className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm hover:shadow-xl transition-all duration-200 hover:-translate-y-1 cursor-pointer flex flex-col justify-between"
+              >
+                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-600 to-violet-600" />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <TaskCommandLogo className="h-12 w-12" />
+                    <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                      DAILY WORKLOAD
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors leading-tight">
+                      Task Command Center
+                    </h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug">
+                      Daily Assigned Tasks, Priority Queue, Due Deliverables & Client Milestones
+                    </p>
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Pending Tasks:</span>
+                    <span className="font-bold text-rose-600 dark:text-rose-400 font-mono">{myPendingV2TasksList.length} Tasks Due</span>
+                  </div>
+                </div>
+
+                <div className="pt-3 mt-1 border-t border-slate-100 dark:border-slate-800">
+                  <div className="w-full py-1.5 px-3 rounded-lg bg-indigo-600 group-hover:bg-indigo-500 text-white text-[11px] font-bold flex items-center justify-between shadow-xs transition-all">
+                    <span>Open Task Command</span>
+                    <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                </div>
+              </div>
+
+              {/* SERVICE 8: SALES & MARKETING (IF PERMITTED) */}
+              {hasModuleAccess(sessionUser, 'sales_marketing') && (
+                <div
+                  onClick={() => onNavigateModule('sales', 'leads')}
+                  className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm hover:shadow-xl transition-all duration-200 hover:-translate-y-1 cursor-pointer flex flex-col justify-between"
+                >
+                  <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-400" />
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <SalesCRMLogo className="h-12 w-12" />
+                      <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                        LEADS & SALES
+                      </span>
+                    </div>
+
+                    <div>
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors leading-tight">
+                        Sales & Client CRM
+                      </h3>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug">
+                        Inbound Leads, Followups, Proposals & Client Conversion Pipeline
+                      </p>
+                    </div>
+
+                    <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
+                      <span className="text-slate-500 dark:text-slate-400 font-medium">Assigned Leads:</span>
+                      <span className="font-bold text-slate-900 dark:text-white font-mono">{myAssignedLeads.length} Leads</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 mt-1 border-t border-slate-100 dark:border-slate-800">
+                    <div className="w-full py-1.5 px-3 rounded-lg bg-emerald-600 group-hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center justify-between shadow-xs transition-all">
+                      <span>Open Sales CRM</span>
+                      <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </section>
+
+          {/* C. EMPLOYEE ASSIGNED WORKLOAD & PRIORITY TASKS */}
+          <section className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
               <h2 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-slate-100 tracking-tight flex items-center space-x-2">
@@ -876,6 +1309,7 @@ export default function MasterExecutiveLanding({
 
           </div>
         </section>
+      </div>
       )}
 
       {/* ==============================================================

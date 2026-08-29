@@ -137,6 +137,7 @@ export type NavigationTarget =
   | 'ops_mca'
   | 'ops_tasks'
   | 'ops_clients'
+  | 'ops_trademark'
   // Settings & Control
   | 'settings_recovery'
   | 'settings_ai'

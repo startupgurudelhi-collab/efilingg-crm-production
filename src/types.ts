@@ -155,6 +155,7 @@ export interface Employee extends VersionedRecord {
   exitDate?: string;
   exitReason?: string;
   exitStatus?: 'resigned' | 'terminated' | 'none';
+  shift?: string;
 
   // Module Access Control (Task Manager is enabled for all employees by default)
   accessibleModules?: AppModuleId[];

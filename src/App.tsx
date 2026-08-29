@@ -35,10 +35,11 @@ import { FeatureFlagProvider } from './lib/featureFlags';
 import { 
   LogOut, User, Sun, Moon, Sparkles, Building2, Shield, Eye, Database, 
   ListTodo, FileText, Lightbulb, CalendarDays, CheckCircle2, X, Menu, 
-  ChevronRight, ArrowLeft, Home, Layers, TrendingUp, DollarSign
+  ChevronRight, ArrowLeft, Home, Layers, TrendingUp, DollarSign, Settings
 } from 'lucide-react';
 import EFilinggLogo from './components/EFilinggLogo';
 import ConflictResolutionModal from './components/ConflictResolutionModal';
+import EmployeeProfileSettingsModal from './components/EmployeeProfileSettingsModal';
 import { subscribeToConcurrencyConflicts } from './lib/concurrencyControl';
 import { ConcurrencyConflict } from './types';
 
@@ -60,6 +61,7 @@ function AppContent() {
   const [isCreatingLead, setIsCreatingLead] = useState(false);
   const [isCreatingProposal, setIsCreatingProposal] = useState(false);
   const [activeProposalPreview, setActiveProposalPreview] = useState<Proposal | null>(null);
+  const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
 
   const { theme, toggleTheme } = useTheme();
 
@@ -372,7 +374,17 @@ function AppContent() {
         'sales_dashboard'
       );
     } else if (module === 'ops') {
-      setAdminNavTarget(specificTab === 'gst' ? 'ops_gst' : specificTab === 'itr' ? 'ops_itr' : specificTab === 'mca' ? 'ops_mca' : specificTab === 'tasks' ? 'ops_tasks' : specificTab === 'clients' ? 'ops_clients' : 'ops_dashboard');
+      setAdminNavTarget(
+        specificTab === 'gst' ? 'ops_gst' :
+        specificTab === 'itr' ? 'ops_itr' :
+        specificTab === 'mca' ? 'ops_mca' :
+        (specificTab === 'trust' || specificTab === 'ngo') ? 'ops_trust_dashboard' :
+        specificTab === 'dsc' ? 'ops_dsc_active' :
+        specificTab === 'trademark' ? 'ops_trademark' :
+        specificTab === 'tasks' ? 'ops_tasks' :
+        specificTab === 'clients' ? 'ops_clients' :
+        'ops_dashboard'
+      );
     } else if (module === 'settings') {
       setAdminNavTarget(specificTab === 'recovery_center' ? 'settings_recovery' : specificTab === 'ai' ? 'settings_ai' : specificTab === 'whatsapp' ? 'settings_whatsapp' : specificTab === 'audit' ? 'settings_audit' : specificTab === 'backup' ? 'settings_backup' : 'settings_recovery');
     } else if (module === 'hr') {
@@ -455,16 +467,31 @@ function AppContent() {
         {/* Action Widgets */}
         <div className="flex items-center space-x-2 sm:space-x-3 text-xs">
           
-          {/* User profile card badge */}
-          <div className="hidden sm:flex items-center space-x-2 bg-slate-100 dark:bg-slate-950 p-1.5 px-3 rounded-xl border border-slate-205 dark:border-slate-850">
-            <div className="h-5 w-5 bg-emerald-500 text-white rounded-lg flex items-center justify-center font-black text-[10px]">
+          {/* User profile card badge with Settings trigger */}
+          <button
+            onClick={() => setIsProfileSettingsOpen(true)}
+            className="flex items-center space-x-2 bg-slate-100 dark:bg-slate-950 hover:bg-slate-200 dark:hover:bg-slate-800 p-1.5 px-3 rounded-xl border border-slate-205 dark:border-slate-850 cursor-pointer transition-all text-left group"
+            title="Open Account Settings, Profile, Offer Letter & Payslips"
+          >
+            <div className="h-5 w-5 bg-emerald-500 text-white rounded-lg flex items-center justify-center font-black text-[10px] group-hover:scale-105 transition-transform">
               {sessionUser.name.charAt(0)}
             </div>
             <div className="text-left leading-none space-y-0.5">
-              <span className="font-bold text-[11px] block text-slate-800 dark:text-slate-200">{sessionUser.name}</span>
+              <span className="font-bold text-[11px] block text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 dark:group-hover:text-emerald-400">{sessionUser.name}</span>
               <span className="text-[9px] font-bold text-slate-400 capitalize block">{sessionUser.role} Gateway</span>
             </div>
-          </div>
+            <Settings className="h-3.5 w-3.5 text-slate-400 group-hover:text-emerald-500 transition-colors ml-1" />
+          </button>
+
+          {/* Direct Settings button for quick access */}
+          <button
+            onClick={() => setIsProfileSettingsOpen(true)}
+            className="flex items-center space-x-1.5 py-2 px-2.5 sm:px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
+            title="Account Settings, Password, Offer Letter & Salary Slips"
+          >
+            <Settings className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+            <span className="hidden sm:inline">Settings</span>
+          </button>
 
           {/* Theme switcher */}
           <button
@@ -536,6 +563,7 @@ function AppContent() {
                 }
               }}
               onTriggerProposalDraft={() => setIsCreatingProposal(true)}
+              onOpenProfileSettings={() => setIsProfileSettingsOpen(true)}
             />
           ) : (
             <div className="space-y-4 animate-fade-in">
@@ -718,6 +746,18 @@ function AppContent() {
         <TeamConnectWidget currentUser={sessionUser} />
       )}
       <WhatsAppIncomingMessagePopup />
+
+      {/* OVERLAY 5: Employee Profile & Account Settings Modal */}
+      {isProfileSettingsOpen && sessionUser && (
+        <EmployeeProfileSettingsModal
+          sessionUser={sessionUser}
+          onClose={() => setIsProfileSettingsOpen(false)}
+          onUpdateSuccess={(updatedEmployee) => {
+            setSessionUser(updatedEmployee);
+            handleRefreshAllData();
+          }}
+        />
+      )}
 
       {/* Optimistic Concurrency Control Conflict Resolution Dialog */}
       {activeConflict && (

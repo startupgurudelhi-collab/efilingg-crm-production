@@ -6,6 +6,7 @@
 import React, { useState, useMemo } from 'react';
 import { V2GstClient, V2GstReturnStatus } from '../../../lib/v2_db';
 import { Employee } from '../../../types';
+import { getCurrentSession } from '../../../lib/db';
 import { 
   Building2, CheckCircle2, Clock, AlertTriangle, Users, 
   TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight,
@@ -141,8 +142,14 @@ export default function GSTDashboard({
 
   // Employee-wise Performance Data (Section 3)
   const employeePerformance = useMemo(() => {
-    return employees.map(emp => {
-      const empClients = clients.filter(c => c.assignedEmployeeId === emp.id && c.returnsMode === 'MONTHLY');
+    const sessionUser = getCurrentSession();
+    const isAdmin = !sessionUser || (sessionUser.role as string) === 'admin' || (sessionUser.role as string) === 'super_admin';
+    const targetEmployees = isAdmin 
+      ? employees 
+      : employees.filter(emp => emp.id === sessionUser.id || emp.name.toLowerCase().trim() === sessionUser.name.toLowerCase().trim());
+
+    return targetEmployees.map(emp => {
+      const empClients = clients.filter(c => (c.assignedEmployeeId === emp.id || c.assignedEmployeeName === emp.name) && c.returnsMode === 'MONTHLY');
       const totalClientsCount = empClients.length;
 
       let gstr1Filed = 0;

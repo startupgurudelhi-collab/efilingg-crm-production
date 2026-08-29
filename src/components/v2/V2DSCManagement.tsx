@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Key, Plus, Search, Download, AlertTriangle, CheckCircle, 
   Clock, ShieldAlert, Edit2, Trash2, Calendar, Users, X
@@ -20,6 +20,7 @@ import {
   getV2McaClients
 } from '../../lib/v2_db';
 import { getCurrentSession } from '../../lib/db';
+import { isClientAssignedToUser, getEmployeesWithModuleAccess } from '../../lib/permissions';
 
 interface V2DSCManagementProps {
   key?: string;
@@ -75,33 +76,26 @@ export default function V2DSCManagement({
     setCurrentUser(getCurrentSession());
   }, []);
 
-  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
-  const isAdminOrTL = currentUser && (
-    currentUser.role === 'admin' || 
-    currentUser.role === 'super_admin' || 
-    currentUser.role === 'team_leader' || 
-    currentUser.role === 'team_lead'
-  );
-
-  const isAssignedToUser = (assignedId?: string, assignedName?: string) => {
-    if (!assignedId && !assignedName) return false;
-    return (
-      (assignedId && (
-        assignedId === currentUser?.id || 
-        assignedId.toLowerCase() === (currentUser?.id || '').toLowerCase() ||
-        (currentUser?.employeeCode && assignedId.toLowerCase() === currentUser.employeeCode.toLowerCase())
-      )) ||
-      (currentUser?.name && assignedName && assignedName.toLowerCase() === currentUser.name.toLowerCase()) ||
-      (currentUser?.name && assignedId && assignedId.toLowerCase() === currentUser.name.toLowerCase())
-    );
-  };
+  const isAdmin = !currentUser || currentUser.role === 'admin' || currentUser.role === 'super_admin';
+  const dscEmployees = useMemo(() => getEmployeesWithModuleAccess('dsc_management'), []);
 
   // Cross-reference directors from MCA
   const mcaClients = getV2McaClients();
-  const directorNamesWithDSC = new Set(dscClients.map(d => d.clientName.toLowerCase().trim()));
+
+  const accessibleDscClients = useMemo(() => {
+    if (isAdmin) return dscClients;
+    return dscClients.filter(c => isClientAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName, currentUser));
+  }, [dscClients, isAdmin, currentUser]);
+
+  const accessibleMcaClients = useMemo(() => {
+    if (isAdmin) return mcaClients;
+    return mcaClients.filter(m => isClientAssignedToUser(m.assignedEmployeeId, m.assignedEmployeeName, currentUser));
+  }, [mcaClients, isAdmin, currentUser]);
+
+  const directorNamesWithDSC = new Set(accessibleDscClients.map(d => d.clientName.toLowerCase().trim()));
   const missingDscDirectors: Array<V2DscClient | { id: string; clientName: string; firmName: string; isWarning: boolean; issuerName: string; tokenName: string; issueDate: string; expiryDate: string; assignedEmployeeId?: string; assignedEmployeeName?: string }> = [];
 
-  mcaClients.forEach(m => {
+  accessibleMcaClients.forEach(m => {
     (m.directors || []).forEach((dir, idx) => {
       const dirName = typeof dir === 'string' ? dir : dir?.name;
       if (dirName && !directorNamesWithDSC.has(dirName.toLowerCase().trim())) {
@@ -121,7 +115,7 @@ export default function V2DSCManagement({
     });
   });
 
-  const allDisplayDscList = [...dscClients, ...missingDscDirectors];
+  const allDisplayDscList = [...accessibleDscClients, ...missingDscDirectors];
 
   const getDaysLeft = (expiryDateStr: string) => {
     if (!expiryDateStr || expiryDateStr === 'N/A') return -999;
@@ -153,9 +147,6 @@ export default function V2DSCManagement({
   };
 
   const filteredDsc = allDisplayDscList.filter(d => {
-    if (!isAdminOrTL && currentUser) {
-      if (!isAssignedToUser(d.assignedEmployeeId, d.assignedEmployeeName)) return false;
-    }
 
     const matchesSearch = 
       d.clientName.toLowerCase().includes(dscFilter.toLowerCase()) ||
@@ -410,7 +401,7 @@ export default function V2DSCManagement({
                   className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-xs"
                 >
                   <option value="">-- Choose Handler --</option>
-                  {allEmployees.map(emp => (
+                  {dscEmployees.map(emp => (
                     <option key={emp.id} value={emp.id}>{emp.name} ({emp.employeeCode || 'STF'})</option>
                   ))}
                 </select>
@@ -420,7 +411,7 @@ export default function V2DSCManagement({
 
           <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
             <button type="button" onClick={() => setShowAddDsc(false)} className="px-3.5 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-bold cursor-pointer">Cancel</button>
-            <button type="submit" className="px-4.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold cursor-pointer">Save DSC Record</button>
+            <button type="submit" className="px-4.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold cursor-pointer">Save DSC Record</button>
           </div>
         </form>
       )}
@@ -646,7 +637,7 @@ export default function V2DSCManagement({
                 defaultValue={transferringDscClient.assignedEmployeeId || ""}
                 onChange={(e) => {
                   const val = e.target.value;
-                  const employee = allEmployees.find(emp => emp.id === val);
+                  const employee = dscEmployees.find(emp => emp.id === val);
                   if (employee) {
                     transferringDscClient.assignedEmployeeId = employee.id;
                     transferringDscClient.assignedEmployeeName = employee.name;
@@ -658,7 +649,7 @@ export default function V2DSCManagement({
                 className="w-full p-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-xs"
               >
                 <option value="">-- No Assignment --</option>
-                {allEmployees.map(emp => (
+                {dscEmployees.map(emp => (
                   <option key={emp.id} value={emp.id}>{emp.name} ({emp.employeeCode || 'STF'})</option>
                 ))}
               </select>

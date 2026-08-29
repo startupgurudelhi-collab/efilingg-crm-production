@@ -12,6 +12,7 @@ import {
   getV1Employees 
 } from '../../lib/v2_db';
 import { getCurrentSession, setStorageString, getStorageString } from '../../lib/db';
+import { isClientAssignedToUser, getEmployeesWithModuleAccess } from '../../lib/permissions';
 import { 
   ShieldCheck, Award, FileText, Search, Plus, Filter, 
   Calendar, CheckCircle2, Clock, AlertTriangle, Scale, 
@@ -136,34 +137,18 @@ export default function V2TrademarkCopyright({
   const [selectedTm, setSelectedTm] = useState<V2TrademarkClient | null>(null);
   const [selectedCp, setSelectedCp] = useState<CopyrightRecord | null>(null);
 
-  const isAdminOrTL = currentUser && (
-    currentUser.role === 'admin' || 
-    currentUser.role === 'super_admin' || 
-    currentUser.role === 'team_leader' || 
-    currentUser.role === 'team_lead'
-  );
-
-  const isAssignedToUser = (assignedId?: string, assignedName?: string) => {
-    if (!assignedId && !assignedName) return false;
-    return (
-      (assignedId && (
-        assignedId === currentUser?.id || 
-        assignedId.toLowerCase() === (currentUser?.id || '').toLowerCase() ||
-        (currentUser?.employeeCode && assignedId.toLowerCase() === currentUser.employeeCode.toLowerCase())
-      )) ||
-      (currentUser?.name && assignedName && assignedName.toLowerCase() === currentUser.name.toLowerCase()) ||
-      (currentUser?.name && assignedId && assignedId.toLowerCase() === currentUser.name.toLowerCase())
-    );
-  };
+  const isAdmin = !currentUser || currentUser.role === 'admin' || currentUser.role === 'super_admin';
+  const tmEmployees = useMemo(() => getEmployeesWithModuleAccess('trademark_ip'), []);
 
   const accessibleTrademarks = useMemo(() => {
-    return trademarks.filter(tm => {
-      if (!isAdminOrTL && currentUser) {
-        if (!isAssignedToUser(tm.assignedEmployeeId, tm.assignedEmployeeName)) return false;
-      }
-      return true;
-    });
-  }, [trademarks, currentUser, isAdminOrTL]);
+    if (isAdmin) return trademarks;
+    return trademarks.filter(tm => isClientAssignedToUser(tm.assignedEmployeeId, tm.assignedEmployeeName, currentUser));
+  }, [trademarks, currentUser, isAdmin]);
+
+  const accessibleCopyrights = useMemo(() => {
+    if (isAdmin) return copyrights;
+    return copyrights.filter(cp => isClientAssignedToUser((cp as any).assignedEmployeeId, (cp as any).assignedEmployeeName || cp.assignedCounsel, currentUser));
+  }, [copyrights, currentUser, isAdmin]);
 
   // Compute live trademark stats
   const stats = useMemo(() => {
@@ -172,8 +157,8 @@ export default function V2TrademarkCopyright({
     const objected = accessibleTrademarks.filter(t => t.stage === 'Objected').length;
     const hearings = accessibleTrademarks.filter(t => t.stage === 'Hearing').length;
     const approved = accessibleTrademarks.filter(t => t.stage === 'Approved').length;
-    const totalCopyrights = copyrights.length;
-    const copyrightsRegistered = copyrights.filter(c => c.status === 'Registered Certificate Issued').length;
+    const totalCopyrights = accessibleCopyrights.length;
+    const copyrightsRegistered = accessibleCopyrights.filter(c => c.status === 'Registered Certificate Issued').length;
 
     return {
       total,
@@ -185,7 +170,7 @@ export default function V2TrademarkCopyright({
       copyrightsRegistered,
       successRate: total > 0 ? Math.round((approved / total) * 100) : 0
     };
-  }, [accessibleTrademarks, copyrights]);
+  }, [accessibleTrademarks, accessibleCopyrights]);
 
   // Filtered Trademark list
   const filteredTrademarks = useMemo(() => {
@@ -1093,7 +1078,7 @@ export default function V2TrademarkCopyright({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-150 dark:divide-slate-800/80">
-                  {copyrights.map(cp => (
+                  {accessibleCopyrights.map(cp => (
                     <tr key={cp.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition">
                       <td className="p-3.5 pl-5">
                         <div className="font-extrabold text-slate-900 dark:text-white text-xs">{cp.workTitle}</div>

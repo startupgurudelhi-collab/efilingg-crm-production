@@ -3,13 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   X, ArrowRightLeft, UserCheck, ShieldCheck, CheckCircle2, 
   AlertTriangle, Building2, Layers, FileText, Send, Sparkles
 } from 'lucide-react';
 import { getEmployees, getCurrentSession, writeActivityLog, createNotification } from '../../lib/db';
 import { transferClientAcrossServices } from '../../lib/v2_db';
+import { getEmployeesForServiceCategory } from '../../lib/permissions';
 
 export interface ClientTransferModalProps {
   isOpen: boolean;
@@ -34,10 +35,11 @@ export default function ClientTransferModal({
   if (!isOpen || !client) return null;
 
   const sessionUser = getCurrentSession();
-  const allEmployees = getEmployees().filter(e => e.status === 'active');
   
-  // Exclude the current assigned employee from the target selection list if possible
-  const availableEmployees = allEmployees;
+  // Get all active employees who have permission for this client's service category
+  const availableEmployees = useMemo(() => {
+    return getEmployeesForServiceCategory(client.serviceCategory);
+  }, [client.serviceCategory]);
 
   const [targetEmployeeId, setTargetEmployeeId] = useState<string>(() => {
     const firstOther = availableEmployees.find(e => e.id !== client.assignedEmployeeId);
@@ -64,7 +66,7 @@ export default function ClientTransferModal({
       return;
     }
 
-    const targetEmp = allEmployees.find(e => e.id === targetEmployeeId);
+    const targetEmp = availableEmployees.find(e => e.id === targetEmployeeId) || getEmployees().find(e => e.id === targetEmployeeId);
     if (!targetEmp) {
       setErrorMessage('Selected employee not found.');
       return;

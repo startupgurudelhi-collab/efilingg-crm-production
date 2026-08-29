@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Landmark, Plus, Search, Download, Award, Users, Edit2, 
   Trash2, X, CheckCircle, AlertTriangle, ShieldCheck, HeartHandshake,
@@ -20,6 +20,7 @@ import {
   getV1Employees
 } from '../../lib/v2_db';
 import { getCurrentSession } from '../../lib/db';
+import { isClientAssignedToUser, getEmployeesWithModuleAccess } from '../../lib/permissions';
 
 interface V2TrustNGOProps {
   key?: string;
@@ -92,33 +93,16 @@ export default function V2TrustNGO({
     }
   }, [initialFilter]);
 
-  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
-  const isAdminOrTL = currentUser && (
-    currentUser.role === 'admin' || 
-    currentUser.role === 'super_admin' || 
-    currentUser.role === 'team_leader' || 
-    currentUser.role === 'team_lead'
-  );
+  const isAdmin = !currentUser || currentUser.role === 'admin' || currentUser.role === 'super_admin';
+  const trustEmployees = useMemo(() => getEmployeesWithModuleAccess('trust_ngo'), []);
 
-  const isAssignedToUser = (assignedId?: string, assignedName?: string) => {
-    if (!assignedId && !assignedName) return false;
-    return (
-      (assignedId && (
-        assignedId === currentUser?.id || 
-        assignedId.toLowerCase() === (currentUser?.id || '').toLowerCase() ||
-        (currentUser?.employeeCode && assignedId.toLowerCase() === currentUser.employeeCode.toLowerCase())
-      )) ||
-      (currentUser?.name && assignedName && assignedName.toLowerCase() === currentUser.name.toLowerCase()) ||
-      (currentUser?.name && assignedId && assignedId.toLowerCase() === currentUser.name.toLowerCase())
-    );
-  };
+  const accessibleTrustClients = useMemo(() => {
+    if (isAdmin) return trustClients;
+    return trustClients.filter(c => isClientAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName, currentUser));
+  }, [trustClients, isAdmin, currentUser]);
 
   // Strict role filtering: Employee only sees allotted clients
-  const filteredTrustClients = trustClients.filter(c => {
-    if (!isAdminOrTL && currentUser) {
-      if (!isAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName)) return false;
-    }
-
+  const filteredTrustClients = accessibleTrustClients.filter(c => {
     // Search query filter
     const matchesSearch = 
       c.entityName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -366,7 +350,7 @@ export default function V2TrustNGO({
                   className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-xs"
                 >
                   <option value="">-- Choose Handler --</option>
-                  {allEmployees.map(emp => (
+                  {trustEmployees.map(emp => (
                     <option key={emp.id} value={emp.id}>{emp.name} ({emp.employeeCode || 'STF'})</option>
                   ))}
                 </select>
@@ -652,7 +636,7 @@ export default function V2TrustNGO({
                 defaultValue={transferringTrustClient.assignedEmployeeId || ""}
                 onChange={(e) => {
                   const val = e.target.value;
-                  const employee = allEmployees.find(emp => emp.id === val);
+                  const employee = trustEmployees.find(emp => emp.id === val);
                   if (employee) {
                     transferringTrustClient.assignedEmployeeId = employee.id;
                     transferringTrustClient.assignedEmployeeName = employee.name;
@@ -664,7 +648,7 @@ export default function V2TrustNGO({
                 className="w-full p-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-xs"
               >
                 <option value="">-- No Assignment --</option>
-                {allEmployees.map(emp => (
+                {trustEmployees.map(emp => (
                   <option key={emp.id} value={emp.id}>{emp.name} ({emp.employeeCode || 'STF'})</option>
                 ))}
               </select>

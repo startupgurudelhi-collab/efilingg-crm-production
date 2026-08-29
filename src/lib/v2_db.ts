@@ -1043,12 +1043,19 @@ export function exportToCSVFile(filename: string, headers: string[], rows: strin
 
 // Inter-compatibility linkage to primary active employee bank
 import { getEmployees } from './db';
+import { getEmployeesWithModuleAccess, isClientAssignedToUser } from './permissions';
 
-export function getV1Employees() {
-  return getEmployees().filter(emp => 
-    emp.status === 'active' && 
-    emp.department?.toLowerCase().trim() === 'operation management'
+export function getV1Employees(moduleId?: string) {
+  if (moduleId) {
+    return getEmployeesWithModuleAccess(moduleId);
+  }
+  const allEmps = getEmployees().filter(emp => emp.status === 'active');
+  const opsEmps = allEmps.filter(emp => 
+    emp.department?.toLowerCase().trim() === 'operation management' ||
+    (emp.role as string) === 'admin' ||
+    (emp.role as string) === 'super_admin'
   );
+  return opsEmps.length > 0 ? opsEmps : allEmps;
 }
 
 export function updateV2McaClient(updated: V2McaClient): void {

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   FileCheck2, Plus, Search, Filter, Download, Users, 
   ShieldCheck, AlertCircle, KeyRound, CheckCircle, Clock,
@@ -24,6 +24,7 @@ import {
   getV1Employees
 } from '../../lib/v2_db';
 import { getCurrentSession, setStorageString } from '../../lib/db';
+import { isClientAssignedToUser, getEmployeesWithModuleAccess } from '../../lib/permissions';
 
 interface V2ITRProps {
   key?: string;
@@ -91,44 +92,24 @@ export default function V2ITR({
     setCurrentUser(getCurrentSession());
   }, []);
 
-  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
-  const isAdminOrTL = currentUser && (
-    currentUser.role === 'admin' || 
-    currentUser.role === 'super_admin' || 
-    currentUser.role === 'team_leader' || 
-    currentUser.role === 'team_lead'
-  );
-
-  const isAssignedToUser = (assignedId?: string, assignedName?: string) => {
-    if (!assignedId && !assignedName) return false;
-    return (
-      (assignedId && (
-        assignedId === currentUser?.id || 
-        assignedId.toLowerCase() === (currentUser?.id || '').toLowerCase() ||
-        (currentUser?.employeeCode && assignedId.toLowerCase() === currentUser.employeeCode.toLowerCase())
-      )) ||
-      (currentUser?.name && assignedName && assignedName.toLowerCase() === currentUser.name.toLowerCase()) ||
-      (currentUser?.name && assignedId && assignedId.toLowerCase() === currentUser.name.toLowerCase())
-    );
-  };
+  const isAdmin = !currentUser || currentUser.role === 'admin' || currentUser.role === 'super_admin';
+  const itrEmployees = useMemo(() => getEmployeesWithModuleAccess('itr_compliance'), []);
 
   const taxAudits = getV2TaxAuditClients();
 
-  // Role-based filtering: Master Admin/TL sees all (with optional employee filter), Employee strictly sees allotted clients
-  const roleBaseFilteredClients = itrClients.filter(c => {
-    if (!isAdminOrTL && currentUser) {
-      // Employee strict filter
-      return isAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName);
+  // Role-based filtering: Master Admin sees all (with optional employee filter), Employee strictly sees allotted clients
+  const roleBaseFilteredClients = useMemo(() => {
+    if (!isAdmin && currentUser) {
+      return itrClients.filter(c => isClientAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName, currentUser));
     }
-    // Admin filter
     if (selectedEmployeeFilter !== 'ALL') {
       if (selectedEmployeeFilter === 'UNASSIGNED') {
-        return !c.assignedEmployeeId;
+        return itrClients.filter(c => !c.assignedEmployeeId);
       }
-      return c.assignedEmployeeId === selectedEmployeeFilter;
+      return itrClients.filter(c => c.assignedEmployeeId === selectedEmployeeFilter);
     }
-    return true;
-  });
+    return itrClients;
+  }, [itrClients, isAdmin, currentUser, selectedEmployeeFilter]);
 
   // Category & Status filtered ITR list
   const filteredItrClients = roleBaseFilteredClients.filter(c => {
@@ -160,8 +141,8 @@ export default function V2ITR({
 
   // Filtered Tax Audits
   const filteredTaxAudits = taxAudits.filter(a => {
-    if (!isAdminOrTL && currentUser) {
-      if (!isAssignedToUser(a.assignedEmployeeId, a.assignedEmployeeName)) return false;
+    if (!isAdmin && currentUser) {
+      if (!isClientAssignedToUser(a.assignedEmployeeId, a.assignedEmployeeName, currentUser)) return false;
     } else if (selectedEmployeeFilter !== 'ALL') {
       if (selectedEmployeeFilter === 'UNASSIGNED') {
         if (a.assignedEmployeeId) return false;
@@ -196,7 +177,7 @@ export default function V2ITR({
   const auditsPendingCount = totalAuditsCount - auditsCompletedCount;
 
   // Employee-wise stats mapping for Master Admin
-  const employeeWorkloadStats = allEmployees.map(emp => {
+  const employeeWorkloadStats = itrEmployees.map(emp => {
     const assignedClients = itrClients.filter(c => c.assignedEmployeeId === emp.id);
     const filed = assignedClients.filter(c => c.itrStatus === 'FILED').length;
     const pending = assignedClients.filter(c => c.itrStatus === 'NOT FILED' || !c.itrStatus).length;
@@ -992,7 +973,7 @@ export default function V2ITR({
                   className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-xs"
                 >
                   <option value="">-- Choose Handler --</option>
-                  {allEmployees.map(emp => (
+                  {itrEmployees.map(emp => (
                     <option key={emp.id} value={emp.id}>{emp.name} ({emp.employeeCode || 'STF'})</option>
                   ))}
                 </select>
@@ -1051,7 +1032,7 @@ export default function V2ITR({
                 defaultValue={transferringItrClient.assignedEmployeeId || ""}
                 onChange={(e) => {
                   const val = e.target.value;
-                  const employee = allEmployees.find(emp => emp.id === val);
+                  const employee = itrEmployees.find(emp => emp.id === val);
                   if (employee) {
                     transferringItrClient.assignedEmployeeId = employee.id;
                     transferringItrClient.assignedEmployeeName = employee.name;
@@ -1063,7 +1044,7 @@ export default function V2ITR({
                 className="w-full p-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-xs"
               >
                 <option value="">-- No Assignment --</option>
-                {allEmployees.map(emp => (
+                {itrEmployees.map(emp => (
                   <option key={emp.id} value={emp.id}>{emp.name} ({emp.employeeCode || 'STF'})</option>
                 ))}
               </select>

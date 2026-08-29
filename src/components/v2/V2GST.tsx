@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   V2GstClient, 
   V2GstReturnStatus, 
@@ -20,6 +20,7 @@ import {
   addV2ItrClient
 } from '../../lib/v2_db';
 import { getCurrentSession } from '../../lib/db';
+import { getEmployeesWithModuleAccess, isClientAssignedToUser } from '../../lib/permissions';
 import { 
   LayoutDashboard, Users, Calendar, FileSpreadsheet, 
   Settings, ExternalLink, X, Globe, Key, AlertCircle, Plus, UploadCloud, Download
@@ -110,6 +111,20 @@ export default function V2GST({
   // Current session & sandbox warning
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isIframe, setIsIframe] = useState<boolean>(false);
+
+  const gstEmployees = useMemo(() => getEmployeesWithModuleAccess('gst'), []);
+  const isAdmin = !currentUser || currentUser.role === 'admin' || currentUser.role === 'super_admin';
+
+  const visibleClients = useMemo(() => {
+    if (isAdmin) return clients;
+    return clients.filter(c => isClientAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName, currentUser));
+  }, [clients, isAdmin, currentUser]);
+
+  const visibleReturns = useMemo(() => {
+    if (isAdmin) return returns;
+    const myClientIds = new Set(visibleClients.map(c => c.id));
+    return returns.filter(r => myClientIds.has(r.gstClientId));
+  }, [returns, visibleClients, isAdmin]);
 
   useEffect(() => {
     if (initialSubTab) {
@@ -526,9 +541,9 @@ export default function V2GST({
           ========================================================================= */}
       {activeTab === 'DASHBOARD' && (
         <GSTDashboard
-          clients={clients}
-          returns={returns}
-          employees={allEmployees}
+          clients={visibleClients}
+          returns={visibleReturns}
+          employees={gstEmployees}
           selectedMonth={selectedMonth}
           onMonthChange={setSelectedMonth}
           onNavigateToTab={handleDashboardNavigate}
@@ -541,8 +556,8 @@ export default function V2GST({
           ========================================================================= */}
       {activeTab === 'CLIENTS' && (
         <GSTClientsPortfolio
-          clients={clients}
-          employees={allEmployees}
+          clients={visibleClients}
+          employees={gstEmployees}
           onAddClient={() => setShowAddForm(true)}
           onEditClient={(client) => setEditingClient(client)}
           onBulkImport={() => setShowImport(true)}
@@ -559,9 +574,9 @@ export default function V2GST({
           ========================================================================= */}
       {activeTab === 'MONTHLY' && (
         <GSTMonthlyReturns
-          clients={clients}
-          returns={returns}
-          employees={allEmployees}
+          clients={visibleClients}
+          returns={visibleReturns}
+          employees={gstEmployees}
           selectedMonth={selectedMonth}
           onMonthChange={setSelectedMonth}
           onUpdateReturnStatus={handleUpdateReturnStatus}
@@ -576,9 +591,9 @@ export default function V2GST({
           ========================================================================= */}
       {activeTab === 'QUARTERLY' && (
         <GSTQuarterlyReturns
-          clients={clients}
-          returns={returns}
-          employees={allEmployees}
+          clients={visibleClients}
+          returns={visibleReturns}
+          employees={gstEmployees}
           selectedQuarter={selectedQuarter}
           onQuarterChange={setSelectedQuarter}
           onUpdateReturnStatus={handleUpdateReturnStatus}
@@ -591,9 +606,9 @@ export default function V2GST({
           ========================================================================= */}
       {activeTab === 'REPORTS' && (
         <GSTReports
-          clients={clients}
-          returns={returns}
-          employees={allEmployees}
+          clients={visibleClients}
+          returns={visibleReturns}
+          employees={gstEmployees}
           selectedMonth={selectedMonth}
         />
       )}
@@ -603,7 +618,7 @@ export default function V2GST({
           ========================================================================= */}
       {activeTab === 'SETTINGS' && (
         <GSTExtensionLogsSettings
-          clients={clients}
+          clients={visibleClients}
           onTriggerGstLogin={handleTriggerGstLogin}
           onRefreshClients={() => setClients(getV2GstClients())}
         />
@@ -720,7 +735,7 @@ export default function V2GST({
                   className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-bold"
                 >
                   <option value="">-- Unassigned --</option>
-                  {allEmployees.map(emp => (
+                  {gstEmployees.map(emp => (
                     <option key={emp.id} value={emp.id}>{emp.name}</option>
                   ))}
                 </select>

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   V2McaClient, 
   V2McaRocReturn, 
@@ -20,6 +20,7 @@ import {
   deleteV2McaClients
 } from '../../lib/v2_db';
 import { getCurrentSession, setStorageString } from '../../lib/db';
+import { isClientAssignedToUser, getEmployeesWithModuleAccess } from '../../lib/permissions';
 import ConfirmModal from './ConfirmModal';
 import { 
   Building2, Users, Receipt, Calendar, Plus, Download, UploadCloud, Search, Check, AlertTriangle, ShieldAlert,
@@ -429,8 +430,8 @@ export default function V2MCA({
     let headers: string[] = [];
     let rows: string[][] = [];
 
-    const targetedReturns = returns.filter(ret => {
-      const cl = clients.find(c => c.id === ret.mcaClientId);
+    const targetedReturns = accessibleReturns.filter(ret => {
+      const cl = accessibleClients.find(c => c.id === ret.mcaClientId);
       if (!cl) return false;
       if (rocSubTab === 'NGO') return cl.clientType === 'SECTION 8 NGO';
       if (rocSubTab === 'PVT') return cl.clientType === 'PRIVATE LIMITED COMPANY';
@@ -440,7 +441,7 @@ export default function V2MCA({
     if (rocSubTab === 'LLP') {
       headers = ['LLP Name', 'Form 11 Status', 'Form 11 SRN', 'Form 8 Status', 'Form 8 SRN', 'Balance Sheet', 'ITR Status', 'Ack No'];
       rows = targetedReturns.map(r => {
-        const cl = clients.find(c => c.id === r.mcaClientId);
+        const cl = accessibleClients.find(c => c.id === r.mcaClientId);
         return [
           cl?.clientName || 'N/A',
           r.form11Status || 'NOT FILED', r.form11Srn || '',
@@ -452,7 +453,7 @@ export default function V2MCA({
       // NGO or PVT LTD
       headers = ['Company Name', 'DIN KYC Status', 'ADT-1 Status', 'ADT-1 SRN', 'AOC-4 Status', 'AOC-4 SRN', 'MGT-7 Status', 'MGT-7 SRN', 'Balance Sheet', 'ITR Status', 'CA Auditor'];
       rows = targetedReturns.map(r => {
-        const cl = clients.find(c => c.id === r.mcaClientId);
+        const cl = accessibleClients.find(c => c.id === r.mcaClientId);
         return [
           cl?.clientName || 'N/A',
           r.dinKycStatus || 'NOT FILED',
@@ -467,32 +468,19 @@ export default function V2MCA({
     exportToCSVFile(`roc_report_fy_${selectedFY}_sub_${rocSubTab}.csv`, headers, rows);
   };
 
-  const isAdminOrTL = currentUser && (
-    currentUser.role === 'admin' || 
-    currentUser.role === 'super_admin' || 
-    currentUser.role === 'team_leader' || 
-    currentUser.role === 'team_lead'
-  );
+  const isAdmin = !currentUser || currentUser.role === 'admin' || currentUser.role === 'super_admin';
+  const mcaEmployees = useMemo(() => getEmployeesWithModuleAccess('mca_roc'), []);
 
-  const isAssignedToCurrentEmp = (assignedId?: string, assignedName?: string) => {
-    if (!assignedId && !assignedName) return false;
-    return (
-      (assignedId && (
-        assignedId === currentUser?.id || 
-        assignedId.toLowerCase() === (currentUser?.id || '').toLowerCase() ||
-        (currentUser?.employeeCode && assignedId.toLowerCase() === currentUser.employeeCode.toLowerCase())
-      )) ||
-      (currentUser?.name && assignedName && assignedName.toLowerCase() === currentUser.name.toLowerCase()) ||
-      (currentUser?.name && assignedId && assignedId.toLowerCase() === currentUser.name.toLowerCase())
-    );
-  };
+  const accessibleClients = useMemo(() => {
+    if (isAdmin) return clients;
+    return clients.filter(c => isClientAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName, currentUser));
+  }, [clients, isAdmin, currentUser]);
 
-  const accessibleClients = clients.filter(c => {
-    if (!isAdminOrTL && currentUser) {
-      return isAssignedToCurrentEmp(c.assignedEmployeeId, c.assignedEmployeeName);
-    }
-    return true;
-  });
+  const accessibleReturns = useMemo(() => {
+    if (isAdmin) return returns;
+    const myIds = new Set(accessibleClients.map(c => c.id));
+    return returns.filter(r => myIds.has(r.mcaClientId));
+  }, [returns, accessibleClients, isAdmin]);
 
   // Searching and filtering clients
   const filteredMcaClients = accessibleClients.filter(c => {
@@ -533,9 +521,9 @@ export default function V2MCA({
       {activeTab === 'dashboard' && (
         <McaDashboardView
           clients={accessibleClients}
-          returns={returns}
+          returns={accessibleReturns}
           auditors={auditors}
-          allEmployees={allEmployees}
+          allEmployees={mcaEmployees}
           currentUser={currentUser}
           onNavigateTab={(tab, typeFilter, empId) => {
             if (tab === 'companies') {
@@ -680,7 +668,7 @@ export default function V2MCA({
                     className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-bold"
                   >
                     <option value="">-- Select Handler --</option>
-                    {allEmployees.map(emp => (
+                    {mcaEmployees.map(emp => (
                       <option key={emp.id} value={emp.id}>{emp.name} ({emp.employeeCode || 'STF'})</option>
                     ))}
                   </select>
@@ -1440,7 +1428,7 @@ export default function V2MCA({
               </thead>
               <tbody className="divide-y divide-slate-150 dark:divide-slate-850">
                 {(() => {
-                  const pendingList = clients.filter(c => 
+                  const pendingList = accessibleClients.filter(c => 
                     (c.clientType === 'PRIVATE LIMITED COMPANY' || c.clientType === 'SECTION 8 NGO') &&
                     (c.isInc20aFiled !== true || c.isAdt1Filed !== true)
                   ).filter(c => 
@@ -1540,7 +1528,7 @@ export default function V2MCA({
                 defaultValue={transferringClient.assignedEmployeeId || ""}
                 onChange={(e) => {
                   const val = e.target.value;
-                  const employee = allEmployees.find(emp => emp.id === val);
+                  const employee = mcaEmployees.find(emp => emp.id === val);
                   if (employee) {
                     transferringClient.assignedEmployeeId = employee.id;
                     transferringClient.assignedEmployeeName = employee.name;
@@ -1552,7 +1540,7 @@ export default function V2MCA({
                 className="w-full p-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-bold font-sans text-xs"
               >
                 <option value="">-- No Assignment (Remove handler) --</option>
-                {allEmployees.map(emp => (
+                {mcaEmployees.map(emp => (
                   <option key={emp.id} value={emp.id}>{emp.name} ({emp.employeeCode || 'STF'})</option>
                 ))}
               </select>

@@ -138,3 +138,78 @@ export function canAccessNavigationTarget(emp: Employee | null, target: string):
 
   return true;
 }
+
+import { getEmployees, getCurrentSession } from './db';
+
+/**
+ * Returns all active employees who have access/permission to the specified module.
+ * Admin and Super Admin are always included.
+ */
+export function getEmployeesWithModuleAccess(moduleId: AppModuleId | string): Employee[] {
+  const allEmps = getEmployees().filter(emp => emp.status === 'active');
+  const modKey = (moduleId || '').toLowerCase().trim();
+
+  // Map common strings to standard AppModuleId
+  let targetModuleId: AppModuleId = 'gst';
+  if (modKey === 'gst') targetModuleId = 'gst';
+  else if (modKey === 'mca' || modKey === 'roc' || modKey === 'mca_roc') targetModuleId = 'mca_roc';
+  else if (modKey === 'itr' || modKey === 'income_tax' || modKey === 'tax_audit') targetModuleId = 'income_tax';
+  else if (modKey === 'trademark' || modKey === 'copyright') targetModuleId = 'trademark';
+  else if (modKey === 'trust' || modKey === 'ngo' || modKey === 'trust_ngo') targetModuleId = 'trust_ngo';
+  else if (modKey === 'dsc') targetModuleId = 'dsc';
+  else if (modKey === 'license' || modKey === 'registration_license' || modKey === 'other') targetModuleId = 'registration_license';
+  else if (modKey === 'sales' || modKey === 'sales_marketing') targetModuleId = 'sales_marketing';
+  else if (modKey === 'client_master') targetModuleId = 'client_master';
+  else targetModuleId = moduleId as AppModuleId;
+
+  const filtered = allEmps.filter(emp => {
+    if ((emp.role as string) === 'admin' || (emp.role as string) === 'super_admin') return true;
+    return hasModuleAccess(emp, targetModuleId);
+  });
+
+  // If no specific match, fallback to all active employees to avoid empty dropdowns
+  return filtered.length > 0 ? filtered : allEmps;
+}
+
+/**
+ * Returns all active employees eligible to handle a specific service category
+ * (e.g. GST, MCA, ITR, TRUST, DSC, TRADEMARK, OTHER).
+ */
+export function getEmployeesForServiceCategory(category: string): Employee[] {
+  const cat = (category || '').toUpperCase().trim();
+  if (cat.includes('GST')) return getEmployeesWithModuleAccess('gst');
+  if (cat.includes('MCA') || cat.includes('ROC') || cat.includes('COMPANY') || cat.includes('LLP')) return getEmployeesWithModuleAccess('mca_roc');
+  if (cat.includes('ITR') || cat.includes('INCOME') || cat.includes('TAX') || cat.includes('AUDIT')) return getEmployeesWithModuleAccess('income_tax');
+  if (cat.includes('TRUST') || cat.includes('NGO') || cat.includes('SOCIETY') || cat.includes('12A')) return getEmployeesWithModuleAccess('trust_ngo');
+  if (cat.includes('DSC') || cat.includes('DIGITAL')) return getEmployeesWithModuleAccess('dsc');
+  if (cat.includes('TRADEMARK') || cat.includes('TM') || cat.includes('COPYRIGHT')) return getEmployeesWithModuleAccess('trademark');
+  return getEmployeesWithModuleAccess('registration_license');
+}
+
+/**
+ * Checks if a client/entity record is allotted to the current logged-in employee.
+ * Admin and Super Admin always return true (can see everything).
+ */
+export function isClientAssignedToUser(
+  assignedEmployeeId?: string,
+  assignedEmployeeName?: string,
+  user: Employee | null = getCurrentSession()
+): boolean {
+  if (!user) return true;
+  if ((user.role as string) === 'admin' || (user.role as string) === 'super_admin') return true;
+
+  const currentUserId = (user.id || '').toLowerCase().trim();
+  const currentUserName = (user.name || '').toLowerCase().trim();
+
+  const assignedId = (assignedEmployeeId || '').toLowerCase().trim();
+  const assignedName = (assignedEmployeeName || '').toLowerCase().trim();
+
+  if (assignedId && currentUserId && assignedId === currentUserId) return true;
+  if (assignedName && currentUserName) {
+    if (assignedName === currentUserName) return true;
+    if (assignedName.includes(currentUserName) || currentUserName.includes(assignedName)) return true;
+  }
+
+  return false;
+}
+

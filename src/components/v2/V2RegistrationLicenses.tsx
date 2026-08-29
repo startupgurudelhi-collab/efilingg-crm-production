@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Award, Plus, Search, Download, Users, Edit2, Trash2, 
   X, CheckCircle, FileText, Building2, Store, Phone, Mail, MapPin
@@ -19,6 +19,7 @@ import {
   getV1Employees
 } from '../../lib/v2_db';
 import { getCurrentSession } from '../../lib/db';
+import { isClientAssignedToUser, getEmployeesWithModuleAccess } from '../../lib/permissions';
 
 interface V2RegistrationLicensesProps {
   key?: string;
@@ -73,13 +74,15 @@ export default function V2RegistrationLicenses({
     setCurrentUser(getCurrentSession());
   }, []);
 
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdmin = !currentUser || currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
+  const regEmployees = useMemo(() => getEmployeesWithModuleAccess('registration_licenses'), []);
 
-  const filteredOtherClients = otherClients.filter(ot => {
-    if (!isAdmin && currentUser) {
-      if (ot.assignedEmployeeId !== currentUser.id) return false;
-    }
+  const accessibleOtherClients = useMemo(() => {
+    if (isAdmin) return otherClients;
+    return otherClients.filter(c => isClientAssignedToUser(c.assignedEmployeeId, c.assignedEmployeeName, currentUser));
+  }, [otherClients, isAdmin, currentUser]);
 
+  const filteredOtherClients = accessibleOtherClients.filter(ot => {
     const matchesSearch = 
       ot.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       ot.serviceAvailed.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -100,10 +103,10 @@ export default function V2RegistrationLicenses({
   });
 
   // Summary Metrics
-  const totalCount = filteredOtherClients.length;
-  const msmeCount = otherClients.filter(c => c.serviceAvailed.toLowerCase().includes('msme')).length;
-  const iecCount = otherClients.filter(c => c.serviceAvailed.toLowerCase().includes('iec')).length;
-  const fssaiCount = otherClients.filter(c => c.serviceAvailed.toLowerCase().includes('fssai')).length;
+  const totalCount = accessibleOtherClients.length;
+  const msmeCount = accessibleOtherClients.filter(c => c.serviceAvailed.toLowerCase().includes('msme')).length;
+  const iecCount = accessibleOtherClients.filter(c => c.serviceAvailed.toLowerCase().includes('iec')).length;
+  const fssaiCount = accessibleOtherClients.filter(c => c.serviceAvailed.toLowerCase().includes('fssai')).length;
 
   const handleCreateOther = (e: React.FormEvent) => {
     e.preventDefault();
@@ -218,7 +221,7 @@ export default function V2RegistrationLicenses({
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
               }`}
             >
-              All Licenses ({otherClients.length})
+              All Licenses ({accessibleOtherClients.length})
             </button>
             <button
               onClick={() => setServiceFilter('MSME')}
@@ -353,7 +356,7 @@ export default function V2RegistrationLicenses({
                   className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-xs"
                 >
                   <option value="">-- Choose Handler --</option>
-                  {allEmployees.map(emp => (
+                  {regEmployees.map(emp => (
                     <option key={emp.id} value={emp.id}>{emp.name} ({emp.employeeCode || 'STF'})</option>
                   ))}
                 </select>
@@ -494,7 +497,7 @@ export default function V2RegistrationLicenses({
                 defaultValue={transferringOtherClient.assignedEmployeeId || ""}
                 onChange={(e) => {
                   const val = e.target.value;
-                  const employee = allEmployees.find(emp => emp.id === val);
+                  const employee = regEmployees.find(emp => emp.id === val);
                   if (employee) {
                     transferringOtherClient.assignedEmployeeId = employee.id;
                     transferringOtherClient.assignedEmployeeName = employee.name;
@@ -506,7 +509,7 @@ export default function V2RegistrationLicenses({
                 className="w-full p-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-bold text-xs"
               >
                 <option value="">-- No Assignment --</option>
-                {allEmployees.map(emp => (
+                {regEmployees.map(emp => (
                   <option key={emp.id} value={emp.id}>{emp.name} ({emp.employeeCode || 'STF'})</option>
                 ))}
               </select>

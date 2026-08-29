@@ -697,4 +697,66 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
     console.log(`[Meta WhatsApp Media Sent] Type: ${mediaType} | Recipient: ${mobile} | Status: ${finalStatus}`);
     return outboundMsg;
   }
+
+  /**
+   * Send Direct Text WhatsApp Message to any destination phone number
+   */
+  public async sendDirectTextMessageAsync(options: {
+    toPhone: string;
+    message: string;
+    senderId?: string;
+    senderName?: string;
+    conversationId?: string;
+  }): Promise<MessageV2> {
+    const cleanPhone = options.toPhone.replace(/\D/g, '');
+    const mobile = cleanPhone.startsWith('91') || cleanPhone.length > 10 ? cleanPhone : `91${cleanPhone}`;
+    const messageText = (options.message || '').trim();
+
+    if (!messageText) {
+      throw new Error('The message text is required');
+    }
+
+    const metaPayload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: mobile,
+      type: 'text',
+      text: {
+        preview_url: false,
+        body: messageText,
+      },
+    };
+
+    console.log(`[WHATSAPP_DIRECT_TEXT_DISPATCH] Sending text to ${mobile}...`);
+    const result = await this.executeMetaGraphApiRequest(metaPayload);
+
+    const msgId = `MSG-TASK-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    const resolvedMessageId = result.providerMessageId || `wamid.task-${Date.now()}`;
+    const finalStatus: DeliveryStatus = result.success ? 'SENT' : 'FAILED';
+
+    const outboundMsg: MessageV2 = {
+      id: msgId,
+      conversationId: options.conversationId || `CONV-EMP-${mobile}`,
+      direction: 'OUTBOUND',
+      senderId: options.senderId || 'SYSTEM_TASK_DISPATCHER',
+      senderName: options.senderName || 'Efilingg Task Dispatcher',
+      messageType: 'TEXT',
+      content: messageText,
+      whatsappMessageId: resolvedMessageId,
+      providerMessageId: resolvedMessageId,
+      meta_message_id: resolvedMessageId,
+      deliveryStatus: finalStatus,
+      timestamp: new Date().toISOString(),
+      rawProviderResponse: result.parsedResponse || result.responseBodyText,
+      providerSuccess: result.success,
+      providerErrorCode: result.errorCode,
+      providerErrorMessage: result.errorMessage,
+      httpStatus: result.httpStatusCode,
+    };
+
+    saveMessage(outboundMsg);
+
+    console.log(`[Meta WhatsApp Direct Text Sent] To: ${mobile} | Status: ${finalStatus} | Msg: "${messageText.substring(0, 50)}..."`);
+    return outboundMsg;
+  }
 }

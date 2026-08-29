@@ -256,6 +256,79 @@ block1Router.post('/v2/whatsapp/send-reminder', async (req: Request, res: Respon
 });
 
 /**
+ * Send WhatsApp Direct Text Message (POST /api/v2/whatsapp/send-to-phone, POST /api/whatsapp/send-to-phone)
+ */
+const handleDirectTextSend = async (req: Request, res: Response) => {
+  try {
+    const { toPhone, message, senderId, senderName, conversationId } = req.body;
+    if (!toPhone || !message) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required parameters: toPhone, message',
+      });
+    }
+
+    const resultMessage = await WhatsAppService.sendDirectTextMessageAsync({
+      toPhone,
+      message,
+      senderId,
+      senderName,
+      conversationId,
+    });
+
+    return res.status(200).json({ success: true, message: resultMessage });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
+block1Router.post('/v2/whatsapp/send-to-phone', handleDirectTextSend);
+block1Router.post('/whatsapp/send-to-phone', handleDirectTextSend);
+
+/**
+ * Send WhatsApp Task Assignment Intimation (POST /api/v2/whatsapp/send-task-intimation, POST /api/whatsapp/send-task-intimation)
+ */
+const handleTaskIntimationSend = async (req: Request, res: Response) => {
+  try {
+    const {
+      assigneePhone,
+      assigneeName,
+      creatorName,
+      taskTitle,
+      taskDescription,
+      priority,
+      clientName,
+      senderId,
+    } = req.body;
+
+    if (!assigneePhone || !taskTitle) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required parameters: assigneePhone, taskTitle',
+      });
+    }
+
+    const resultMessage = await WhatsAppService.sendTaskIntimationAsync({
+      assigneePhone,
+      assigneeName: assigneeName || 'Associate',
+      creatorName: creatorName || 'Master Admin',
+      taskTitle,
+      taskDescription,
+      priority: priority || 'High',
+      clientName,
+      senderId,
+    });
+
+    return res.status(200).json({ success: true, message: resultMessage });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
+block1Router.post('/v2/whatsapp/send-task-intimation', handleTaskIntimationSend);
+block1Router.post('/whatsapp/send-task-intimation', handleTaskIntimationSend);
+
+/**
  * Send WhatsApp Media Message (POST /api/v2/whatsapp/send-media)
  * Supports Images, Documents, Audio, Video
  */

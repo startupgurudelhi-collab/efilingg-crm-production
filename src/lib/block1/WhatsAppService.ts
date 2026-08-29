@@ -169,4 +169,95 @@ export class WhatsAppService {
       senderName: 'Reminder Engine',
     });
   }
+
+  /**
+   * Send Direct Text WhatsApp Message to any phone number
+   */
+  public static async sendDirectTextMessageAsync(options: {
+    toPhone: string;
+    message: string;
+    senderId?: string;
+    senderName?: string;
+    conversationId?: string;
+  }): Promise<MessageV2> {
+    return WhatsAppProviderFactory.getProvider().sendDirectTextMessageAsync(options);
+  }
+
+  /**
+   * Send Task Assignment WhatsApp Intimation Notification to Employee
+   * Template:
+   * Dear Mr. X 
+   * 
+   * Urgent Notification
+   * 
+   * Mr. Y has assign a task for you, kindly compile within the time limit.
+   * 
+   * task details: {taskDetails}
+   * Priority: {High / Medium / Low}
+   * 
+   * If task completed, then Mark as Done in your crm.
+   */
+  public static async sendTaskIntimationAsync(params: {
+    assigneePhone: string;
+    assigneeName: string;
+    creatorName: string;
+    taskTitle: string;
+    taskDescription?: string;
+    priority?: string;
+    clientName?: string;
+    senderId?: string;
+  }): Promise<MessageV2> {
+    const formatSalutationName = (rawName: string) => {
+      const trimmed = (rawName || '').trim();
+      if (!trimmed) return 'Associate';
+      if (/^(Mr\.|Ms\.|Mrs\.|Dr\.|Adv\.|CA\.|CS\.)\s/i.test(trimmed)) {
+        return trimmed;
+      }
+      return `Mr. ${trimmed}`;
+    };
+
+    const recipientGreeting = formatSalutationName(params.assigneeName);
+    const creatorGreeting = formatSalutationName(params.creatorName);
+
+    // Normalize Priority
+    let formattedPriority = 'Medium';
+    const rawPriority = (params.priority || '').toLowerCase();
+    if (rawPriority.includes('crit') || rawPriority.includes('urg') || rawPriority.includes('high')) {
+      formattedPriority = 'High';
+    } else if (rawPriority.includes('low')) {
+      formattedPriority = 'Low';
+    } else {
+      formattedPriority = 'Medium';
+    }
+
+    // Build Task Details string
+    let details = params.taskTitle.trim();
+    if (params.clientName && !details.toLowerCase().includes(params.clientName.toLowerCase())) {
+      details = `${details} of ${params.clientName}`;
+    }
+    if (params.taskDescription && params.taskDescription.trim()) {
+      const cleanDesc = params.taskDescription.replace(/^\[(CRITICAL|HIGH|MEDIUM|LOW|URGENT)\]\s*/i, '').trim();
+      if (cleanDesc && !details.includes(cleanDesc)) {
+        details = `${details} (${cleanDesc})`;
+      }
+    }
+
+    const message = `Dear ${recipientGreeting} 
+
+Urgent Notification
+
+${creatorGreeting} has assign a task for you, kindly compile within the time limit.
+
+task details: ${details}
+Priority: ${formattedPriority}
+
+If task completed, then Mark as Done in your crm.`;
+
+    return WhatsAppProviderFactory.getProvider().sendDirectTextMessageAsync({
+      toPhone: params.assigneePhone,
+      message,
+      senderId: params.senderId || 'SYSTEM_TASK_NOTIFICATION',
+      senderName: params.creatorName || 'Efilingg Task Notification',
+    });
+  }
 }

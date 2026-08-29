@@ -19,8 +19,10 @@ import {
   CheckSquare, Plus, User, FileText, Search, Clock, 
   AlertTriangle, CheckCircle2, Filter, Users, Calendar, 
   Flame, TrendingUp, Award, Layers, ArrowRight, BarChart3, 
-  UserCheck, ShieldCheck, ChevronRight, X, Sparkles, RefreshCw
+  UserCheck, ShieldCheck, ChevronRight, X, Sparkles, RefreshCw,
+  MessageSquare, Send, Zap
 } from 'lucide-react';
+import { dispatchTaskWhatsAppNotification, formatTaskWhatsAppMessage } from '../../lib/taskWhatsAppNotification';
 
 export interface V2TasksProps {
   key?: React.Key;
@@ -73,6 +75,7 @@ export default function V2Tasks({ initialFilter }: V2TasksProps) {
   const [newTaskAssignee, setNewTaskAssignee] = useState(rawEmployees[0]?.id || '');
   const [newTaskDueDate, setNewTaskDueDate] = useState(todayStr);
   const [newTaskPriority, setNewTaskPriority] = useState<'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'>('HIGH');
+  const [showWhatsAppPreviewInModal, setShowWhatsAppPreviewInModal] = useState(false);
 
   // Handle incoming initialFilter changes
   useEffect(() => {
@@ -347,11 +350,26 @@ export default function V2Tasks({ initialFilter }: V2TasksProps) {
   const handleReassignTask = (taskId: string, newAssigneeId: string) => {
     const emp = rawEmployees.find(e => e.id === newAssigneeId);
     if (!emp) return;
+    const targetTask = tasks.find(t => t.id === taskId);
     const updated = tasks.map(t => t.id === taskId ? { ...t, assignedTo: emp.id, assignedToName: emp.name } : t);
     setTasks(updated);
     setStorageString('efilingg_crm_v2_tasks', JSON.stringify(updated));
     if (selectedTaskDetail?.id === taskId) {
       setSelectedTaskDetail({ ...selectedTaskDetail, assignedTo: emp.id, assignedToName: emp.name });
+    }
+
+    if (targetTask) {
+      dispatchTaskWhatsAppNotification({
+        taskTitle: targetTask.title,
+        taskDescription: targetTask.description,
+        assignedToId: emp.id,
+        assignedToName: emp.name,
+        createdById: currentUser?.id || 'ADMIN',
+        createdByName: currentUser?.name || 'Master Admin',
+        priority: targetTask.priority || 'High',
+        clientName: targetTask.clientName,
+        dueDate: targetTask.dueDate,
+      }).catch(err => console.warn('[Reassign WhatsApp Dispatch Error]:', err));
     }
   };
 
@@ -364,6 +382,7 @@ export default function V2Tasks({ initialFilter }: V2TasksProps) {
     const emp = rawEmployees.find(e => e.id === bulkAssigneeId);
     if (!emp) return;
 
+    const matchedTasks = tasks.filter(t => selectedTaskIds.includes(t.id));
     const updated = tasks.map(t => {
       if (selectedTaskIds.includes(t.id)) {
         return { ...t, assignedTo: emp.id, assignedToName: emp.name };
@@ -375,6 +394,20 @@ export default function V2Tasks({ initialFilter }: V2TasksProps) {
     setStorageString('efilingg_crm_v2_tasks', JSON.stringify(updated));
     setSelectedTaskIds([]);
     setShowBulkAssignModal(false);
+
+    // Send WhatsApp notification for batch assigned tasks
+    if (matchedTasks.length > 0) {
+      const summaryTitles = matchedTasks.map(t => t.title).join(', ');
+      dispatchTaskWhatsAppNotification({
+        taskTitle: matchedTasks.length === 1 ? matchedTasks[0].title : `${matchedTasks.length} Compliance Tasks (${summaryTitles})`,
+        taskDescription: `Batch assigned ${matchedTasks.length} tasks`,
+        assignedToId: emp.id,
+        assignedToName: emp.name,
+        createdById: currentUser?.id || 'ADMIN',
+        createdByName: currentUser?.name || 'Master Admin',
+        priority: 'High',
+      }).catch(err => console.warn('[Bulk Assign WhatsApp Dispatch Error]:', err));
+    }
   };
 
   const getPriorityBadgeClass = (priority: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW') => {
@@ -1303,10 +1336,56 @@ export default function V2Tasks({ initialFilter }: V2TasksProps) {
                 <Flame className="h-5 w-5 text-amber-500" />
                 <h3 className="font-extrabold text-sm uppercase text-slate-900 dark:text-white">Create Operational Task</h3>
               </div>
-              <button type="button" onClick={() => setShowCreateTaskModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
+              <button type="button" onClick={() => setShowCreateTaskModal(false)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X className="h-4 w-4" />
               </button>
             </div>
+
+            {/* WhatsApp Auto-Intimation Banner */}
+            {(() => {
+              const targetEmp = rawEmployees.find(e => e.id === newTaskAssignee);
+              const previewMsg = formatTaskWhatsAppMessage({
+                assigneeName: targetEmp?.name || 'Associate',
+                creatorName: currentUser?.name || 'Master Admin',
+                taskTitle: newTaskTitle || 'Please prepare GST return / compliance task',
+                taskDescription: newTaskDesc,
+                priority: newTaskPriority,
+              });
+
+              return (
+                <div className="space-y-2">
+                  <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl flex items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
+                      <MessageSquare className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span className="text-[11px]">
+                        <strong>WhatsApp Intimation: </strong>
+                        {targetEmp?.mobile ? (
+                          <>Sends instant message to <strong>{targetEmp.name}</strong> ({targetEmp.mobile})</>
+                        ) : (
+                          <span className="text-amber-700 dark:text-amber-400">No mobile number for {targetEmp?.name || 'selected staff'}</span>
+                        )}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowWhatsAppPreviewInModal(!showWhatsAppPreviewInModal)}
+                      className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline shrink-0 cursor-pointer"
+                    >
+                      {showWhatsAppPreviewInModal ? 'Hide Template' : 'View Template'}
+                    </button>
+                  </div>
+
+                  {showWhatsAppPreviewInModal && (
+                    <div className="p-3 bg-slate-900 text-slate-100 rounded-xl text-[10px] font-mono whitespace-pre-wrap border border-slate-800 shadow-inner">
+                      <div className="text-[9px] text-emerald-400 font-bold mb-1 uppercase tracking-wider flex items-center gap-1">
+                        <Send className="h-3 w-3" /> WhatsApp Template Preview
+                      </div>
+                      {previewMsg}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             <div className="space-y-3">
               <div className="space-y-1">

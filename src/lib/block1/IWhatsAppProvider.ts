@@ -40,6 +40,14 @@ export interface SendMediaOptions {
   senderName?: string;
 }
 
+export interface SendDirectTextOptions {
+  toPhone: string;
+  message: string;
+  senderId?: string;
+  senderName?: string;
+  conversationId?: string;
+}
+
 export type WhatsAppProviderName = 'META_CLOUD_API';
 
 export interface IWhatsAppProvider {
@@ -84,4 +92,9 @@ export interface IWhatsAppProvider {
    * Sends media message (Images, Documents, Audio, Video)
    */
   sendMediaMessageAsync(options: SendMediaOptions): Promise<MessageV2>;
+
+  /**
+   * Sends direct text WhatsApp message to a specific phone number
+   */
+  sendDirectTextMessageAsync(options: SendDirectTextOptions): Promise<MessageV2>;
 }

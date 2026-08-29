@@ -5,6 +5,7 @@
 
 // Isolated V2 Database & Storage Manager for CRM V.2 Implementation
 import { getStorageString, setStorageString } from './db';
+import { dispatchTaskWhatsAppNotification } from './taskWhatsAppNotification';
 export interface V2Auditor {
   id: string;
   name: string;
@@ -983,6 +984,24 @@ export function addV2Task(task: Omit<V2Task, 'id' | 'createdAt'>): V2Task {
   };
   list.push(newItem);
   saveV2Items(KEY_V2_TASKS, list);
+
+  // Dispatch WhatsApp Task Intimation Notification to Assignee
+  try {
+    dispatchTaskWhatsAppNotification({
+      taskTitle: newItem.title,
+      taskDescription: newItem.description,
+      assignedToId: newItem.assignedTo,
+      assignedToName: newItem.assignedToName,
+      createdById: newItem.createdBy,
+      createdByName: newItem.createdByName,
+      priority: newItem.priority || (newItem.description?.includes('[CRITICAL]') ? 'Critical' : newItem.description?.includes('[LOW]') ? 'Low' : newItem.description?.includes('[MEDIUM]') ? 'Medium' : 'High'),
+      clientName: newItem.clientName,
+      dueDate: newItem.dueDate
+    }).catch(err => console.warn('[addV2Task WhatsApp Intimation Error]:', err));
+  } catch (err) {
+    console.warn('[addV2Task WhatsApp Intimation Handler Error]:', err);
+  }
+
   return newItem;
 }
 export function completeV2Task(id: string) {

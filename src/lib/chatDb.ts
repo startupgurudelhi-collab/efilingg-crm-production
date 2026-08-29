@@ -14,6 +14,7 @@ import {
 } from '../types/chat';
 import { Employee } from '../types';
 import { getEmployees, getISTISOString, crmMemoryStore, setStorageString } from './db';
+import { dispatchTaskWhatsAppNotification } from './taskWhatsAppNotification';
 
 const STORAGE_PREFIX = 'efilingg_crm_';
 const KEYS = {
@@ -482,6 +483,21 @@ export function createChatTask(
   );
 
   addChatAuditLog(createdBy, creator?.name || 'TL', 'create_task', newTask.id, `Created task for ${newTask.assignedToName}: ${title}`);
+
+  // Dispatch WhatsApp Task Intimation Notification to Assignee
+  try {
+    dispatchTaskWhatsAppNotification({
+      taskTitle: title,
+      assignedToId: assignedTo,
+      assignedToName: newTask.assignedToName,
+      createdById: createdBy,
+      createdByName: creator?.name || 'Team Lead',
+      priority: 'High',
+      dueDate: dueDate,
+    }).catch(err => console.warn('[createChatTask WhatsApp Intimation Error]:', err));
+  } catch (err) {
+    console.warn('[createChatTask WhatsApp Dispatch Error]:', err);
+  }
 
   return newTask;
 }

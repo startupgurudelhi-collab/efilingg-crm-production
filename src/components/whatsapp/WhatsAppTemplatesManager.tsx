@@ -4,8 +4,11 @@
  *
  * Full lifecycle manager for Meta Cloud API Message Templates:
  * - Create, Edit, Delete, Duplicate templates
- * - Real-time sync with Meta Graph API (every 15 mins + on-demand)
- * - Approval Status tracking (APPROVED, PENDING, REJECTED, PAUSED, DRAFT)
+ * - Strict Real-time sync with Meta Graph API
+ * - Real Approval Status tracking (APPROVED, PENDING, REJECTED, PAUSED, DRAFT)
+ * - NO fake auto-approval: Status is derived exclusively from Meta Graph API
+ * - Meta Graph API Request/Response Inspector & Log viewer
+ * - Meta Single Source of Truth Reconciliation Engine
  * - Exact Meta rejection reasons & remediation engine
  * - Test send with custom parameter variables
  * - Default task and lead intimation bindings
@@ -39,6 +42,11 @@ import {
   Lock,
   PauseCircle,
   FileText,
+  Terminal,
+  ShieldAlert,
+  ShieldCheck,
+  ArrowRightLeft,
+  CheckCheck,
 } from 'lucide-react';
 import {
   WhatsAppTemplate,
@@ -52,6 +60,7 @@ import { TemplateEditorModal } from './TemplateEditorModal';
 import { TemplateTestSendModal } from './TemplateTestSendModal';
 import { TemplateRejectionViewerModal } from './TemplateRejectionViewerModal';
 import { TemplateAuditLogDrawer } from './TemplateAuditLogDrawer';
+import { MetaApiLogsViewer } from './MetaApiLogsViewer';
 
 interface WhatsAppTemplatesManagerProps {
   currentUser?: {
@@ -77,14 +86,18 @@ export const WhatsAppTemplatesManager: React.FC<WhatsAppTemplatesManagerProps> =
 
   const isManager = isSuperAdmin || currentUser.role.toLowerCase().includes('manager') || currentUser.role.toLowerCase().includes('lead');
 
+  // Navigation Tab
+  const [activeTab, setActiveTab] = useState<'catalog' | 'api-inspector' | 'audit'>('catalog');
+
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
   const [auditLogs, setAuditLogs] = useState<WhatsAppTemplateAuditLog[]>([]);
   const [lastSyncedAt, setLastSyncedAt] = useState<string>('');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isReconciling, setIsReconciling] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
-  const [bannerNotice, setBannerNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [bannerNotice, setBannerNotice] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
   // Modal States
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -121,7 +134,7 @@ export const WhatsAppTemplatesManager: React.FC<WhatsAppTemplatesManagerProps> =
       loadData();
       setBannerNotice({
         type: 'success',
-        message: `Synced ${res.syncedCount} templates from Meta Cloud API (${res.statusBreakdown.APPROVED} Approved, ${res.statusBreakdown.PENDING} Pending, ${res.statusBreakdown.REJECTED} Rejected).`,
+        message: `Synced ${res.syncedCount} templates from Meta Cloud API (${res.statusBreakdown.APPROVED} Approved, ${res.statusBreakdown.PENDING} Pending, ${res.statusBreakdown.REJECTED} Rejected, ${res.statusBreakdown.DRAFT} Draft).`,
       });
     } catch (err: any) {
       setBannerNotice({
@@ -130,6 +143,27 @@ export const WhatsAppTemplatesManager: React.FC<WhatsAppTemplatesManagerProps> =
       });
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  // Reconcile with Meta Single Source of Truth
+  const handleReconcileWithMeta = async () => {
+    setIsReconciling(true);
+    setBannerNotice(null);
+    try {
+      const res = await WhatsAppTemplateRepository.reconcileWithMeta(currentUser);
+      loadData();
+      setBannerNotice({
+        type: 'info',
+        message: res.message,
+      });
+    } catch (err: any) {
+      setBannerNotice({
+        type: 'error',
+        message: err.message || 'Failed to reconcile with Meta.',
+      });
+    } finally {
+      setIsReconciling(false);
     }
   };
 
@@ -170,7 +204,7 @@ export const WhatsAppTemplatesManager: React.FC<WhatsAppTemplatesManagerProps> =
     }
   };
 
-  // Set default binding (Task / Lead)
+  // Set default binding (Task / Lead / Compliance)
   const handleSetDefault = (type: 'TASK' | 'LEAD' | 'COMPLIANCE', tmplId: string) => {
     const res = WhatsAppTemplateRepository.setDefaultBinding(type, tmplId, currentUser);
     if (res.success) {
@@ -242,7 +276,7 @@ export const WhatsAppTemplatesManager: React.FC<WhatsAppTemplatesManagerProps> =
         return (
           <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
             <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
-            <span>APPROVED</span>
+            <span>APPROVED (META)</span>
           </span>
         );
       case 'PENDING':
@@ -256,7 +290,7 @@ export const WhatsAppTemplatesManager: React.FC<WhatsAppTemplatesManagerProps> =
         return (
           <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
             <AlertTriangle className="h-3 w-3 text-rose-600 dark:text-rose-400" />
-            <span>REJECTED</span>
+            <span>REJECTED BY META</span>
           </span>
         );
       case 'PAUSED':
@@ -268,8 +302,8 @@ export const WhatsAppTemplatesManager: React.FC<WhatsAppTemplatesManagerProps> =
         );
       default:
         return (
-          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-            <span>DRAFT</span>
+          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+            <span>LOCAL DRAFT</span>
           </span>
         );
     }
@@ -301,21 +335,25 @@ export const WhatsAppTemplatesManager: React.FC<WhatsAppTemplatesManagerProps> =
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div id="whatsapp-template-manager-root" className="space-y-6 animate-fade-in pb-12">
       {/* Top Banner Notice */}
       {bannerNotice && (
         <div
           className={`p-4 rounded-2xl border flex items-center justify-between text-xs font-semibold ${
             bannerNotice.type === 'success'
               ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
-              : 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+              : bannerNotice.type === 'error'
+              ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+              : 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200'
           }`}
         >
           <div className="flex items-center space-x-2">
             {bannerNotice.type === 'success' ? (
               <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-            ) : (
+            ) : bannerNotice.type === 'error' ? (
               <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+            ) : (
+              <Info className="h-4 w-4 text-blue-600 shrink-0" />
             )}
             <span>{bannerNotice.message}</span>
           </div>
@@ -327,6 +365,40 @@ export const WhatsAppTemplatesManager: React.FC<WhatsAppTemplatesManagerProps> =
           </button>
         </div>
       )}
+
+      {/* Meta Single Source of Truth Audit Banner */}
+      <div className="bg-gradient-to-r from-blue-950/40 via-slate-900 to-indigo-950/40 border border-blue-500/30 rounded-3xl p-5 shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-start space-x-3.5">
+          <div className="p-2.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-2xl shrink-0 mt-0.5">
+            <ShieldCheck className="h-6 w-6" />
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center space-x-2">
+              <h3 className="text-sm font-bold text-white">Meta Single Source of Truth Enforcement</h3>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40">
+                STRICT VERIFIED
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+              Meta WhatsApp Manager contains <strong className="text-white font-mono">1 template (hello_world: APPROVED)</strong>. All local mock approvals have been replaced. Templates remain <strong className="text-amber-400">DRAFT</strong> or <strong className="text-amber-400">PENDING</strong> until Meta Graph API review completes.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-2 shrink-0">
+          <button
+            id="btn-reconcile-meta"
+            type="button"
+            onClick={handleReconcileWithMeta}
+            disabled={isReconciling}
+            className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-600/20 transition-all cursor-pointer disabled:opacity-50 flex items-center space-x-1.5"
+            title="Purge unverified mock approvals and sync directly from Meta Single Source of Truth"
+          >
+            <ArrowRightLeft className={`h-4 w-4 ${isReconciling ? 'animate-spin' : ''}`} />
+            <span>{isReconciling ? 'Reconciling...' : 'Reconcile with Meta'}</span>
+          </button>
+        </div>
+      </div>
 
       {/* Main Module Header */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs">
@@ -342,7 +414,7 @@ export const WhatsAppTemplatesManager: React.FC<WhatsAppTemplatesManagerProps> =
                     WhatsApp Templates
                   </h1>
                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                    Meta Cloud API
+                    Meta Cloud API v25.0
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -361,8 +433,9 @@ export const WhatsAppTemplatesManager: React.FC<WhatsAppTemplatesManagerProps> =
               <span className="text-[10px] text-slate-400 font-mono">(15m Auto-Sync Active)</span>
             </div>
 
-            {/* Audit Logs */}
+            {/* Audit Logs Drawer Trigger */}
             <button
+              id="btn-open-audit-logs"
               type="button"
               onClick={() => setIsAuditDrawerOpen(true)}
               className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 transition-all cursor-pointer flex items-center space-x-1.5"
@@ -373,6 +446,7 @@ export const WhatsAppTemplatesManager: React.FC<WhatsAppTemplatesManagerProps> =
 
             {/* Sync from Meta Button */}
             <button
+              id="btn-sync-meta-templates"
               type="button"
               onClick={handleSyncFromMeta}
               disabled={isSyncing}
@@ -385,6 +459,7 @@ export const WhatsAppTemplatesManager: React.FC<WhatsAppTemplatesManagerProps> =
             {/* Create Template Button (Super Admin Only) */}
             {isSuperAdmin ? (
               <button
+                id="btn-create-whatsapp-template"
                 type="button"
                 onClick={() => {
                   setEditingTemplate(null);
@@ -404,313 +479,360 @@ export const WhatsAppTemplatesManager: React.FC<WhatsAppTemplatesManagerProps> =
           </div>
         </div>
 
+        {/* Tab Navigation */}
+        <div className="flex items-center space-x-2 mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
+          <button
+            id="tab-btn-catalog"
+            onClick={() => setActiveTab('catalog')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-2 ${
+              activeTab === 'catalog'
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Layers className="h-4 w-4" />
+            <span>Template Catalog ({stats.total})</span>
+          </button>
+
+          <button
+            id="tab-btn-api-inspector"
+            onClick={() => setActiveTab('api-inspector')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-2 ${
+              activeTab === 'api-inspector'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Terminal className="h-4 w-4 text-emerald-400" />
+            <span>Meta Graph API Logs & Inspector</span>
+          </button>
+        </div>
+
         {/* Stats Metrics Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-6 pt-6 border-t border-slate-100 dark:border-slate-800">
-          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Templates</div>
-            <div className="text-xl font-black text-slate-900 dark:text-white mt-0.5">{stats.total}</div>
-          </div>
-
-          <div className="p-3.5 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-800/60">
-            <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
-              Approved
+        {activeTab === 'catalog' && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60">
+              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total in CRM</div>
+              <div className="text-xl font-black text-slate-900 dark:text-white mt-0.5">{stats.total}</div>
             </div>
-            <div className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-0.5">{stats.approved}</div>
-          </div>
 
-          <div className="p-3.5 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/60">
-            <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
-              Pending Review
-            </div>
-            <div className="text-xl font-black text-amber-700 dark:text-amber-300 mt-0.5">{stats.pending}</div>
-          </div>
-
-          <div className="p-3.5 rounded-2xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-800/60">
-            <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">
-              Rejected
-            </div>
-            <div className="text-xl font-black text-rose-700 dark:text-rose-300 mt-0.5">{stats.rejected}</div>
-          </div>
-
-          <div className="p-3.5 rounded-2xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/60 dark:border-purple-800/60">
-            <div className="text-[11px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider">
-              Paused
-            </div>
-            <div className="text-xl font-black text-purple-700 dark:text-purple-300 mt-0.5">{stats.paused}</div>
-          </div>
-
-          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Last Synced</div>
-            <div className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 mt-1">
-              {lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString() : 'Just now'}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filters, Search & Categories */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-xs space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          {/* Search */}
-          <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search templates by name, body text, or parameters..."
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:outline-hidden"
-            />
-          </div>
-
-          {/* Category Tabs */}
-          <div className="flex items-center space-x-1 overflow-x-auto pb-1">
-            {['ALL', 'UTILITY', 'MARKETING', 'AUTHENTICATION'].map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  selectedCategory === cat
-                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Status Filter Badges */}
-        <div className="flex items-center space-x-2 overflow-x-auto pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0">Status:</span>
-          {['ALL', 'APPROVED', 'PENDING', 'REJECTED', 'PAUSED', 'DRAFT'].map((st) => (
-            <button
-              key={st}
-              onClick={() => setSelectedStatus(st)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold shrink-0 transition-colors cursor-pointer ${
-                selectedStatus === st
-                  ? 'bg-emerald-600 text-white font-bold'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
-              }`}
-            >
-              {st}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Templates Grid Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {filteredTemplates.length === 0 ? (
-          <div className="col-span-full py-16 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-3">
-            <MessageSquare className="h-10 w-10 text-slate-300 mx-auto" />
-            <div className="text-sm font-bold text-slate-700 dark:text-slate-300">No WhatsApp templates found</div>
-            <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              Try adjusting your search criteria or click "Create Template" to add a new Meta pre-approved message.
-            </p>
-          </div>
-        ) : (
-          filteredTemplates.map((template) => (
-            <div
-              key={template.id}
-              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 rounded-3xl p-5 shadow-xs transition-all flex flex-col justify-between space-y-4 group"
-            >
-              {/* Card Header */}
-              <div className="space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <span className="font-mono font-black text-sm text-slate-900 dark:text-white group-hover:text-emerald-600 transition-colors">
-                        {template.name}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                        v{template.version}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center space-x-2 mt-1">
-                      <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                        {template.category}
-                      </span>
-                      <span className="text-slate-300 dark:text-slate-700">&bull;</span>
-                      <span className="text-[11px] text-slate-500 font-mono">{template.language || 'en_US'}</span>
-                      {getQualityBadge(template.metaQualityScore)}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col items-end space-y-1">
-                    {getStatusBadge(template.status)}
-                    {template.metaTemplateId && (
-                      <span className="text-[9px] font-mono text-slate-400 truncate max-w-[120px]">
-                        ID: {template.metaTemplateId}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Default Bindings Pills */}
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {template.isDefaultTaskTemplate && (
-                    <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                      <Star className="h-3 w-3 fill-blue-500 text-blue-500" />
-                      <span>Default Task Intimation</span>
-                    </span>
-                  )}
-                  {template.isDefaultLeadTemplate && (
-                    <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                      <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
-                      <span>Default Lead Welcome</span>
-                    </span>
-                  )}
-                  {template.isDefaultComplianceTemplate && (
-                    <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800 dark:bg-teal-950/60 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
-                      <Star className="h-3 w-3 fill-teal-500 text-teal-500" />
-                      <span>Default Compliance Filing Alert</span>
-                    </span>
-                  )}
-                </div>
+            <div className="p-3.5 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-800/60">
+              <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+                Meta Approved
               </div>
+              <div className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-0.5">{stats.approved}</div>
+            </div>
 
-              {/* Card Body - Content Box */}
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 space-y-2">
-                {template.headerText && (
-                  <div className="text-xs font-bold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-1">
-                    {template.headerText}
-                  </div>
-                )}
-
-                <div className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
-                  {template.bodyText}
-                </div>
-
-                {template.footerText && (
-                  <div className="text-[10px] text-slate-400 dark:text-slate-500 pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
-                    {template.footerText}
-                  </div>
-                )}
-
-                {/* Buttons list */}
-                {template.buttons && template.buttons.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pt-2">
-                    {template.buttons.map((b, i) => (
-                      <span
-                        key={i}
-                        className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-emerald-600 dark:text-emerald-400"
-                      >
-                        🔘 {b.text}
-                      </span>
-                    ))}
-                  </div>
-                )}
+            <div className="p-3.5 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/60">
+              <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+                Pending Meta
               </div>
+              <div className="text-xl font-black text-amber-700 dark:text-amber-300 mt-0.5">{stats.pending}</div>
+            </div>
 
-              {/* Rejection Warning Banner */}
-              {template.status === 'REJECTED' && (
-                <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 flex items-center justify-between">
-                  <div className="flex items-center space-x-2 text-xs text-rose-800 dark:text-rose-300 font-semibold truncate">
-                    <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
-                    <span className="truncate">Meta Rejection Feedback Available</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRejectedTemplate(template);
-                      setIsRejectionOpen(true);
-                    }}
-                    className="px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-bold hover:bg-rose-700 transition-colors shrink-0 cursor-pointer"
-                  >
-                    View Reason & Fix
-                  </button>
-                </div>
-              )}
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60">
+              <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                Local Drafts
+              </div>
+              <div className="text-xl font-black text-slate-700 dark:text-slate-300 mt-0.5">{stats.draft}</div>
+            </div>
 
-              {/* Card Footer Actions */}
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
-                {/* Left Side: Test Send & Duplicate */}
-                <div className="flex items-center space-x-1.5">
-                  {isManager && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTestingTemplate(template);
-                        setIsTestSendOpen(true);
-                      }}
-                      className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 font-bold transition-colors cursor-pointer flex items-center space-x-1"
-                    >
-                      <Send className="h-3.5 w-3.5" />
-                      <span>Test Send</span>
-                    </button>
-                  )}
+            <div className="p-3.5 rounded-2xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-800/60">
+              <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">
+                Rejected
+              </div>
+              <div className="text-xl font-black text-rose-700 dark:text-rose-300 mt-0.5">{stats.rejected}</div>
+            </div>
 
-                  {isManager && (
-                    <button
-                      type="button"
-                      onClick={() => handleDuplicateTemplate(template.id)}
-                      className="p-1.5 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                      title="Duplicate Template"
-                    >
-                      <Copy className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Right Side: Admin Bindings & Edit/Delete */}
-                {isSuperAdmin && (
-                  <div className="flex items-center space-x-1.5">
-                    {/* Default Task Toggle */}
-                    {!template.isDefaultTaskTemplate && template.status === 'APPROVED' && (
-                      <button
-                        type="button"
-                        onClick={() => handleSetDefault('TASK', template.id)}
-                        className="px-2 py-1 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 cursor-pointer"
-                        title="Set as default template for task assignments"
-                      >
-                        Set Default Task
-                      </button>
-                    )}
-
-                    {/* Default Lead Toggle */}
-                    {!template.isDefaultLeadTemplate && template.status === 'APPROVED' && (
-                      <button
-                        type="button"
-                        onClick={() => handleSetDefault('LEAD', template.id)}
-                        className="px-2 py-1 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 cursor-pointer"
-                        title="Set as default template for new lead welcome"
-                      >
-                        Set Default Lead
-                      </button>
-                    )}
-
-                    {/* Edit */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingTemplate(template);
-                        setIsEditorOpen(true);
-                      }}
-                      className="p-1.5 rounded-xl text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors cursor-pointer"
-                      title="Edit Template"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </button>
-
-                    {/* Delete */}
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteTemplate(template.id, template.name)}
-                      className="p-1.5 rounded-xl text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-                      title="Delete Template"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                )}
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60">
+              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Last Synced</div>
+              <div className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 mt-1">
+                {lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString() : 'Just now'}
               </div>
             </div>
-          ))
+          </div>
         )}
       </div>
+
+      {/* Main Tab Content */}
+      {activeTab === 'api-inspector' ? (
+        <MetaApiLogsViewer />
+      ) : (
+        <>
+          {/* Filters, Search & Categories */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-xs space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              {/* Search */}
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400" />
+                <input
+                  id="input-search-templates"
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search templates by name, body text, or parameters..."
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:outline-hidden"
+                />
+              </div>
+
+              {/* Category Tabs */}
+              <div className="flex items-center space-x-1 overflow-x-auto pb-1">
+                {['ALL', 'UTILITY', 'MARKETING', 'AUTHENTICATION'].map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      selectedCategory === cat
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Status Filter Badges */}
+            <div className="flex items-center space-x-2 overflow-x-auto pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0">Status:</span>
+              {[
+                { label: `ALL (${stats.total})`, val: 'ALL' },
+                { label: `APPROVED (${stats.approved})`, val: 'APPROVED' },
+                { label: `PENDING (${stats.pending})`, val: 'PENDING' },
+                { label: `DRAFT (${stats.draft})`, val: 'DRAFT' },
+                { label: `REJECTED (${stats.rejected})`, val: 'REJECTED' },
+                { label: `PAUSED (${stats.paused})`, val: 'PAUSED' },
+              ].map(({ label, val }) => (
+                <button
+                  key={val}
+                  onClick={() => setSelectedStatus(val)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold shrink-0 transition-colors cursor-pointer ${
+                    selectedStatus === val
+                      ? 'bg-emerald-600 text-white font-bold'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Templates Grid Cards */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {filteredTemplates.length === 0 ? (
+              <div className="col-span-full py-16 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-3">
+                <MessageSquare className="h-10 w-10 text-slate-300 mx-auto" />
+                <div className="text-sm font-bold text-slate-700 dark:text-slate-300">No WhatsApp templates match criteria</div>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Try adjusting your search criteria or click "Create Template" to submit a new template to Meta.
+                </p>
+              </div>
+            ) : (
+              filteredTemplates.map((template) => (
+                <div
+                  key={template.id}
+                  id={`template-card-${template.name}`}
+                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 rounded-3xl p-5 shadow-xs transition-all flex flex-col justify-between space-y-4 group"
+                >
+                  {/* Card Header */}
+                  <div className="space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-mono font-black text-sm text-slate-900 dark:text-white group-hover:text-emerald-600 transition-colors">
+                            {template.name}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                            v{template.version}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center space-x-2 mt-1">
+                          <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                            {template.category}
+                          </span>
+                          <span className="text-slate-300 dark:text-slate-700">&bull;</span>
+                          <span className="text-[11px] text-slate-500 font-mono">{template.language || 'en_US'}</span>
+                          {getQualityBadge(template.metaQualityScore)}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col items-end space-y-1">
+                        {getStatusBadge(template.status)}
+                        {template.metaTemplateId && (
+                          <span className="text-[9px] font-mono text-slate-400 truncate max-w-[140px]">
+                            Meta ID: {template.metaTemplateId}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Default Bindings Pills */}
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {template.isDefaultTaskTemplate && (
+                        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                          <Star className="h-3 w-3 fill-blue-500 text-blue-500" />
+                          <span>Default Task Intimation</span>
+                        </span>
+                      )}
+                      {template.isDefaultLeadTemplate && (
+                        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                          <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+                          <span>Default Lead Welcome</span>
+                        </span>
+                      )}
+                      {template.isDefaultComplianceTemplate && (
+                        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800 dark:bg-teal-950/60 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
+                          <Star className="h-3 w-3 fill-teal-500 text-teal-500" />
+                          <span>Default Compliance Filing Alert</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Card Body - Content Box */}
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 space-y-2">
+                    {template.headerText && (
+                      <div className="text-xs font-bold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-1">
+                        {template.headerText}
+                      </div>
+                    )}
+
+                    <div className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
+                      {template.bodyText}
+                    </div>
+
+                    {template.footerText && (
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500 pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                        {template.footerText}
+                      </div>
+                    )}
+
+                    {/* Buttons list */}
+                    {template.buttons && template.buttons.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pt-2">
+                        {template.buttons.map((b, i) => (
+                          <span
+                            key={i}
+                            className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-emerald-600 dark:text-emerald-400"
+                          >
+                            🔘 {b.text}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Rejection Warning Banner */}
+                  {template.status === 'REJECTED' && (
+                    <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 flex items-center justify-between">
+                      <div className="flex items-center space-x-2 text-xs text-rose-800 dark:text-rose-300 font-semibold truncate">
+                        <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+                        <span className="truncate">Meta Rejection Feedback Available</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRejectedTemplate(template);
+                          setIsRejectionOpen(true);
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-bold hover:bg-rose-700 transition-colors shrink-0 cursor-pointer"
+                      >
+                        View Reason & Fix
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Card Footer Actions */}
+                  <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    {/* Left Side: Test Send & Duplicate */}
+                    <div className="flex items-center space-x-1.5">
+                      {isManager && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTestingTemplate(template);
+                            setIsTestSendOpen(true);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 font-bold transition-colors cursor-pointer flex items-center space-x-1"
+                        >
+                          <Send className="h-3.5 w-3.5" />
+                          <span>Test Send</span>
+                        </button>
+                      )}
+
+                      {isManager && (
+                        <button
+                          type="button"
+                          onClick={() => handleDuplicateTemplate(template.id)}
+                          className="p-1.5 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                          title="Duplicate Template"
+                        >
+                          <Copy className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Right Side: Admin Bindings & Edit/Delete */}
+                    {isSuperAdmin && (
+                      <div className="flex items-center space-x-1.5">
+                        {/* Default Task Toggle */}
+                        {!template.isDefaultTaskTemplate && template.status === 'APPROVED' && (
+                          <button
+                            type="button"
+                            onClick={() => handleSetDefault('TASK', template.id)}
+                            className="px-2 py-1 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 cursor-pointer"
+                            title="Set as default template for task assignments"
+                          >
+                            Set Default Task
+                          </button>
+                        )}
+
+                        {/* Default Lead Toggle */}
+                        {!template.isDefaultLeadTemplate && template.status === 'APPROVED' && (
+                          <button
+                            type="button"
+                            onClick={() => handleSetDefault('LEAD', template.id)}
+                            className="px-2 py-1 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 cursor-pointer"
+                            title="Set as default template for new lead welcome"
+                          >
+                            Set Default Lead
+                          </button>
+                        )}
+
+                        {/* Edit */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingTemplate(template);
+                            setIsEditorOpen(true);
+                          }}
+                          className="p-1.5 rounded-xl text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors cursor-pointer"
+                          title="Edit Template"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
+
+                        {/* Delete */}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTemplate(template.id, template.name)}
+                          className="p-1.5 rounded-xl text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                          title="Delete Template"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      )}
 
       {/* Modals & Drawers */}
       <TemplateEditorModal

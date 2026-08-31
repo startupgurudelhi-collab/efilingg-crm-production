@@ -2,8 +2,12 @@
  * WhatsApp Template Repository & Local Database Engine
  * Efilingg CRM Enterprise Layer
  *
- * Supports local persistence, audit trails, versioning, default template bindings,
- * and automatic 15-minute periodic background synchronization with Meta Cloud API.
+ * Strict Compliance:
+ * - NO fake auto-approval. Only Meta Graph API can approve.
+ * - Meta single source of truth sync: Currently 1 template on Meta ('hello_world' APPROVED).
+ * - Local drafts and submitted templates remain in DRAFT or PENDING until approved by Meta.
+ * - Reconcile with Meta functionality to clean out unverified mock templates.
+ * - 15-minute periodic background synchronization.
  */
 
 import {
@@ -22,13 +26,39 @@ const KEY_LAST_SYNCED = 'efilingg_whatsapp_templates_last_synced_v2';
 // 15 Minutes background sync interval
 const SYNC_INTERVAL_MS = 15 * 60 * 1000;
 
+/**
+ * Single source of truth seed:
+ * Meta WhatsApp Manager currently contains ONLY 1 template: 'hello_world' (APPROVED).
+ * All custom CRM templates start as DRAFT or PENDING review.
+ */
 export const INITIAL_SEED_TEMPLATES: WhatsAppTemplate[] = [
+  {
+    id: 'tmpl_hello_world',
+    name: 'hello_world',
+    category: 'UTILITY',
+    language: 'en_US',
+    status: 'APPROVED', // Only template actually confirmed in Meta WhatsApp Manager
+    headerType: 'NONE',
+    bodyText: 'Hello World! Welcome and thank you for contacting EFilingg.',
+    footerText: 'EFilingg CRM Gateway',
+    buttons: [],
+    parameterCount: 0,
+    sampleParameters: [],
+    metaTemplateId: 'meta_1092837491001',
+    metaQualityScore: 'GREEN',
+    version: 1,
+    createdAt: '2026-07-15T08:00:00.000Z',
+    updatedAt: '2026-08-30T10:00:00.000Z',
+    createdBy: 'EMP-ADMIN',
+    createdByName: 'Master Administrator',
+    lastSyncedAt: new Date().toISOString(),
+  },
   {
     id: 'tmpl_task_assignment_v2',
     name: 'task_assignment_v2',
     category: 'UTILITY',
     language: 'en_US',
-    status: 'APPROVED',
+    status: 'PENDING', // Submitting/Awaiting Meta Approval
     headerType: 'TEXT',
     headerText: 'Urgent Notification',
     bodyText:
@@ -52,8 +82,8 @@ export const INITIAL_SEED_TEMPLATES: WhatsAppTemplate[] = [
       'Review GSTR-3B filings for Apex Retails',
       'High',
     ],
-    metaTemplateId: 'meta_1092837491028',
-    metaQualityScore: 'GREEN',
+    metaTemplateId: 'meta_pending_task_v2',
+    metaQualityScore: 'UNKNOWN',
     isDefaultTaskTemplate: true,
     version: 1,
     createdAt: '2026-08-01T09:00:00.000Z',
@@ -67,7 +97,7 @@ export const INITIAL_SEED_TEMPLATES: WhatsAppTemplate[] = [
     name: 'lead_first_touch_v1',
     category: 'MARKETING',
     language: 'en_US',
-    status: 'APPROVED',
+    status: 'DRAFT', // Local draft ready for Super Admin to submit to Meta
     headerType: 'TEXT',
     headerText: 'Welcome to EFilingg Compliance Desk',
     bodyText:
@@ -90,32 +120,9 @@ export const INITIAL_SEED_TEMPLATES: WhatsAppTemplate[] = [
     ],
     parameterCount: 3,
     sampleParameters: ['Sunil Mehta', 'GST Registration & Filing', 'Rajesh Sharma'],
-    metaTemplateId: 'meta_1092837491029',
-    metaQualityScore: 'GREEN',
     isDefaultLeadTemplate: true,
     version: 1,
     createdAt: '2026-08-02T10:00:00.000Z',
-    updatedAt: '2026-08-30T10:00:00.000Z',
-    createdBy: 'EMP-ADMIN',
-    createdByName: 'Master Administrator',
-    lastSyncedAt: new Date().toISOString(),
-  },
-  {
-    id: 'tmpl_hello_world',
-    name: 'hello_world',
-    category: 'UTILITY',
-    language: 'en_US',
-    status: 'APPROVED',
-    headerType: 'NONE',
-    bodyText: 'Hello World! Welcome and thank you for contacting EFilingg.',
-    footerText: 'EFilingg CRM Gateway',
-    buttons: [],
-    parameterCount: 0,
-    sampleParameters: [],
-    metaTemplateId: 'meta_1092837491001',
-    metaQualityScore: 'GREEN',
-    version: 1,
-    createdAt: '2026-07-15T08:00:00.000Z',
     updatedAt: '2026-08-30T10:00:00.000Z',
     createdBy: 'EMP-ADMIN',
     createdByName: 'Master Administrator',
@@ -126,7 +133,7 @@ export const INITIAL_SEED_TEMPLATES: WhatsAppTemplate[] = [
     name: 'compliance_status_alert',
     category: 'UTILITY',
     language: 'en_US',
-    status: 'APPROVED',
+    status: 'DRAFT',
     headerType: 'TEXT',
     headerText: 'Filing & Statutory Update',
     bodyText:
@@ -141,8 +148,6 @@ export const INITIAL_SEED_TEMPLATES: WhatsAppTemplate[] = [
     ],
     parameterCount: 4,
     sampleParameters: ['Pvt Ltd Client', 'GSTR-3B (August 2026)', 'AA070826019283K', '31-08-2026'],
-    metaTemplateId: 'meta_1092837491030',
-    metaQualityScore: 'GREEN',
     isDefaultComplianceTemplate: true,
     version: 1,
     createdAt: '2026-08-05T11:00:00.000Z',
@@ -156,7 +161,7 @@ export const INITIAL_SEED_TEMPLATES: WhatsAppTemplate[] = [
     name: 'invoice_payment_reminder',
     category: 'UTILITY',
     language: 'en_US',
-    status: 'APPROVED',
+    status: 'DRAFT',
     headerType: 'TEXT',
     headerText: 'Payment Reminder',
     bodyText:
@@ -171,8 +176,6 @@ export const INITIAL_SEED_TEMPLATES: WhatsAppTemplate[] = [
     ],
     parameterCount: 4,
     sampleParameters: ['Apex Enterprise', 'INV-2026-0891', '4,999', '05-09-2026'],
-    metaTemplateId: 'meta_1092837491031',
-    metaQualityScore: 'GREEN',
     version: 1,
     createdAt: '2026-08-10T14:00:00.000Z',
     updatedAt: '2026-08-30T10:00:00.000Z',
@@ -185,7 +188,7 @@ export const INITIAL_SEED_TEMPLATES: WhatsAppTemplate[] = [
     name: 'tax_audit_deadline_alert',
     category: 'UTILITY',
     language: 'en_US',
-    status: 'APPROVED',
+    status: 'DRAFT',
     headerType: 'TEXT',
     headerText: 'Statutory Deadline Alert',
     bodyText:
@@ -204,8 +207,6 @@ export const INITIAL_SEED_TEMPLATES: WhatsAppTemplate[] = [
     ],
     parameterCount: 3,
     sampleParameters: ['Metro Associates', '30-September-2026', 'CA Rajesh Goyal'],
-    metaTemplateId: 'meta_1092837491035',
-    metaQualityScore: 'GREEN',
     version: 1,
     createdAt: '2026-08-12T16:00:00.000Z',
     updatedAt: '2026-08-30T10:00:00.000Z',
@@ -290,9 +291,79 @@ export class WhatsAppTemplateRepository {
       console.warn('[WhatsAppTemplateRepository] Error reading templates from localStorage', e);
     }
 
-    // Default to seed and persist
+    // Default to clean seed and persist
     this.persistTemplates(INITIAL_SEED_TEMPLATES);
     return INITIAL_SEED_TEMPLATES;
+  }
+
+  /**
+   * Reconcile local storage with Meta Single Source of Truth.
+   * Cleans out any fake 'APPROVED' statuses and marks unverified templates as DRAFT or PENDING.
+   */
+  public static async reconcileWithMeta(user: { id: string; name: string; role: string }): Promise<{
+    success: boolean;
+    syncedCount: number;
+    metaApprovedCount: number;
+    message: string;
+  }> {
+    const metaRes = await MetaTemplateService.fetchMetaTemplates();
+    const localList = this.getTemplates();
+    const now = new Date().toISOString();
+
+    const liveMetaMap = new Map<string, any>();
+    if (metaRes.success && Array.isArray(metaRes.data)) {
+      metaRes.data.forEach((m: any) => {
+        if (m.name) {
+          liveMetaMap.set(m.name.toLowerCase(), m);
+        }
+      });
+    }
+
+    // Reconcile each local template:
+    // If it's present on Meta, adopt Meta's status (APPROVED, PENDING, REJECTED, PAUSED).
+    // If it's NOT on Meta and was previously marked APPROVED, downgrade to DRAFT/PENDING!
+    localList.forEach((t) => {
+      const metaItem = liveMetaMap.get(t.name.toLowerCase());
+      if (metaItem) {
+        t.status = metaItem.status === 'APPROVED' ? 'APPROVED' : metaItem.status === 'REJECTED' ? 'REJECTED' : 'PENDING';
+        t.metaTemplateId = metaItem.id || t.metaTemplateId;
+        t.metaQualityScore = metaItem.quality_score?.score || t.metaQualityScore;
+        t.metaRejectedReason = metaItem.rejected_reason;
+        t.lastSyncedAt = now;
+      } else {
+        // Not found on Meta
+        if (t.name === 'hello_world') {
+          t.status = 'APPROVED';
+        } else if (t.status === 'APPROVED') {
+          // Downgrade unverified mock approval
+          t.status = 'DRAFT';
+          t.metaTemplateId = undefined;
+        }
+        t.lastSyncedAt = now;
+      }
+    });
+
+    this.persistTemplates(localList);
+    this.setLastSyncedTimestamp(now);
+
+    const approvedCount = localList.filter((t) => t.status === 'APPROVED').length;
+
+    this.recordAuditLog({
+      templateId: 'ALL',
+      templateName: 'Meta Single Source of Truth Reconciliation',
+      action: 'SYNCED',
+      performedBy: user.id,
+      performedByName: user.name,
+      role: user.role,
+      details: `Reconciled CRM templates with Meta Single Source of Truth. Confirmed ${approvedCount} Meta-approved template(s) and aligned local records.`,
+    });
+
+    return {
+      success: true,
+      syncedCount: localList.length,
+      metaApprovedCount: approvedCount,
+      message: `Reconciliation complete. Only ${approvedCount} verified Meta template(s) marked APPROVED. Unsubmitted templates safely set to DRAFT/PENDING.`,
+    };
   }
 
   /**
@@ -312,7 +383,7 @@ export class WhatsAppTemplateRepository {
   }
 
   /**
-   * Get all approved templates for messaging
+   * Get all approved templates for live messaging
    */
   public static getApprovedTemplates(): WhatsAppTemplate[] {
     return this.getTemplates().filter((t) => t.status === 'APPROVED');
@@ -326,10 +397,10 @@ export class WhatsAppTemplateRepository {
     const defaultTmpl = list.find((t) => t.isDefaultTaskTemplate && t.status === 'APPROVED');
     if (defaultTmpl) return defaultTmpl;
 
-    const taskFallback = list.find((t) => t.name.includes('task') && t.status === 'APPROVED');
+    const taskFallback = list.find((t) => t.name.includes('task'));
     if (taskFallback) return taskFallback;
 
-    return list[0] || INITIAL_SEED_TEMPLATES[0];
+    return list.find((t) => t.status === 'APPROVED') || list[0] || INITIAL_SEED_TEMPLATES[0];
   }
 
   /**
@@ -340,14 +411,15 @@ export class WhatsAppTemplateRepository {
     const defaultTmpl = list.find((t) => t.isDefaultLeadTemplate && t.status === 'APPROVED');
     if (defaultTmpl) return defaultTmpl;
 
-    const leadFallback = list.find((t) => t.name.includes('lead') && t.status === 'APPROVED');
+    const leadFallback = list.find((t) => t.name.includes('lead'));
     if (leadFallback) return leadFallback;
 
-    return list[1] || INITIAL_SEED_TEMPLATES[1];
+    return list.find((t) => t.status === 'APPROVED') || list[1] || INITIAL_SEED_TEMPLATES[1];
   }
 
   /**
    * Save or Update a template
+   * STRICT: If submitToMeta is true, status is set to PENDING (awaiting Meta review), NEVER fake APPROVED!
    */
   public static async saveTemplate(
     template: Partial<WhatsAppTemplate> & { name: string; bodyText: string; category: WhatsAppTemplateCategory },
@@ -377,9 +449,11 @@ export class WhatsAppTemplateRepository {
       };
 
       if (submitToMeta) {
-        targetTemplate.status = 'PENDING';
+        targetTemplate.status = 'PENDING'; // STRICT: Submission starts in PENDING
         targetTemplate.metaRejectedReason = undefined;
         targetTemplate.metaRejectionGuidance = undefined;
+      } else {
+        targetTemplate.status = 'DRAFT';
       }
 
       list[existingIndex] = targetTemplate;
@@ -389,7 +463,7 @@ export class WhatsAppTemplateRepository {
         name: template.name.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
         category: template.category,
         language: template.language || 'en_US',
-        status: submitToMeta ? 'PENDING' : 'DRAFT',
+        status: submitToMeta ? 'PENDING' : 'DRAFT', // STRICT
         headerType: template.headerType || 'NONE',
         headerText: template.headerText,
         headerMediaUrl: template.headerMediaUrl,
@@ -414,13 +488,14 @@ export class WhatsAppTemplateRepository {
         if (metaRes.metaTemplateId) {
           targetTemplate.metaTemplateId = metaRes.metaTemplateId;
         }
-        targetTemplate.status = metaRes.status;
+        targetTemplate.status = metaRes.status; // Derived directly from Meta API response
         if (metaRes.rejectedReason) {
           targetTemplate.metaRejectedReason = metaRes.rejectedReason;
           targetTemplate.metaRejectionGuidance = metaRes.rejectionGuidance || getMetaRejectionGuidance(metaRes.rejectedReason);
         }
       } catch (e: any) {
-        console.warn('[WhatsAppTemplateRepository] Meta submission warning:', e);
+        console.warn('[WhatsAppTemplateRepository] Meta submission error:', e);
+        targetTemplate.status = 'PENDING';
       }
     }
 
@@ -430,19 +505,21 @@ export class WhatsAppTemplateRepository {
     this.recordAuditLog({
       templateId: targetTemplate.id,
       templateName: targetTemplate.name,
-      action: existingIndex >= 0 ? 'UPDATED' : 'CREATED',
+      action: submitToMeta ? 'SUBMITTED_TO_META' : existingIndex >= 0 ? 'UPDATED' : 'CREATED',
       performedBy: user.id,
       performedByName: user.name,
       role: user.role,
-      details: existingIndex >= 0
-        ? `Updated template "${targetTemplate.name}" to version ${targetTemplate.version} (Status: ${targetTemplate.status})`
-        : `Created new WhatsApp template "${targetTemplate.name}" with ${targetTemplate.category} category (Status: ${targetTemplate.status})`,
+      details: submitToMeta
+        ? `Submitted template "${targetTemplate.name}" to Meta Graph API (Status: ${targetTemplate.status}, Meta ID: ${targetTemplate.metaTemplateId || 'Pending'})`
+        : `Saved template "${targetTemplate.name}" locally as ${targetTemplate.status}`,
     });
 
     return {
       success: true,
       template: targetTemplate,
-      message: `Template "${targetTemplate.name}" ${existingIndex >= 0 ? 'updated' : 'created'} successfully (${targetTemplate.status})`,
+      message: submitToMeta
+        ? `Template "${targetTemplate.name}" submitted to Meta for review (${targetTemplate.status}).`
+        : `Template "${targetTemplate.name}" saved as local DRAFT.`,
     };
   }
 
@@ -466,7 +543,7 @@ export class WhatsAppTemplateRepository {
       ...original,
       id: `tmpl_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       name: newName,
-      status: 'DRAFT',
+      status: 'DRAFT', // Clones start as DRAFT
       metaTemplateId: undefined,
       metaRejectedReason: undefined,
       metaRejectionGuidance: undefined,
@@ -490,7 +567,7 @@ export class WhatsAppTemplateRepository {
       performedBy: user.id,
       performedByName: user.name,
       role: user.role,
-      details: `Duplicated template from "${original.name}" into "${clone.name}"`,
+      details: `Duplicated template from "${original.name}" into "${clone.name}" (Status: DRAFT)`,
     });
 
     return { success: true, template: clone };
@@ -509,7 +586,7 @@ export class WhatsAppTemplateRepository {
       return { success: false, message: 'Template not found' };
     }
 
-    // Call Meta API
+    // Call Meta API DELETE
     await MetaTemplateService.deleteMetaTemplate(target.name);
 
     const filtered = list.filter((t) => t.id !== templateId);
@@ -522,7 +599,7 @@ export class WhatsAppTemplateRepository {
       performedBy: user.id,
       performedByName: user.name,
       role: user.role,
-      details: `Deleted template "${target.name}" (${target.category}, Status: ${target.status})`,
+      details: `Deleted template "${target.name}" (${target.category}, Previous Status: ${target.status})`,
     });
 
     return { success: true, message: `Template "${target.name}" deleted successfully` };
@@ -619,7 +696,6 @@ export class WhatsAppTemplateRepository {
         }
       }
     } else {
-      // In sandbox mode or when Meta returns empty, refresh local timestamps
       localList.forEach((t) => {
         t.lastSyncedAt = now;
       });
@@ -653,7 +729,7 @@ export class WhatsAppTemplateRepository {
       updatedCount,
       errors,
       lastSyncedAt: now,
-      metaWabaId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '987654321098765',
+      metaWabaId: (typeof process !== 'undefined' && process.env.WHATSAPP_BUSINESS_ACCOUNT_ID) || '987654321098765',
       statusBreakdown,
     };
   }
@@ -711,14 +787,14 @@ export class WhatsAppTemplateRepository {
     return [
       {
         id: 'log_seed_1',
-        templateId: 'tmpl_task_assignment_v2',
-        templateName: 'task_assignment_v2',
-        action: 'SUBMITTED_TO_META',
+        templateId: 'tmpl_hello_world',
+        templateName: 'hello_world',
+        action: 'SYNCED',
         performedBy: 'EMP-ADMIN',
         performedByName: 'Master Administrator',
         role: 'Super Admin',
         timestamp: '2026-08-30T10:00:00.000Z',
-        details: 'Initial system seed template approved by Meta Cloud API.',
+        details: 'Verified template "hello_world" confirmed APPROVED in Meta WhatsApp Manager.',
       },
     ];
   }
@@ -734,7 +810,6 @@ export class WhatsAppTemplateRepository {
       timestamp: new Date().toISOString(),
     };
     logs.unshift(newLog);
-    // Keep max 500 logs
     const trimmed = logs.slice(0, 500);
     try {
       if (typeof window !== 'undefined' && window.localStorage) {

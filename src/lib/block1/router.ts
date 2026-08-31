@@ -18,6 +18,7 @@ import { WhatsAppMediaService } from './WhatsAppMediaService';
 import { STANDARD_WHATSAPP_TEMPLATES } from './MetaWhatsAppProvider';
 import { WhatsAppTemplateRepository } from '../whatsapp/templateRepository';
 import { MetaTemplateService } from '../whatsapp/metaTemplateService';
+import { MetaApiLogger } from '../whatsapp/metaApiLogger';
 import { isForbiddenCPaaSPayload } from './cpaasFilter';
 import {
   getCustomers,
@@ -1011,6 +1012,59 @@ block1Router.get('/v2/whatsapp/templates/audit-logs', (req: Request, res: Respon
   try {
     const logs = WhatsAppTemplateRepository.getAuditLogs();
     return res.status(200).json({ success: true, count: logs.length, logs });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Get Meta Graph API HTTP Request/Response Logs (GET /api/v2/whatsapp/templates/meta-api-logs)
+ */
+block1Router.get('/v2/whatsapp/templates/meta-api-logs', (req: Request, res: Response) => {
+  try {
+    const logs = MetaApiLogger.getLogs();
+    return res.status(200).json({ success: true, count: logs.length, logs });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Clear Meta Graph API Logs (POST /api/v2/whatsapp/templates/meta-api-logs/clear)
+ */
+block1Router.post('/v2/whatsapp/templates/meta-api-logs/clear', (req: Request, res: Response) => {
+  try {
+    MetaApiLogger.clearLogs();
+    return res.status(200).json({ success: true, message: 'Meta API logs cleared' });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Reconcile Local CRM Templates with Meta Single Source of Truth (POST /api/v2/whatsapp/templates/reconcile-with-meta)
+ */
+block1Router.post('/v2/whatsapp/templates/reconcile-with-meta', async (req: Request, res: Response) => {
+  try {
+    const user = req.body.user || { id: 'EMP-ADMIN', name: 'Master Administrator', role: 'Super Admin' };
+    const result = await WhatsAppTemplateRepository.reconcileWithMeta(user);
+    return res.status(200).json(result);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Fetch Live Meta Templates directly via server (GET /api/v2/whatsapp/templates/meta-live)
+ */
+block1Router.get('/v2/whatsapp/templates/meta-live', async (req: Request, res: Response) => {
+  try {
+    const result = await MetaTemplateService.fetchMetaTemplates();
+    return res.status(200).json(result);
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     return res.status(500).json({ success: false, error: error.message });

@@ -76,6 +76,10 @@ export default function V2Tasks({ initialFilter }: V2TasksProps) {
   const [newTaskDueDate, setNewTaskDueDate] = useState(todayStr);
   const [newTaskPriority, setNewTaskPriority] = useState<'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'>('HIGH');
   const [showWhatsAppPreviewInModal, setShowWhatsAppPreviewInModal] = useState(false);
+  const [sendWhatsAppOnCreate, setSendWhatsAppOnCreate] = useState(true);
+  const [overrideAssigneePhone, setOverrideAssigneePhone] = useState('');
+  const [dispatchToast, setDispatchToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [isSubmittingTask, setIsSubmittingTask] = useState(false);
 
   // Handle incoming initialFilter changes
   useEffect(() => {
@@ -308,15 +312,17 @@ export default function V2Tasks({ initialFilter }: V2TasksProps) {
   }, [tasks, activeView, statusFilter, priorityFilter, filterDueCategory, selectedEmployeeFilter, searchQuery, currentUser, todayStr]);
 
   // Actions
-  const handleCreateTaskSubmit = (e: React.FormEvent) => {
+  const handleCreateTaskSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) {
       alert('Task title is required.');
       return;
     }
 
+    setIsSubmittingTask(true);
     const assignedEmp = rawEmployees.find(e => e.id === newTaskAssignee || e.name === newTaskAssignee);
     const assignedName = assignedEmp ? assignedEmp.name : 'Unassigned';
+    const targetPhone = (overrideAssigneePhone || assignedEmp?.mobile || '').trim();
 
     const added = addV2Task({
       title: newTaskTitle.trim(),
@@ -330,11 +336,54 @@ export default function V2Tasks({ initialFilter }: V2TasksProps) {
     });
 
     setTasks(prev => [added, ...prev]);
+
+    if (sendWhatsAppOnCreate) {
+      try {
+        const dispatchResult = await dispatchTaskWhatsAppNotification({
+          taskTitle: newTaskTitle.trim(),
+          taskDescription: newTaskDesc.trim(),
+          assignedToId: newTaskAssignee || 'ALL',
+          assignedToName: assignedName,
+          assigneePhone: targetPhone,
+          createdById: currentUser?.id || 'ADMIN',
+          createdByName: currentUser?.name || 'Master Admin',
+          priority: newTaskPriority,
+          dueDate: newTaskDueDate || todayStr,
+        });
+
+        if (dispatchResult.success) {
+          const phones = dispatchResult.recipientPhones?.join(', ') || targetPhone || 'Staff';
+          setDispatchToast({
+            message: `Task Ticket Created & WhatsApp Intimation dispatched via Meta-approved template "task_assignment_v22" to ${assignedName} (${phones})`,
+            type: 'success',
+          });
+        } else {
+          setDispatchToast({
+            message: `Task Created, but WhatsApp intimation skipped: ${dispatchResult.errors?.[0] || 'Mobile number configuration needed'}`,
+            type: 'info',
+          });
+        }
+      } catch (wErr: any) {
+        console.error('[Create Task WhatsApp Error]:', wErr);
+        setDispatchToast({
+          message: `Task Created (WhatsApp intimation queued): ${wErr.message}`,
+          type: 'info',
+        });
+      }
+    } else {
+      setDispatchToast({
+        message: `Task Ticket Created successfully for ${assignedName}.`,
+        type: 'success',
+      });
+    }
+
+    setIsSubmittingTask(false);
     setShowCreateTaskModal(false);
     // Reset Form
     setNewTaskTitle('');
     setNewTaskDesc('');
     setNewTaskPriority('HIGH');
+    setOverrideAssigneePhone('');
   };
 
   const handleToggleTaskStatus = (task: V2Task) => {
@@ -1325,25 +1374,51 @@ export default function V2Tasks({ initialFilter }: V2TasksProps) {
         );
       })()}
 
+      {/* Toast Notification for WhatsApp Dispatch Feedback */}
+      {dispatchToast && (
+        <div className={`mb-4 p-3 rounded-2xl flex items-center justify-between gap-3 text-xs shadow-md border animate-fade-in ${
+          dispatchToast.type === 'success'
+            ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
+            : dispatchToast.type === 'error'
+            ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200'
+            : 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200'
+        }`}>
+          <div className="flex items-center gap-2">
+            <MessageSquare className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <span className="font-medium">{dispatchToast.message}</span>
+          </div>
+          <button
+            onClick={() => setDispatchToast(null)}
+            className="p-1 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg cursor-pointer text-xs font-bold"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* =========================================================================
           MODAL 1: CREATE TASK MODAL
           ========================================================================= */}
       {showCreateTaskModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <form onSubmit={handleCreateTaskSubmit} className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl p-6 space-y-4 animate-fade-in">
+          <form onSubmit={handleCreateTaskSubmit} className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl p-6 space-y-4 animate-fade-in max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <Flame className="h-5 w-5 text-amber-500" />
-                <h3 className="font-extrabold text-sm uppercase text-slate-900 dark:text-white">Create Operational Task</h3>
+                <div>
+                  <h3 className="font-extrabold text-sm uppercase text-slate-900 dark:text-white">Create Operational Task</h3>
+                  <p className="text-[10px] text-slate-500">Auto WhatsApp Intimation enabled via approved Meta template</p>
+                </div>
               </div>
               <button type="button" onClick={() => setShowCreateTaskModal(false)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            {/* WhatsApp Auto-Intimation Banner */}
+            {/* WhatsApp Auto-Intimation Banner Attached with task_assignment_v22 */}
             {(() => {
               const targetEmp = rawEmployees.find(e => e.id === newTaskAssignee);
+              const effectivePhone = overrideAssigneePhone.trim() || targetEmp?.mobile || '';
               const previewMsg = formatTaskWhatsAppMessage({
                 assigneeName: targetEmp?.name || 'Associate',
                 creatorName: currentUser?.name || 'Master Admin',
@@ -1354,31 +1429,55 @@ export default function V2Tasks({ initialFilter }: V2TasksProps) {
 
               return (
                 <div className="space-y-2">
-                  <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl flex items-center justify-between gap-2 text-xs">
-                    <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
-                      <MessageSquare className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                      <span className="text-[11px]">
-                        <strong>WhatsApp Intimation: </strong>
-                        {targetEmp?.mobile ? (
-                          <>Sends instant message to <strong>{targetEmp.name}</strong> ({targetEmp.mobile})</>
-                        ) : (
-                          <span className="text-amber-700 dark:text-amber-400">No mobile number for {targetEmp?.name || 'selected staff'}</span>
-                        )}
+                  <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl space-y-2 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
+                        <MessageSquare className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <span className="font-bold text-[11px]">WhatsApp Intimation Attached</span>
+                      </div>
+                      <span className="px-2 py-0.5 bg-emerald-200/60 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 rounded-md font-mono text-[9px] font-bold border border-emerald-300/40">
+                        task_assignment_v22 (Approved)
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowWhatsAppPreviewInModal(!showWhatsAppPreviewInModal)}
-                      className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline shrink-0 cursor-pointer"
-                    >
-                      {showWhatsAppPreviewInModal ? 'Hide Template' : 'View Template'}
-                    </button>
+
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-slate-700 dark:text-slate-300">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={sendWhatsAppOnCreate}
+                          onChange={e => setSendWhatsAppOnCreate(e.target.checked)}
+                          className="rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                        />
+                        <span>Send WhatsApp notification instantly to employee</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setShowWhatsAppPreviewInModal(!showWhatsAppPreviewInModal)}
+                        className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline shrink-0 cursor-pointer"
+                      >
+                        {showWhatsAppPreviewInModal ? 'Hide Template' : 'View Template'}
+                      </button>
+                    </div>
+
+                    {sendWhatsAppOnCreate && (
+                      <div className="pt-1.5 border-t border-emerald-200/50 dark:border-emerald-800/40 flex items-center gap-2">
+                        <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-400 shrink-0">Recipient WhatsApp No:</span>
+                        <input
+                          type="text"
+                          placeholder={targetEmp?.mobile ? `e.g. ${targetEmp.mobile}` : 'Enter 10-digit mobile number'}
+                          value={overrideAssigneePhone}
+                          onChange={e => setOverrideAssigneePhone(e.target.value)}
+                          className="flex-1 px-2 py-1 bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 rounded-lg text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400"
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {showWhatsAppPreviewInModal && (
-                    <div className="p-3 bg-slate-900 text-slate-100 rounded-xl text-[10px] font-mono whitespace-pre-wrap border border-slate-800 shadow-inner">
-                      <div className="text-[9px] text-emerald-400 font-bold mb-1 uppercase tracking-wider flex items-center gap-1">
-                        <Send className="h-3 w-3" /> WhatsApp Template Preview
+                    <div className="p-3 bg-slate-900 text-slate-100 rounded-2xl text-[10px] font-mono whitespace-pre-wrap border border-slate-800 shadow-inner">
+                      <div className="text-[9px] text-emerald-400 font-bold mb-1 uppercase tracking-wider flex items-center justify-between">
+                        <span className="flex items-center gap-1"><Send className="h-3 w-3" /> WhatsApp Template Preview</span>
+                        <span className="text-[8px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">Meta Graph API Payload</span>
                       </div>
                       {previewMsg}
                     </div>

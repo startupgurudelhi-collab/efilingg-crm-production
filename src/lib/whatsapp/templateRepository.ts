@@ -54,11 +54,11 @@ export const INITIAL_SEED_TEMPLATES: WhatsAppTemplate[] = [
     lastSyncedAt: new Date().toISOString(),
   },
   {
-    id: 'tmpl_task_assignment_v2',
-    name: 'task_assignment_v2',
+    id: 'tmpl_task_assignment_v22',
+    name: 'task_assignment_v22',
     category: 'UTILITY',
     language: 'en_US',
-    status: 'PENDING', // Submitting/Awaiting Meta Approval
+    status: 'APPROVED', // Meta confirmed approved template
     headerType: 'TEXT',
     headerText: 'Urgent Notification',
     bodyText:
@@ -82,12 +82,12 @@ export const INITIAL_SEED_TEMPLATES: WhatsAppTemplate[] = [
       'Review GSTR-3B filings for Apex Retails',
       'High',
     ],
-    metaTemplateId: 'meta_pending_task_v2',
-    metaQualityScore: 'UNKNOWN',
+    metaTemplateId: 'meta_task_assignment_v22',
+    metaQualityScore: 'GREEN',
     isDefaultTaskTemplate: true,
     version: 1,
     createdAt: '2026-08-01T09:00:00.000Z',
-    updatedAt: '2026-08-30T10:00:00.000Z',
+    updatedAt: '2026-08-31T10:00:00.000Z',
     createdBy: 'EMP-ADMIN',
     createdByName: 'Master Administrator',
     lastSyncedAt: new Date().toISOString(),

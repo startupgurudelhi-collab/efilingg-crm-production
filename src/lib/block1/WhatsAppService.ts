@@ -256,50 +256,34 @@ If task completed, then Mark as Done in your crm.`;
 
     const provider = WhatsAppProviderFactory.getProvider();
     try {
-      const sentMsg = await provider.sendDirectTextMessageAsync({
+      // Direct template dispatch using Meta-approved template task_assignment_v22
+      const taskTmpl = WhatsAppTemplateRepository.getDefaultTaskTemplate();
+      const templateName = taskTmpl?.name || process.env.WHATSAPP_TASK_TEMPLATE || 'task_assignment_v22';
+
+      const tmplParams = [
+        { type: 'text', text: recipientGreeting },
+        { type: 'text', text: creatorGreeting },
+        { type: 'text', text: details },
+        { type: 'text', text: formattedPriority },
+      ];
+
+      console.log(`[Task WhatsApp Dispatch] Dispatching approved template "${templateName}" to ${params.assigneePhone}...`);
+
+      const tmplMsg = await provider.sendTemplateMessageAsync({
         toPhone: params.assigneePhone,
-        message,
+        templateName,
+        languageCode: taskTmpl?.language || 'en_US',
+        components: [
+          {
+            type: 'body',
+            parameters: tmplParams.slice(0, taskTmpl?.parameterCount || 4),
+          },
+        ],
         senderId: params.senderId || 'SYSTEM_TASK_NOTIFICATION',
         senderName: params.creatorName || 'Efilingg Task Notification',
       });
 
-      // If direct text failed due to 24-hour window and a template is available, attempt template dispatch
-      if (
-        sentMsg.deliveryStatus === 'FAILED' &&
-        sentMsg.providerErrorCode === 131047 &&
-        process.env.WHATSAPP_ACCESS_TOKEN
-      ) {
-        console.warn(`[Task WhatsApp 24h Window Fallback] Direct text blocked by Meta 24h policy. Attempting template dispatch for ${params.assigneePhone}...`);
-        const taskTmpl = WhatsAppTemplateRepository.getDefaultTaskTemplate();
-        const templateName = taskTmpl?.name || process.env.WHATSAPP_TASK_TEMPLATE || 'task_assignment_v2';
-        try {
-          const tmplParams = [
-            { type: 'text', text: recipientGreeting },
-            { type: 'text', text: creatorGreeting },
-            { type: 'text', text: details },
-            { type: 'text', text: formattedPriority },
-          ];
-
-          const tmplMsg = await provider.sendTemplateMessageAsync({
-            toPhone: params.assigneePhone,
-            templateName,
-            languageCode: taskTmpl?.language || 'en_US',
-            components: [
-              {
-                type: 'body',
-                parameters: tmplParams.slice(0, taskTmpl?.parameterCount || 4),
-              },
-            ],
-            senderId: params.senderId || 'SYSTEM_TASK_NOTIFICATION',
-            senderName: params.creatorName || 'Efilingg Task Notification',
-          });
-          return tmplMsg;
-        } catch (tmplErr) {
-          console.error('[Task WhatsApp Template Fallback Error]:', tmplErr);
-        }
-      }
-
-      return sentMsg;
+      return tmplMsg;
     } catch (err: any) {
       console.error('[sendTaskIntimationAsync Error]:', err);
       throw err;

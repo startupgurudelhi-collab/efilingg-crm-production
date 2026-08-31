@@ -15,6 +15,7 @@ export interface TaskNotificationPayload {
   taskDescription?: string;
   assignedToId: string;
   assignedToName?: string;
+  assigneePhone?: string;
   createdById?: string;
   createdByName?: string;
   priority?: string;
@@ -23,19 +24,16 @@ export interface TaskNotificationPayload {
 }
 
 /**
- * Formats name with respectful Indian professional salutation (e.g., Mr. / Ms.)
+ * Formats name with clean professional salutation
  */
 export function formatSalutation(name: string): string {
   const trimmed = (name || '').trim();
   if (!trimmed) return 'Associate';
-  if (/^(Mr\.|Ms\.|Mrs\.|Dr\.|Adv\.|CA\.|CS\.)\s/i.test(trimmed)) {
-    return trimmed;
-  }
-  return `Mr. ${trimmed}`;
+  return trimmed.replace(/^(Mr\.|Ms\.|Mrs\.|Dr\.|Adv\.|CA\.|CS\.)\s*/i, '');
 }
 
 /**
- * Formats the exact WhatsApp task intimation message matching user specification
+ * Formats the exact WhatsApp task intimation message matching approved Meta template task_assignment_v22
  */
 export function formatTaskWhatsAppMessage(params: {
   assigneeName: string;
@@ -45,24 +43,26 @@ export function formatTaskWhatsAppMessage(params: {
   priority?: string;
   clientName?: string;
 }): string {
-  const recipientGreeting = formatSalutation(params.assigneeName);
-  const creatorGreeting = formatSalutation(params.creatorName);
+  const recipientName = formatSalutation(params.assigneeName);
+  const creatorName = formatSalutation(params.creatorName);
 
   // Normalize Priority
-  let formattedPriority = 'Medium';
-  const rawPriority = (params.priority || '').toLowerCase();
-  if (rawPriority.includes('crit') || rawPriority.includes('urg') || rawPriority.includes('high')) {
-    formattedPriority = 'High';
-  } else if (rawPriority.includes('low')) {
-    formattedPriority = 'Low';
+  let formattedPriority = 'HIGH';
+  const rawPriority = (params.priority || '').toUpperCase();
+  if (rawPriority.includes('CRIT') || rawPriority.includes('URG')) {
+    formattedPriority = 'URGENT';
+  } else if (rawPriority.includes('LOW')) {
+    formattedPriority = 'LOW';
+  } else if (rawPriority.includes('MED')) {
+    formattedPriority = 'MEDIUM';
   } else {
-    formattedPriority = 'Medium';
+    formattedPriority = 'HIGH';
   }
 
   // Build clean task details
   let details = params.taskTitle.trim();
   if (params.clientName && !details.toLowerCase().includes(params.clientName.toLowerCase())) {
-    details = `${details} of ${params.clientName}`;
+    details = `${details} (${params.clientName})`;
   }
   if (params.taskDescription && params.taskDescription.trim()) {
     const cleanDesc = params.taskDescription
@@ -70,28 +70,26 @@ export function formatTaskWhatsAppMessage(params: {
       .replace(/^Category:\s*[^;\n]+/i, '')
       .trim();
     if (cleanDesc && !details.includes(cleanDesc)) {
-      details = `${details} (${cleanDesc})`;
+      details = `${details} - ${cleanDesc}`;
     }
   }
 
-  return `Dear ${recipientGreeting} 
+  return `Dear Mr. ${recipientName},
 
-Urgent Notification
+Mr. ${creatorName} has assigned a task for you, kindly complete within the time limit.
 
-${creatorGreeting} has assign a task for you, kindly compile within the time limit.
-
-task details: ${details}
+Task Details: ${details}
 Priority: ${formattedPriority}
 
-If task completed, then Mark as Done in your crm.`;
+If task completed, then Mark as Done in your CRM.`;
 }
 
 /**
- * Dispatches WhatsApp Notification to the assigned employee(s)
+ * Dispatches WhatsApp Notification to the assigned employee(s) using Meta-Approved Template task_assignment_v22
  */
 export async function dispatchTaskWhatsAppNotification(
   payload: TaskNotificationPayload
-): Promise<{ success: boolean; dispatchedCount: number; errors?: string[] }> {
+): Promise<{ success: boolean; dispatchedCount: number; recipientPhones?: string[]; errors?: string[]; details?: any[] }> {
   try {
     const allEmployees = getEmployees();
     const currentSession = getCurrentSession();
@@ -103,13 +101,31 @@ export async function dispatchTaskWhatsAppNotification(
       'Master Admin';
 
     // Determine target recipients
-    let targetEmployees: Employee[] = [];
+    interface TargetRecipient {
+      name: string;
+      phone: string;
+      employeeId?: string;
+    }
 
-    if (payload.assignedToId === 'ALL' || !payload.assignedToId) {
-      // Notify active operations staff
-      targetEmployees = allEmployees.filter(
-        e => e.status === 'active' && e.mobile && e.mobile.trim().length >= 10
+    let targetRecipients: TargetRecipient[] = [];
+
+    // If direct phone is explicitly passed
+    if (payload.assigneePhone && payload.assigneePhone.replace(/\D/g, '').length >= 10) {
+      targetRecipients.push({
+        name: payload.assignedToName || 'Associate',
+        phone: payload.assigneePhone.replace(/\D/g, ''),
+        employeeId: payload.assignedToId,
+      });
+    } else if (payload.assignedToId === 'ALL' || !payload.assignedToId) {
+      // Notify all active operations staff
+      const activeStaff = allEmployees.filter(
+        e => e.status === 'active' && e.mobile && e.mobile.replace(/\D/g, '').length >= 10
       );
+      targetRecipients = activeStaff.map(e => ({
+        name: e.name,
+        phone: e.mobile.replace(/\D/g, ''),
+        employeeId: e.id,
+      }));
     } else {
       const matched = allEmployees.find(
         e =>
@@ -118,12 +134,16 @@ export async function dispatchTaskWhatsAppNotification(
           (e.name && e.name.toLowerCase() === payload.assignedToId.toLowerCase()) ||
           (payload.assignedToName && e.name.toLowerCase() === payload.assignedToName.toLowerCase())
       );
-      if (matched && matched.mobile && matched.mobile.trim().length >= 10) {
-        targetEmployees = [matched];
+      if (matched && matched.mobile && matched.mobile.replace(/\D/g, '').length >= 10) {
+        targetRecipients.push({
+          name: matched.name,
+          phone: matched.mobile.replace(/\D/g, ''),
+          employeeId: matched.id,
+        });
       }
     }
 
-    if (targetEmployees.length === 0) {
+    if (targetRecipients.length === 0) {
       console.warn(
         `[Task WhatsApp Dispatch] No valid phone number found for assignee "${payload.assignedToName || payload.assignedToId}". Intimation skipped.`
       );
@@ -132,18 +152,23 @@ export async function dispatchTaskWhatsAppNotification(
 
     let sentCount = 0;
     const errors: string[] = [];
+    const dispatchedPhones: string[] = [];
+    const detailsList: any[] = [];
 
-    for (const emp of targetEmployees) {
-      const cleanPhone = (emp.mobile || '').replace(/\D/g, '');
-      if (!cleanPhone) continue;
+    for (const recipient of targetRecipients) {
+      let cleanPhone = recipient.phone.replace(/\D/g, '');
+      if (cleanPhone.length === 10) {
+        cleanPhone = `91${cleanPhone}`;
+      }
 
       try {
+        console.log(`[Task WhatsApp Dispatch] Sending approved template task_assignment_v22 to ${recipient.name} (${cleanPhone})...`);
         const response = await fetch('/api/v2/whatsapp/send-task-intimation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             assigneePhone: cleanPhone,
-            assigneeName: emp.name,
+            assigneeName: recipient.name,
             creatorName,
             taskTitle: payload.taskTitle,
             taskDescription: payload.taskDescription,
@@ -153,24 +178,28 @@ export async function dispatchTaskWhatsAppNotification(
           }),
         });
 
-        if (response.ok) {
+        const resJson = await response.json().catch(() => ({}));
+        if (response.ok && resJson.success) {
           sentCount++;
-          console.log(`[Task WhatsApp Sent] Successfully sent task intimation WhatsApp to ${emp.name} (${cleanPhone}).`);
+          dispatchedPhones.push(cleanPhone);
+          detailsList.push(resJson);
+          console.log(`[Task WhatsApp Sent] Successfully sent task intimation WhatsApp (task_assignment_v22) to ${recipient.name} (${cleanPhone}).`);
         } else {
-          const errData = await response.json().catch(() => ({}));
-          console.warn(`[Task WhatsApp Warning] Failed to send intimation to ${emp.name}:`, errData);
-          errors.push(`${emp.name}: ${errData.error || 'Dispatch error'}`);
+          console.warn(`[Task WhatsApp Warning] Failed to send intimation to ${recipient.name}:`, resJson);
+          errors.push(`${recipient.name}: ${resJson.error || resJson.message?.providerErrorMessage || 'Dispatch error'}`);
         }
       } catch (err: any) {
-        console.error(`[Task WhatsApp Error] Network failure sending to ${emp.name}:`, err);
-        errors.push(`${emp.name}: ${err.message}`);
+        console.error(`[Task WhatsApp Error] Network failure sending to ${recipient.name}:`, err);
+        errors.push(`${recipient.name}: ${err.message}`);
       }
     }
 
     return {
       success: sentCount > 0,
       dispatchedCount: sentCount,
+      recipientPhones: dispatchedPhones,
       errors: errors.length > 0 ? errors : undefined,
+      details: detailsList,
     };
   } catch (error: any) {
     console.error('[Task WhatsApp Dispatch Error]:', error);

@@ -271,7 +271,7 @@ export const TemplateEditorModal: React.FC<TemplateEditorModalProps> = ({
                   type="text"
                   value={name}
                   onChange={(e) => handleNameChange(e.target.value)}
-                  placeholder="e.g. task_assignment_v2"
+                  placeholder="e.g. task_assignment_v22"
                   disabled={isEditing && template?.status === 'APPROVED'}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
                 />

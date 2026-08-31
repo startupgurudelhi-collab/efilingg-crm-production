@@ -534,10 +534,49 @@ export class MetaTemplateService {
     httpStatus: number;
     rawResponse?: any;
   }> {
+    // If running in browser, proxy through backend server endpoint to use server-side WHATSAPP_ACCESS_TOKEN
+    if (typeof window !== 'undefined') {
+      try {
+        const response = await fetch('/api/v2/whatsapp/templates/test-send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            toPhone: params.toPhone,
+            templateId: params.template.id,
+            templateName: params.template.name,
+            parameters: params.parameters,
+            user: {
+              id: params.senderId,
+              name: params.senderName,
+              role: 'Super Admin',
+            },
+          }),
+        });
+
+        const data = await response.json();
+        return {
+          success: data.success === true,
+          messageId: data.messageId || data.wamid || data.message?.whatsappMessageId,
+          providerErrorCode: data.providerErrorCode || data.error?.code,
+          providerErrorMessage: data.error || data.providerErrorMessage,
+          httpStatus: response.status,
+          rawResponse: data,
+        };
+      } catch (err: any) {
+        console.error('[MetaTemplateService Client Proxy Error]:', err);
+        return {
+          success: false,
+          providerErrorMessage: err.message || 'Network error connecting to WhatsApp test dispatcher',
+          httpStatus: 500,
+          rawResponse: { error: err.message },
+        };
+      }
+    }
+
     const phoneNumberId = this.getPhoneNumberId();
     const token = this.getAccessToken();
-    const version述 = this.getGraphVersion();
-    const url = `https://graph.facebook.com/${version述}/${phoneNumberId}/messages`;
+    const version = this.getGraphVersion();
+    const url = `https://graph.facebook.com/${version}/${phoneNumberId}/messages`;
 
     // Clean phone
     let cleanPhone = params.toPhone.replace(/[^0-9]/g, '');
@@ -573,20 +612,14 @@ export class MetaTemplateService {
     };
 
     const headers: Record<string, string> = {
-      Authorization: `Bearer ${token || 'EAA_DEMO_TOKEN'}`,
+      Authorization: `Bearer ${token || ''}`,
       'Content-Type': 'application/json',
     };
 
     const startTime = Date.now();
 
-    if (!this.isConfigured()) {
-      const generatedWamid = `wamid.HBgL${Math.random().toString(36).substring(2, 14)}TEST`;
-      const responseBody = {
-        messaging_product: 'whatsapp',
-        contacts: [{ input: cleanPhone, wa_id: cleanPhone }],
-        messages: [{ id: generatedWamid }],
-      };
-
+    if (!token || token.trim() === '') {
+      const errorMsg = 'WHATSAPP_ACCESS_TOKEN is not configured on the server. Real WhatsApp dispatch requires a valid Meta Access Token.';
       MetaApiLogger.log({
         action: 'TEST_SEND',
         method: 'POST',
@@ -594,18 +627,20 @@ export class MetaTemplateService {
         fullUrl: url,
         requestHeaders: headers,
         requestBody: payload,
-        responseStatus: 200,
-        responseStatusText: 'OK (Simulated Test Dispatch)',
-        responseBody,
+        responseStatus: 401,
+        responseStatusText: 'Unauthorized (Missing WHATSAPP_ACCESS_TOKEN)',
+        responseBody: { error: errorMsg },
         durationMs: Date.now() - startTime,
-        isSuccess: true,
+        isSuccess: false,
+        errorMessage: errorMsg,
       });
 
       return {
-        success: true,
-        messageId: generatedWamid,
-        httpStatus: 200,
-        rawResponse: responseBody,
+        success: false,
+        providerErrorCode: 401,
+        providerErrorMessage: errorMsg,
+        httpStatus: 401,
+        rawResponse: { error: errorMsg },
       };
     }
 
@@ -651,7 +686,7 @@ export class MetaTemplateService {
       return {
         success: true,
         messageId: wamid,
-        httpStatus: 200,
+        httpStatus: res.status,
         rawResponse: json,
       };
     } catch (err: any) {
@@ -675,6 +710,7 @@ export class MetaTemplateService {
         providerErrorCode: 500,
         providerErrorMessage: err.message || 'Network error dispatching test template',
         httpStatus: 500,
+        rawResponse: { error: err.message },
       };
     }
   }
@@ -683,7 +719,7 @@ export class MetaTemplateService {
 /**
  * Helper to generate human-readable actionable guidance for Meta rejection reasons
  */
-export function getMetaRejectionGuidance有的(reason: string | number): string {
+export function getMetaRejectionGuidance(reason: string | number): string {
   const r = String(reason).toUpperCase();
   if (r.includes('CATEGORY') || r.includes('INCORRECT_CATEGORY')) {
     return 'Meta categorized this template differently. Utility templates must be transactional updates. If promotional language is used, change category to MARKETING.';
@@ -699,5 +735,3 @@ export function getMetaRejectionGuidance有的(reason: string | number): string 
   }
   return 'Review Meta WhatsApp Business Policy guidelines. Ensure variables are formatted correctly and sample parameters are provided.';
 }
-
-export const getMetaRejectionGuidance = getMetaRejectionGuidance有的;

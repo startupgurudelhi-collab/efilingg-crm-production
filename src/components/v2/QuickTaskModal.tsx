@@ -7,7 +7,7 @@ import React, { useState, useMemo } from 'react';
 import { X, CheckCircle2, User, Calendar, Tag, AlertCircle, MessageSquare, Send, ShieldCheck, Zap } from 'lucide-react';
 import { addV2Task } from '../../lib/v2_db';
 import { getEmployees, getISTDateString, getCurrentSession } from '../../lib/db';
-import { formatTaskWhatsAppMessage } from '../../lib/taskWhatsAppNotification';
+import { formatTaskWhatsAppMessage, dispatchTaskWhatsAppNotification } from '../../lib/taskWhatsAppNotification';
 
 interface QuickTaskModalProps {
   isOpen: boolean;
@@ -32,10 +32,12 @@ export default function QuickTaskModal({
   const [description, setDescription] = useState('');
   const [clientName, setClientName] = useState(defaultClientName);
   const [assignedToId, setAssignedToId] = useState(employees[0]?.id || '');
+  const [overridePhone, setOverridePhone] = useState('');
   const [priority, setPriority] = useState<'High' | 'Medium' | 'Low' | 'Critical'>('High');
   const [dueDate, setDueDate] = useState(todayStr);
   const [category, setCategory] = useState(defaultCategory);
   const [showWhatsAppPreview, setShowWhatsAppPreview] = useState(false);
+  const [sendWhatsApp, setSendWhatsApp] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const selectedEmployee = useMemo(() => {
@@ -65,6 +67,7 @@ export default function QuickTaskModal({
     setIsSubmitting(true);
 
     const assignedName = selectedEmployee ? selectedEmployee.name : 'Unassigned';
+    const targetPhone = (overridePhone || selectedEmployee?.mobile || '').trim();
 
     addV2Task({
       title: title.trim(),
@@ -80,6 +83,25 @@ export default function QuickTaskModal({
       clientName: clientName.trim() || undefined,
     });
 
+    if (sendWhatsApp) {
+      try {
+        await dispatchTaskWhatsAppNotification({
+          taskTitle: title.trim(),
+          taskDescription: description.trim() || `Category: ${category}`,
+          assignedToId: assignedToId || 'ALL',
+          assignedToName: assignedName,
+          assigneePhone: targetPhone,
+          createdById: currentSession?.id || 'EMP-ADMIN',
+          createdByName: currentSession?.name || 'Master Admin',
+          priority,
+          clientName: clientName.trim() || undefined,
+          dueDate: dueDate || todayStr,
+        });
+      } catch (wErr) {
+        console.warn('[QuickTaskModal WhatsApp Dispatch Warning]:', wErr);
+      }
+    }
+
     setIsSubmitting(false);
     onTaskCreated();
     onClose();
@@ -88,6 +110,7 @@ export default function QuickTaskModal({
     setTitle('');
     setDescription('');
     setClientName('');
+    setOverridePhone('');
   };
 
   return (
@@ -102,7 +125,7 @@ export default function QuickTaskModal({
               <h3 className="text-base font-black text-slate-900 dark:text-white uppercase font-sans">
                 Dispatch Operational Task
               </h3>
-              <p className="text-xs text-slate-500">Auto WhatsApp Intimation enabled on assignment</p>
+              <p className="text-xs text-slate-500">Auto WhatsApp Intimation enabled via approved Meta template</p>
             </div>
           </div>
           <button
@@ -114,34 +137,56 @@ export default function QuickTaskModal({
         </div>
 
         {/* WhatsApp Auto-Intimation Banner */}
-        <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl flex items-start justify-between gap-3 text-xs">
-          <div className="flex items-start gap-2 text-emerald-800 dark:text-emerald-300">
-            <MessageSquare className="h-4 w-4 shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
-            <div>
-              <span className="font-bold">Live WhatsApp Intimation: </span>
-              <span>
-                {selectedEmployee?.mobile ? (
-                  <>Will notify <strong>{selectedEmployee.name}</strong> at <code className="bg-emerald-100 dark:bg-emerald-900/60 px-1 py-0.5 rounded font-mono">{selectedEmployee.mobile}</code></>
-                ) : (
-                  <span className="text-amber-700 dark:text-amber-400">Selected employee has no mobile number registered in profile</span>
-                )}
-              </span>
+        <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl space-y-2 text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
+              <MessageSquare className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span className="font-bold text-[11px]">WhatsApp Intimation Attached</span>
             </div>
+            <span className="px-2 py-0.5 bg-emerald-200/60 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 rounded-md font-mono text-[9px] font-bold border border-emerald-300/40">
+              task_assignment_v22 (Approved)
+            </span>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowWhatsAppPreview(!showWhatsAppPreview)}
-            className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline shrink-0 cursor-pointer"
-          >
-            {showWhatsAppPreview ? 'Hide Template' : 'View Template'}
-          </button>
+
+          <div className="flex items-center justify-between gap-2 text-[11px] text-slate-700 dark:text-slate-300">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={sendWhatsApp}
+                onChange={e => setSendWhatsApp(e.target.checked)}
+                className="rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+              />
+              <span>Send WhatsApp notification instantly to employee</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowWhatsAppPreview(!showWhatsAppPreview)}
+              className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline shrink-0 cursor-pointer"
+            >
+              {showWhatsAppPreview ? 'Hide Template' : 'View Template'}
+            </button>
+          </div>
+
+          {sendWhatsApp && (
+            <div className="pt-1.5 border-t border-emerald-200/50 dark:border-emerald-800/40 flex items-center gap-2">
+              <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-400 shrink-0">Recipient WhatsApp No:</span>
+              <input
+                type="text"
+                placeholder={selectedEmployee?.mobile ? `e.g. ${selectedEmployee.mobile}` : 'Enter 10-digit mobile number'}
+                value={overridePhone}
+                onChange={e => setOverridePhone(e.target.value)}
+                className="flex-1 px-2 py-1 bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 rounded-lg text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400"
+              />
+            </div>
+          )}
         </div>
 
         {/* WhatsApp Template Preview Drawer */}
         {showWhatsAppPreview && (
           <div className="p-3.5 bg-slate-900 text-slate-100 rounded-2xl text-[11px] font-mono whitespace-pre-wrap border border-slate-800 shadow-inner">
-            <div className="text-[10px] text-emerald-400 font-bold mb-1 uppercase tracking-wider flex items-center gap-1">
-              <Send className="h-3 w-3" /> WhatsApp Outbound Template Preview
+            <div className="text-[10px] text-emerald-400 font-bold mb-1 uppercase tracking-wider flex items-center justify-between">
+              <span className="flex items-center gap-1"><Send className="h-3 w-3" /> WhatsApp Template Preview</span>
+              <span className="text-[8px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">task_assignment_v22</span>
             </div>
             {previewMessage}
           </div>

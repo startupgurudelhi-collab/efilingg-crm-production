@@ -32,13 +32,13 @@ export const STANDARD_WHATSAPP_TEMPLATES: WhatsAppTemplateDefinition[] = [
     sampleParameters: ['Valued Customer'],
   },
   {
-    name: 'task_notification',
+    name: 'task_assignment_v22',
     category: 'UTILITY',
     language: 'en_US',
-    description: 'Staff & Associate Operational Task Intimation',
-    bodyText: 'Dear {{1}}, you have a new task assigned: {{2}}. Priority: {{3}}. Kindly review and complete within the deadline.',
-    parameterCount: 3,
-    sampleParameters: ['Associate Name', 'GST Return Filing', 'High'],
+    description: 'Meta-Approved Staff & Associate Operational Task Intimation',
+    bodyText: 'Dear Mr. {{1}},\n\nMr. {{2}} has assigned a task for you, kindly complete within the time limit.\n\nTask Details: {{3}}\nPriority: {{4}}\n\nIf task completed, then Mark as Done in your CRM.',
+    parameterCount: 4,
+    sampleParameters: ['Associate Name', 'Administrator', 'Review GSTR-3B filings for Apex Retails', 'High'],
   },
   {
     name: 'service_update',

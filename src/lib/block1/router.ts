@@ -16,6 +16,8 @@ import { WhatsAppService, DEFAULT_WHATSAPP_VERIFY_TOKEN } from './WhatsAppServic
 import { WhatsAppProviderFactory } from './WhatsAppProviderFactory';
 import { WhatsAppMediaService } from './WhatsAppMediaService';
 import { STANDARD_WHATSAPP_TEMPLATES } from './MetaWhatsAppProvider';
+import { WhatsAppTemplateRepository } from '../whatsapp/templateRepository';
+import { MetaTemplateService } from '../whatsapp/metaTemplateService';
 import { isForbiddenCPaaSPayload } from './cpaasFilter';
 import {
   getCustomers,
@@ -846,11 +848,188 @@ block1Router.post('/v2/conversations/:id/messages', async (req: Request, res: Re
  */
 block1Router.get('/v2/whatsapp/templates', (req: Request, res: Response) => {
   try {
+    const templates = WhatsAppTemplateRepository.getApprovedTemplates();
     return res.status(200).json({
       success: true,
-      templates: STANDARD_WHATSAPP_TEMPLATES,
+      templates: templates.length > 0 ? templates : STANDARD_WHATSAPP_TEMPLATES,
       policyNote: 'Meta WhatsApp Cloud API requires approved template messages for initiating fresh conversations and outside the 24-hour customer service window.',
     });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Get Full Templates Catalog with Filter & Search (GET /api/v2/whatsapp/templates/catalog)
+ */
+block1Router.get('/v2/whatsapp/templates/catalog', (req: Request, res: Response) => {
+  try {
+    const templates = WhatsAppTemplateRepository.getTemplates();
+    const lastSynced = WhatsAppTemplateRepository.getLastSyncedTimestamp();
+    const statusBreakdown = {
+      APPROVED: templates.filter((t) => t.status === 'APPROVED').length,
+      PENDING: templates.filter((t) => t.status === 'PENDING').length,
+      REJECTED: templates.filter((t) => t.status === 'REJECTED').length,
+      PAUSED: templates.filter((t) => t.status === 'PAUSED').length,
+      DRAFT: templates.filter((t) => t.status === 'DRAFT').length,
+    };
+
+    return res.status(200).json({
+      success: true,
+      count: templates.length,
+      templates,
+      statusBreakdown,
+      lastSyncedAt: lastSynced,
+      wabaId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '987654321098765',
+      phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '109283746501234',
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Create or Update Template (POST /api/v2/whatsapp/templates)
+ */
+block1Router.post('/v2/whatsapp/templates', async (req: Request, res: Response) => {
+  try {
+    const { template, user, submitToMeta } = req.body;
+    if (!template || !template.name || !template.bodyText || !template.category) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required template fields: name, bodyText, category',
+      });
+    }
+
+    const performer = user || { id: 'EMP-ADMIN', name: 'Master Administrator', role: 'Super Admin' };
+    const result = await WhatsAppTemplateRepository.saveTemplate(template, performer, submitToMeta !== false);
+    return res.status(200).json(result);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Duplicate Template (POST /api/v2/whatsapp/templates/:id/duplicate)
+ */
+block1Router.post('/v2/whatsapp/templates/:id/duplicate', (req: Request, res: Response) => {
+  try {
+    const templateId = req.params.id;
+    const user = req.body.user || { id: 'EMP-ADMIN', name: 'Master Administrator', role: 'Super Admin' };
+    const result = WhatsAppTemplateRepository.duplicateTemplate(templateId, user);
+    return res.status(200).json(result);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Delete Template (DELETE /api/v2/whatsapp/templates/:id)
+ */
+block1Router.delete('/v2/whatsapp/templates/:id', async (req: Request, res: Response) => {
+  try {
+    const templateId = req.params.id;
+    const user = req.body.user || { id: 'EMP-ADMIN', name: 'Master Administrator', role: 'Super Admin' };
+    const result = await WhatsAppTemplateRepository.deleteTemplate(templateId, user);
+    return res.status(200).json(result);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Trigger Meta Sync (POST /api/v2/whatsapp/templates/sync)
+ */
+block1Router.post('/v2/whatsapp/templates/sync', async (req: Request, res: Response) => {
+  try {
+    const user = req.body.user || { id: 'EMP-ADMIN', name: 'Master Administrator', role: 'Super Admin' };
+    const result = await WhatsAppTemplateRepository.syncFromMeta(user);
+    return res.status(200).json(result);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Dispatch Test Send for Template (POST /api/v2/whatsapp/templates/test-send)
+ */
+block1Router.post('/v2/whatsapp/templates/test-send', async (req: Request, res: Response) => {
+  try {
+    const { toPhone, templateId, templateName, parameters, user } = req.body;
+    if (!toPhone) {
+      return res.status(400).json({ success: false, error: 'Target phone number is required' });
+    }
+
+    const template = templateId
+      ? WhatsAppTemplateRepository.getTemplateById(templateId)
+      : templateName
+      ? WhatsAppTemplateRepository.getTemplateByName(templateName)
+      : null;
+
+    if (!template) {
+      return res.status(404).json({ success: false, error: 'Template not found' });
+    }
+
+    const performer = user || { id: 'EMP-ADMIN', name: 'Master Administrator', role: 'Super Admin' };
+    const sendResult = await MetaTemplateService.sendTestTemplate({
+      toPhone,
+      template,
+      parameters: parameters || template.sampleParameters || [],
+      senderId: performer.id,
+      senderName: performer.name,
+    });
+
+    WhatsAppTemplateRepository.recordAuditLog({
+      templateId: template.id,
+      templateName: template.name,
+      action: 'TEST_SENT',
+      performedBy: performer.id,
+      performedByName: performer.name,
+      role: performer.role,
+      details: `Dispatched test send of "${template.name}" to ${toPhone} (Result: ${
+        sendResult.success ? 'Delivered' : 'Failed'
+      })`,
+    });
+
+    return res.status(200).json(sendResult);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Get Template Audit Logs (GET /api/v2/whatsapp/templates/audit-logs)
+ */
+block1Router.get('/v2/whatsapp/templates/audit-logs', (req: Request, res: Response) => {
+  try {
+    const logs = WhatsAppTemplateRepository.getAuditLogs();
+    return res.status(200).json({ success: true, count: logs.length, logs });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Set Default Binding for Tasks, Leads, or Compliance (POST /api/v2/whatsapp/templates/set-default)
+ */
+block1Router.post('/v2/whatsapp/templates/set-default', (req: Request, res: Response) => {
+  try {
+    const { bindingType, templateId, user } = req.body;
+    if (!bindingType || !templateId) {
+      return res.status(400).json({ success: false, error: 'bindingType and templateId are required' });
+    }
+
+    const performer = user || { id: 'EMP-ADMIN', name: 'Master Administrator', role: 'Super Admin' };
+    const result = WhatsAppTemplateRepository.setDefaultBinding(bindingType, templateId, performer);
+    return res.status(200).json(result);
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     return res.status(500).json({ success: false, error: error.message });

@@ -10,6 +10,7 @@ import { AttachmentV2, MessageV2 } from './types';
 import { IngestionResult } from './LeadEngineService';
 import { WhatsAppProviderFactory } from './WhatsAppProviderFactory';
 import { SendMediaOptions, SendOutboundOptions, SendTemplateOptions } from './IWhatsAppProvider';
+import { WhatsAppTemplateRepository } from '../whatsapp/templateRepository';
 
 export const DEFAULT_WHATSAPP_VERIFY_TOKEN = 'efilingg_whatsapp_verify_token_2026';
 
@@ -269,20 +270,24 @@ If task completed, then Mark as Done in your crm.`;
         process.env.WHATSAPP_ACCESS_TOKEN
       ) {
         console.warn(`[Task WhatsApp 24h Window Fallback] Direct text blocked by Meta 24h policy. Attempting template dispatch for ${params.assigneePhone}...`);
-        const templateName = process.env.WHATSAPP_TASK_TEMPLATE || 'task_notification';
+        const taskTmpl = WhatsAppTemplateRepository.getDefaultTaskTemplate();
+        const templateName = taskTmpl?.name || process.env.WHATSAPP_TASK_TEMPLATE || 'task_assignment_v2';
         try {
+          const tmplParams = [
+            { type: 'text', text: recipientGreeting },
+            { type: 'text', text: creatorGreeting },
+            { type: 'text', text: details },
+            { type: 'text', text: formattedPriority },
+          ];
+
           const tmplMsg = await provider.sendTemplateMessageAsync({
             toPhone: params.assigneePhone,
             templateName,
-            languageCode: 'en_US',
+            languageCode: taskTmpl?.language || 'en_US',
             components: [
               {
                 type: 'body',
-                parameters: [
-                  { type: 'text', text: recipientGreeting },
-                  { type: 'text', text: details },
-                  { type: 'text', text: formattedPriority },
-                ],
+                parameters: tmplParams.slice(0, taskTmpl?.parameterCount || 4),
               },
             ],
             senderId: params.senderId || 'SYSTEM_TASK_NOTIFICATION',

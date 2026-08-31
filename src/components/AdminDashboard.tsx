@@ -100,6 +100,7 @@ import EditEmployeeModal from './EditEmployeeModal';
 import ExitLetterModal from './ExitLetterModal';
 import AISalesWorkspace from './AISalesWorkspace';
 import WhatsAppWebhookSettings from './WhatsAppWebhookSettings';
+import { WhatsAppTemplatesManager } from './whatsapp/WhatsAppTemplatesManager';
 import { FeatureFlagGuard } from '../lib/featureFlags';
 import { eventBus } from '../lib/eventBus';
 
@@ -138,11 +139,11 @@ export default function AdminDashboard({
   const [logs, setLogs] = useState<ActivityLog[]>([]);
 
   // Local Views Tab
-  const [viewTab, setViewTab] = useState<'analytics' | 'employees' | 'leads' | 'proposals' | 'logs' | 'backup' | 'recovery_center' | 'services' | 'templates' | 'offer_letter' | 'payroll' | 'ai_sales_inbox' | 'whatsapp_webhook' | 'ai_sales_agent' | 'ai_qualified_leads' | 'my_attendance'>('analytics');
+  const [viewTab, setViewTab] = useState<'analytics' | 'employees' | 'leads' | 'proposals' | 'logs' | 'backup' | 'recovery_center' | 'services' | 'templates' | 'whatsapp_templates' | 'offer_letter' | 'payroll' | 'ai_sales_inbox' | 'whatsapp_webhook' | 'ai_sales_agent' | 'ai_qualified_leads' | 'my_attendance'>('analytics');
 
   useEffect(() => {
     if (activeTabOverride) {
-      const validTabs = ['analytics', 'employees', 'leads', 'proposals', 'logs', 'backup', 'recovery_center', 'services', 'templates', 'offer_letter', 'payroll', 'ai_sales_inbox', 'whatsapp_webhook', 'ai_sales_agent', 'ai_qualified_leads', 'my_attendance'];
+      const validTabs = ['analytics', 'employees', 'leads', 'proposals', 'logs', 'backup', 'recovery_center', 'services', 'templates', 'whatsapp_templates', 'offer_letter', 'payroll', 'ai_sales_inbox', 'whatsapp_webhook', 'ai_sales_agent', 'ai_qualified_leads', 'my_attendance'];
       if (validTabs.includes(activeTabOverride)) {
         setViewTab(activeTabOverride as any);
       }
@@ -1180,6 +1181,19 @@ export default function AdminDashboard({
             )}
           </div>
         </div>
+      )}
+
+      {/* ==============================================================
+          TAB: WHATSAPP TEMPLATES (Sales & Marketing Direct Module)
+          ============================================================== */}
+      {viewTab === 'whatsapp_templates' && (
+        <WhatsAppTemplatesManager
+          currentUser={{
+            id: currentUserId,
+            name: loggedInUser?.name || 'Administrator',
+            role: loggedInUser?.role || 'Super Admin',
+          }}
+        />
       )}
 
       {/* ==============================================================

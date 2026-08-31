@@ -226,6 +226,7 @@ function AppContent() {
       case 'sales_proposals': return 'proposals';
       case 'sales_services': return 'services';
       case 'sales_templates': return 'templates';
+      case 'sales_whatsapp_templates': return 'whatsapp_templates';
       case 'sales_ai_inbox': return 'ai_sales_inbox';
       case 'sales_ai_qualified_leads': return 'ai_qualified_leads';
       case 'sales_ai_agent': return 'ai_sales_agent';
@@ -278,6 +279,7 @@ function AppContent() {
       case 'sales_proposals': return { group: 'Sales & Marketing', title: 'Proposals, Quotations & Estimates' };
       case 'sales_services': return { group: 'Sales & Marketing', title: 'Service Catalogue & Rate Master' };
       case 'sales_templates': return { group: 'Sales & Marketing', title: 'Proposal Designer' };
+      case 'sales_whatsapp_templates': return { group: 'Sales & Marketing', title: 'WhatsApp Templates & Meta Cloud API' };
       case 'sales_ai_inbox': return { group: 'Sales & Marketing', title: 'AI Sales Inbox & Automated Chats' };
       case 'sales_ai_qualified_leads': return { group: 'Sales & Marketing', title: 'AI-Qualified Leads Directory' };
       case 'sales_ai_agent': return { group: 'Settings & Control', title: 'AI Sales Agent & Automation Platform' };

@@ -31,7 +31,8 @@ import {
   FileCheck2,
   CheckCircle2,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  MessageSquare,
 } from 'lucide-react';
 import { Employee } from '../types';
 import { hasModuleAccess } from '../lib/permissions';
@@ -62,6 +63,7 @@ export type NavigationTarget =
   | 'sales_proposals'
   | 'sales_services'
   | 'sales_templates'
+  | 'sales_whatsapp_templates'
   | 'sales_ai_inbox'
   | 'sales_ai_qualified_leads'
   | 'sales_ai_agent'
@@ -359,6 +361,7 @@ export default function ExecutiveSidebar({
       { id: 'sales_proposals', label: 'Proposals & Quotes', icon: FileText, badge: proposalCount },
       { id: 'sales_services', label: 'Service Catalogue', icon: Award },
       ...(!isTeamLeader ? [{ id: 'sales_templates' as const, label: 'Proposal Designer', icon: FileText }] : []),
+      { id: 'sales_whatsapp_templates', label: 'WhatsApp Templates', icon: MessageSquare, highlight: true },
       { id: 'sales_ai_inbox', label: 'AI Sales Inbox', icon: Sparkles, highlight: true },
       { id: 'sales_ai_qualified_leads', label: 'AI Qualified Leads', icon: UserCheck, badge: AiAgentRepository.getQualifiedLeads().length, highlight: true }
     ]

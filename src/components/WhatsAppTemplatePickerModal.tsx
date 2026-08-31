@@ -10,6 +10,7 @@ import {
   Phone,
 } from 'lucide-react';
 import { STANDARD_WHATSAPP_TEMPLATES } from '../lib/block1/whatsappTemplates';
+import { WhatsAppTemplateRepository } from '../lib/whatsapp/templateRepository';
 import { ConversationV2 } from '../lib/block1/types';
 
 interface WhatsAppTemplatePickerModalProps {
@@ -41,7 +42,12 @@ export default function WhatsAppTemplatePickerModal({
 
   if (!isOpen) return null;
 
-  const selectedTemplate = STANDARD_WHATSAPP_TEMPLATES.find((t) => t.name === selectedTemplateName);
+  const availableTemplates = React.useMemo(() => {
+    const fromRepo = WhatsAppTemplateRepository.getApprovedTemplates();
+    return fromRepo.length > 0 ? fromRepo : STANDARD_WHATSAPP_TEMPLATES;
+  }, []);
+
+  const selectedTemplate = availableTemplates.find((t) => t.name === selectedTemplateName) || availableTemplates[0];
 
   // Build real-time preview
   const previewTemplateBody = () => {
@@ -152,7 +158,7 @@ export default function WhatsAppTemplatePickerModal({
               <span>Choose Approved Template:</span>
             </label>
             <div className="grid grid-cols-1 gap-1.5 max-h-48 overflow-y-auto pr-1">
-              {STANDARD_WHATSAPP_TEMPLATES.map((tmpl) => (
+              {availableTemplates.map((tmpl) => (
                 <button
                   key={tmpl.name}
                   type="button"
@@ -170,7 +176,7 @@ export default function WhatsAppTemplatePickerModal({
                         {tmpl.category}
                       </span>
                     </div>
-                    <p className="text-[10px] text-slate-400 line-clamp-1">{tmpl.description}</p>
+                    <p className="text-[10px] text-slate-400 line-clamp-1">{tmpl.bodyText}</p>
                   </div>
                 </button>
               ))}

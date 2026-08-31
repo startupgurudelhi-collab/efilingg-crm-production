@@ -208,20 +208,33 @@ export class WhatsAppService {
     clientName?: string;
     senderId?: string;
   }): Promise<MessageV2> {
-    const formatSalutationName = (rawName: string) => {
-      const trimmed = (rawName || '').trim();
-      if (!trimmed) return 'Associate';
-      if (/^(Mr\.|Ms\.|Mrs\.|Dr\.|Adv\.|CA\.|CS\.)\s/i.test(trimmed)) {
-        return trimmed;
-      }
-      return `Mr. ${trimmed}`;
-    };
+    // Clean parameter string for Meta Graph API compliance (no newlines or control chars)
+    const sanitizeParam = (val: string, maxLen = 200) =>
+      (val || '')
+        .replace(/[\r\n\t]+/g, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim()
+        .slice(0, maxLen);
 
-    const recipientGreeting = formatSalutationName(params.assigneeName);
-    const creatorGreeting = formatSalutationName(params.creatorName);
+    // Meta template task_assignment_v22 has body:
+    // "Dear Mr. {{1}},\n\nMr. {{2}} has assigned a task for you, kindly complete within the time limit.\n\nTask Details: {{3}}\nPriority: {{4}}\n\nIf task completed, then Mark as Done in your CRM."
+    // Clean name without duplicate "Mr." salutation
+    const cleanAssigneeName = sanitizeParam(
+      (params.assigneeName || 'Associate')
+        .replace(/^(Mr\.|Ms\.|Mrs\.|Dr\.|Adv\.|CA\.|CS\.)\s*/i, '')
+        .trim() || 'Associate',
+      60
+    );
+
+    const cleanCreatorName = sanitizeParam(
+      (params.creatorName || 'Master Admin')
+        .replace(/^(Mr\.|Ms\.|Mrs\.|Dr\.|Adv\.|CA\.|CS\.)\s*/i, '')
+        .trim() || 'Master Admin',
+      60
+    );
 
     // Normalize Priority
-    let formattedPriority = 'Medium';
+    let formattedPriority = 'High';
     const rawPriority = (params.priority || '').toLowerCase();
     if (rawPriority.includes('crit') || rawPriority.includes('urg') || rawPriority.includes('high')) {
       formattedPriority = 'High';
@@ -232,7 +245,7 @@ export class WhatsAppService {
     }
 
     // Build Task Details string
-    let details = params.taskTitle.trim();
+    let details = (params.taskTitle || '').trim();
     if (params.clientName && !details.toLowerCase().includes(params.clientName.toLowerCase())) {
       details = `${details} of ${params.clientName}`;
     }
@@ -243,16 +256,8 @@ export class WhatsAppService {
       }
     }
 
-    const message = `Dear ${recipientGreeting} 
-
-Urgent Notification
-
-${creatorGreeting} has assign a task for you, kindly compile within the time limit.
-
-task details: ${details}
-Priority: ${formattedPriority}
-
-If task completed, then Mark as Done in your crm.`;
+    const cleanDetails = sanitizeParam(details || 'Operational Task', 200);
+    const cleanPriorityVal = sanitizeParam(formattedPriority, 30);
 
     const provider = WhatsAppProviderFactory.getProvider();
     try {
@@ -261,10 +266,10 @@ If task completed, then Mark as Done in your crm.`;
       const templateName = taskTmpl?.name || process.env.WHATSAPP_TASK_TEMPLATE || 'task_assignment_v22';
 
       const tmplParams = [
-        { type: 'text', text: recipientGreeting },
-        { type: 'text', text: creatorGreeting },
-        { type: 'text', text: details },
-        { type: 'text', text: formattedPriority },
+        { type: 'text', text: cleanAssigneeName },
+        { type: 'text', text: cleanCreatorName },
+        { type: 'text', text: cleanDetails },
+        { type: 'text', text: cleanPriorityVal },
       ];
 
       console.log(`[Task WhatsApp Dispatch] Dispatching approved template "${templateName}" to ${params.assigneePhone}...`);

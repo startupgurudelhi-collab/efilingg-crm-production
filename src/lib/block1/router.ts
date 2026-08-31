@@ -323,6 +323,15 @@ const handleTaskIntimationSend = async (req: Request, res: Response) => {
       senderId,
     });
 
+    if (!resultMessage.providerSuccess && resultMessage.deliveryStatus === 'FAILED') {
+      return res.status(200).json({
+        success: false,
+        error: resultMessage.providerErrorMessage || 'Meta WhatsApp Cloud API could not deliver message to this recipient.',
+        errorCode: resultMessage.providerErrorCode,
+        message: resultMessage,
+      });
+    }
+
     return res.status(200).json({ success: true, message: resultMessage });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));

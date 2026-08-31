@@ -359,15 +359,15 @@ export default function V2Tasks({ initialFilter }: V2TasksProps) {
           });
         } else {
           setDispatchToast({
-            message: `Task Created, but WhatsApp intimation skipped: ${dispatchResult.errors?.[0] || 'Mobile number configuration needed'}`,
-            type: 'info',
+            message: `Task Created, but WhatsApp intimation failed: ${dispatchResult.errors?.[0] || 'Mobile number not reachable or Meta restriction'}`,
+            type: 'error',
           });
         }
       } catch (wErr: any) {
         console.error('[Create Task WhatsApp Error]:', wErr);
         setDispatchToast({
-          message: `Task Created (WhatsApp intimation queued): ${wErr.message}`,
-          type: 'info',
+          message: `Task Created (WhatsApp intimation error): ${wErr.message}`,
+          type: 'error',
         });
       }
     } else {

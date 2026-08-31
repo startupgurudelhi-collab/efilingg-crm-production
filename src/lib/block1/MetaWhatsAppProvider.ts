@@ -354,12 +354,16 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
         const rawMsg = parsedResponse?.error?.message || `Meta API HTTP ${httpStatusCode}`;
         const errorDetails = parsedResponse?.error?.error_data?.details || '';
 
-        if (errorCode === 131047 || rawMsg.includes('24 hours') || errorDetails.includes('24 hours')) {
-          errorMessage = `Meta WhatsApp 24-Hour Policy (Code 131047): More than 24 hours have passed since customer last replied, or recipient has never messaged this WhatsApp Business Number. You MUST send an approved WhatsApp Template message to re-engage with this number.`;
+        if (errorCode === 131030 || rawMsg.includes('not in allowed list') || errorDetails.includes('allowed list')) {
+          errorMessage = `Meta Sandbox Restriction (Code 131030): Your WhatsApp app is in Development Mode. Messages can ONLY be sent to phone numbers added to the verified test recipients list in the Meta App Developer Portal (WhatsApp > API Setup > To: Manage Phone Numbers). Switch app to Live mode or add this number as a test number.`;
+        } else if (errorCode === 131047 || rawMsg.includes('24 hours') || errorDetails.includes('24 hours')) {
+          errorMessage = `Meta WhatsApp 24-Hour Policy (Code 131047): Recipient has not initiated chat in past 24 hours. A pre-approved WhatsApp Template (e.g. task_assignment_v22) is required to message new numbers.`;
         } else if (errorCode === 131026 || rawMsg.includes('undeliverable')) {
           errorMessage = `Meta WhatsApp Delivery Error (Code 131026): Message undeliverable. The phone number might not be registered on WhatsApp, or the recipient has opted out.`;
-        } else if (errorCode === 132000 || errorCode === 132001 || rawMsg.includes('Template')) {
-          errorMessage = `Meta Template Error (Code ${errorCode}): Template not found or parameter mismatch. Verify template name & language code in Meta WhatsApp Manager.`;
+        } else if (errorCode === 132000 || errorCode === 132001 || rawMsg.includes('Template') || rawMsg.includes('language')) {
+          errorMessage = `Meta Template Error (Code ${errorCode}): Template not found or language mismatch. Verify template name & language code in Meta WhatsApp Manager.`;
+        } else if (errorCode === 132007 || rawMsg.includes('parameters')) {
+          errorMessage = `Meta Template Parameter Error (Code ${errorCode}): Template parameter count or formatting mismatch.`;
         } else if (rawMsg.includes('API access blocked') || errorCode === 200 || errorCode === 190 || parsedResponse?.error?.type === 'OAuthException') {
           errorMessage = `API access blocked by Meta (Code ${errorCode}): WHATSAPP_ACCESS_TOKEN expired/invalid, or Meta WABA account restricted. Generate a new Permanent System User Token in Meta Business Manager.`;
         } else {
@@ -609,55 +613,93 @@ export class MetaWhatsAppProvider implements IWhatsAppProvider {
   }
 
   /**
-   * Send WhatsApp Template Message (for OTP, Invoices, Payment Reminders)
+   * Send WhatsApp Template Message (for OTP, Invoices, Payment Reminders, Task Intimations)
    */
   public async sendTemplateMessageAsync(options: SendTemplateOptions): Promise<MessageV2> {
-    const cleanPhone = options.toPhone.replace(/\D/g, '');
-    const mobile = cleanPhone.startsWith('91') || cleanPhone.length > 10 ? cleanPhone : `91${cleanPhone}`;
+    const rawClean = options.toPhone.replace(/\D/g, '').replace(/^0+/, '');
+    const mobile = rawClean.startsWith('91') && rawClean.length >= 12
+      ? rawClean
+      : rawClean.length === 10
+      ? `91${rawClean}`
+      : rawClean.startsWith('91')
+      ? rawClean
+      : `91${rawClean}`;
 
     const templateName = options.templateName;
-    const languageCode = options.languageCode || 'en_US';
+    const requestedLanguage = options.languageCode || 'en_US';
 
-    const metaPayload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to: mobile,
-      type: 'template',
-      template: {
-        name: templateName,
-        language: { code: languageCode },
-        components: options.components || [],
-      },
-    };
+    // Sequence of candidate language codes to automatically retry if Meta returns language mismatch (132001/132000)
+    const candidateLanguages = Array.from(new Set([requestedLanguage, 'en_US', 'en', 'en_GB']));
 
-    const result = await this.executeMetaGraphApiRequest(metaPayload);
+    let lastResult: any = null;
+    let successfulLanguage = requestedLanguage;
+
+    for (const lang of candidateLanguages) {
+      const metaPayload = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: mobile,
+        type: 'template',
+        template: {
+          name: templateName,
+          language: { code: lang },
+          components: options.components || [],
+        },
+      };
+
+      console.log(`[Meta WhatsApp Template Request] Dispatching template "${templateName}" (Language: ${lang}) to ${mobile}...`);
+      lastResult = await this.executeMetaGraphApiRequest(metaPayload);
+
+      if (lastResult.success) {
+        successfulLanguage = lang;
+        console.log(`[Meta WhatsApp Template SUCCESS] Template "${templateName}" matched language "${lang}" and was delivered to ${mobile}!`);
+        break;
+      }
+
+      // Check if error is specifically template not found or language mismatch (Code 132001 or 132000)
+      const isLanguageOrNotFound =
+        lastResult.errorCode === 132001 ||
+        lastResult.errorCode === 132000 ||
+        (lastResult.errorMessage && lastResult.errorMessage.toLowerCase().includes('language'));
+
+      if (!isLanguageOrNotFound) {
+        // Stop retrying if error is due to something else (e.g. sandbox 131030, token invalid 190, undeliverable 131026)
+        break;
+      }
+      console.warn(`[Meta WhatsApp Template Retry] Template "${templateName}" not found in language "${lang}". Trying next candidate...`);
+    }
 
     const msgId = `MSG-TMPL-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-    const resolvedMessageId = result.providerMessageId || `wamid.tmpl-${Date.now()}`;
-    const finalStatus: DeliveryStatus = result.success ? 'SENT' : 'FAILED';
+    const resolvedMessageId = lastResult?.providerMessageId || `wamid.tmpl-${Date.now()}`;
+    const finalStatus: DeliveryStatus = lastResult?.success ? 'SENT' : 'FAILED';
 
     const outboundMsg: MessageV2 = {
       id: msgId,
-      conversationId: options.conversationId || 'SYSTEM_TEMPLATE_CONV',
+      conversationId: options.conversationId || `CONV-TMPL-${mobile}`,
       direction: 'OUTBOUND',
       senderId: options.senderId || 'SYSTEM_TEMPLATE',
       senderName: options.senderName || 'Automated Template Engine',
       messageType: 'TEMPLATE',
-      content: `[WhatsApp Template: ${templateName}]`,
+      content: `[WhatsApp Template: ${templateName} (${successfulLanguage})]`,
       whatsappMessageId: resolvedMessageId,
       providerMessageId: resolvedMessageId,
       deliveryStatus: finalStatus,
       timestamp: new Date().toISOString(),
-      rawProviderResponse: result.parsedResponse || result.responseBodyText,
-      providerSuccess: result.success,
-      providerErrorCode: result.errorCode,
-      providerErrorMessage: result.errorMessage,
-      httpStatus: result.httpStatusCode,
+      rawProviderResponse: lastResult?.parsedResponse || lastResult?.responseBodyText,
+      providerSuccess: lastResult?.success || false,
+      providerErrorCode: lastResult?.errorCode,
+      providerErrorMessage: lastResult?.errorMessage,
+      httpStatus: lastResult?.httpStatusCode || 500,
     };
 
     saveMessage(outboundMsg);
 
-    console.log(`[Meta WhatsApp Template Sent] Template: ${templateName} | Recipient: ${mobile} | Status: ${finalStatus}`);
+    if (!lastResult?.success) {
+      console.error(`[Meta WhatsApp Template FAILED] Recipient: ${mobile} | Code: ${lastResult?.errorCode} | Error: ${lastResult?.errorMessage}`);
+    } else {
+      console.log(`[Meta WhatsApp Template Sent] Template: ${templateName} | Recipient: ${mobile} | Status: ${finalStatus}`);
+    }
+
     return outboundMsg;
   }
 

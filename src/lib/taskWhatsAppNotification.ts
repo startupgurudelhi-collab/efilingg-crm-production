@@ -156,8 +156,10 @@ export async function dispatchTaskWhatsAppNotification(
     const detailsList: any[] = [];
 
     for (const recipient of targetRecipients) {
-      let cleanPhone = recipient.phone.replace(/\D/g, '');
+      let cleanPhone = recipient.phone.replace(/\D/g, '').replace(/^0+/, '');
       if (cleanPhone.length === 10) {
+        cleanPhone = `91${cleanPhone}`;
+      } else if (cleanPhone.length >= 10 && !cleanPhone.startsWith('91')) {
         cleanPhone = `91${cleanPhone}`;
       }
 
@@ -186,7 +188,8 @@ export async function dispatchTaskWhatsAppNotification(
           console.log(`[Task WhatsApp Sent] Successfully sent task intimation WhatsApp (task_assignment_v22) to ${recipient.name} (${cleanPhone}).`);
         } else {
           console.warn(`[Task WhatsApp Warning] Failed to send intimation to ${recipient.name}:`, resJson);
-          errors.push(`${recipient.name}: ${resJson.error || resJson.message?.providerErrorMessage || 'Dispatch error'}`);
+          const metaMsg = resJson.error || resJson.message?.providerErrorMessage || 'Dispatch error';
+          errors.push(`${recipient.name} (${cleanPhone}): ${metaMsg}`);
         }
       } catch (err: any) {
         console.error(`[Task WhatsApp Error] Network failure sending to ${recipient.name}:`, err);

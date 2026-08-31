@@ -975,10 +975,11 @@ export function getV2Tasks(): V2Task[] {
     }
   ]);
 }
-export function addV2Task(task: Omit<V2Task, 'id' | 'createdAt'>): V2Task {
+export function addV2Task(task: Omit<V2Task, 'id' | 'createdAt'> & { assigneePhone?: string }): V2Task {
   const list = getV2Tasks();
+  const { assigneePhone, ...taskData } = task;
   const newItem: V2Task = {
-    ...task,
+    ...taskData,
     id: `TSK-${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
     createdAt: new Date().toISOString().split('T')[0]
   };
@@ -992,6 +993,7 @@ export function addV2Task(task: Omit<V2Task, 'id' | 'createdAt'>): V2Task {
       taskDescription: newItem.description,
       assignedToId: newItem.assignedTo,
       assignedToName: newItem.assignedToName,
+      assigneePhone: assigneePhone,
       createdById: newItem.createdBy,
       createdByName: newItem.createdByName,
       priority: newItem.priority || (newItem.description?.includes('[CRITICAL]') ? 'Critical' : newItem.description?.includes('[LOW]') ? 'Low' : newItem.description?.includes('[MEDIUM]') ? 'Medium' : 'High'),

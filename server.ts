@@ -2722,25 +2722,43 @@ app.post('/api/admin/backup-import', async (req, res) => {
 });
 
 // --- CHROME EXTENSION DYNAMIC ZIP DOWNLOAD & EXCHANGE API ---
-const extensionTokens = new Map<string, { clientId: string; employeeName: string; createdAt: number }>();
+interface ExtensionTokenData {
+  clientId: string;
+  username?: string;
+  password?: string;
+  gstin?: string;
+  firmName?: string;
+  employeeName: string;
+  createdAt: number;
+}
+const extensionTokens = new Map<string, ExtensionTokenData>();
 
 app.post('/api/auth/generate-exchange-token', (req, res) => {
   try {
-    const { clientId, employeeId, employeeName } = req.body || {};
+    const { clientId, employeeId, employeeName, username, password, gstin, firmName } = req.body || {};
     const token = crypto.randomBytes(32).toString('hex');
     extensionTokens.set(token, {
       clientId: clientId || '',
+      username: username || '',
+      password: password || '',
+      gstin: gstin || '',
+      firmName: firmName || '',
       employeeName: employeeName || 'Officer',
       createdAt: Date.now()
     });
-    // Clean up tokens older than 10 minutes
+    // Clean up tokens older than 15 minutes
     const now = Date.now();
     for (const [t, data] of extensionTokens.entries()) {
-      if (now - data.createdAt > 10 * 60 * 1000) {
+      if (now - data.createdAt > 15 * 60 * 1000) {
         extensionTokens.delete(t);
       }
     }
-    res.json({ success: true, token });
+    res.json({ 
+      success: true, 
+      token,
+      clientId: clientId || '',
+      username: username || ''
+    });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -2749,19 +2767,41 @@ app.post('/api/auth/generate-exchange-token', (req, res) => {
 app.get('/api/extension/get-credentials', (req, res) => {
   try {
     const authHeader = req.headers.authorization || '';
-    const token = authHeader.replace(/^Bearer\s+/i, '');
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
     const { clientId } = req.query;
 
-    // Validate token exists if provided
-    if (token && !extensionTokens.has(token)) {
-      // Still allow if client ID is provided in development session
+    let tokenData: ExtensionTokenData | undefined = undefined;
+    if (token && extensionTokens.has(token)) {
+      tokenData = extensionTokens.get(token);
+    } else if (clientId) {
+      // Find latest token matching clientId
+      for (const [_, val] of extensionTokens.entries()) {
+        if (val.clientId === clientId) {
+          tokenData = val;
+          break;
+        }
+      }
     }
 
-    res.json({
-      success: true,
-      clientId: clientId || '',
-      message: 'Credentials verified for Chrome extension injection'
-    });
+    if (tokenData && (tokenData.username || tokenData.password)) {
+      res.json({
+        success: true,
+        clientId: tokenData.clientId || (clientId as string) || '',
+        username: tokenData.username || '',
+        password: tokenData.password || '',
+        gstin: tokenData.gstin || '',
+        firmName: tokenData.firmName || '',
+        message: 'Credentials verified for Chrome extension injection'
+      });
+    } else {
+      res.json({
+        success: true,
+        clientId: (clientId as string) || '',
+        username: '',
+        password: '',
+        message: 'No active session credentials available'
+      });
+    }
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

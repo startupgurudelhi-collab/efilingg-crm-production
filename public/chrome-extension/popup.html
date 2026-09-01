@@ -14,33 +14,33 @@
     .header {
       background: linear-gradient(135deg, #022c22 0%, #047857 100%);
       color: #ffffff;
-      padding: 16px;
+      padding: 14px 16px;
       text-align: center;
       border-bottom: 3px solid #10b981;
     }
     .header h2 {
       margin: 0;
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 800;
       letter-spacing: 0.5px;
       text-transform: uppercase;
     }
     .header p {
-      margin: 4px 0 0 0;
+      margin: 3px 0 0 0;
       font-size: 10px;
-      opacity: 0.8;
+      opacity: 0.85;
       font-weight: 500;
     }
     .container {
-      padding: 16px;
+      padding: 14px 16px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
     }
     .status-card {
       background-color: #ffffff;
       border: 1px solid #e2e8f0;
-      border-radius: 12px;
+      border-radius: 10px;
       padding: 12px;
       display: flex;
       flex-direction: column;
@@ -48,14 +48,14 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     .status-title {
-      font-[10px];
+      font-size: 10px;
       font-weight: 700;
       color: #64748b;
       text-transform: uppercase;
       margin-bottom: 2px;
     }
     .status-badge {
-      font-size: 12px;
+      font-size: 11.5px;
       font-weight: 700;
       padding: 6px 10px;
       border-radius: 8px;
@@ -64,6 +64,7 @@
       border: 1px solid #a7f3d0;
       display: inline-block;
       text-align: center;
+      line-height: 1.3;
     }
     .status-error {
       color: #be123c;
@@ -72,7 +73,7 @@
     }
     .client-detail {
       font-size: 11px;
-      line-height: 1.4;
+      line-height: 1.5;
     }
     .client-detail span {
       font-weight: 700;
@@ -129,28 +130,35 @@
       background-color: #fecdd3;
     }
     .footer {
-      padding: 10px;
+      padding: 8px;
       background-color: #f1f5f9;
       border-top: 1px solid #e2e8f0;
       text-align: center;
-      font-size: 9px;
+      font-size: 9.5px;
       color: #64748b;
-      font-weight: bold;
+      font-weight: 600;
     }
     .copy-success {
       color: #059669;
-      font-size: 9px;
+      font-size: 10px;
       font-weight: 700;
       text-align: center;
-      margin-top: -4px;
-      height: 12px;
+      min-height: 14px;
+    }
+    .hint-box {
+      font-size: 10px;
+      color: #64748b;
+      background: #f1f5f9;
+      border-radius: 6px;
+      padding: 6px 8px;
+      line-height: 1.4;
     }
   </style>
 </head>
 <body>
   <div class="header">
     <h2>Efilingg CRM V2</h2>
-    <p>GST Portal Auto-Login Assistant</p>
+    <p>GST Portal 1-Click Auto-Fill Assistant</p>
   </div>
   
   <div class="container">
@@ -158,13 +166,22 @@
       <div class="status-title">Active Assist Status</div>
       <div id="status-display" class="status-badge">Checking connection...</div>
       
-      <div id="client-info-section" class="client-detail" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #cbd5e1;">
+      <div id="client-info-section" class="client-detail" style="display: none; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e1;">
+        <div id="firm-row" style="display: none;"><span>Firm:</span> <b id="info-firm" style="color: #0f172a;">-</b></div>
         <div><span>GSTIN:</span> <span id="info-gstin" style="font-family: monospace; font-weight: bold; font-size: 11.5px; color: #047857;">-</span></div>
         <div><span>Username:</span> <span id="info-username" style="font-weight: bold;">-</span></div>
       </div>
     </div>
+
+    <div id="hint-text" class="hint-box" style="display: none;">
+      💡 <b>Tip:</b> Click <b>1-Click Launch</b> next to any GST client inside Efilingg CRM to load credentials.
+    </div>
     
     <div id="copy-feedback" class="copy-success"></div>
+
+    <button class="btn btn-success" id="autofill-active-btn" style="display: none;">
+      ⚡ Fill Credentials in Active Tab
+    </button>
 
     <a href="https://services.gst.gov.in/services/login" target="_blank" class="btn btn-primary" id="open-portal-btn">
       🌐 Open GST Portal Page
@@ -176,7 +193,7 @@
     </div>
     
     <button class="btn btn-danger" id="clear-session-btn" style="display: none;">
-      🗑️ Force Wipe Session
+      🗑️ Clear Session Cache
     </button>
   </div>
   

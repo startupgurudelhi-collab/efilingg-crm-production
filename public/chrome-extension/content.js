@@ -1,34 +1,33 @@
-// Content Script - Efilingg CRM Assistant
-console.log("Extension loaded");
-console.log("[Efilingg Content] Extension content script loaded and active on page: " + window.location.href);
+// Content Script - Efilingg CRM Assistant V2.0.0
+console.log("[Efilingg Content] Content script loaded on: " + window.location.href);
 
-// Helper to resolve stable API origin and bypass third-party overrides
+// Helper to resolve stable API origin
 function getCRMOrigin(providedUrl) {
   if (providedUrl && !providedUrl.includes("gst.gov.in")) {
     return providedUrl;
   }
   if (window.location.hostname.includes("gst.gov.in")) {
-    return ""; // No backend exists directly on services.gst.gov.in domain
+    return "";
   }
   return window.location.origin;
 }
 
-// Helper to handle initiating GST Portal login via extension background page
 let lastTriggerTime = 0;
 let lastTriggerClientId = '';
 
-function triggerExtensionLogin(clientId, exchangeToken, apiUrl, username, password, gstin, skipTabCreation) {
+// Helper to handle initiating GST Portal login via extension background page
+function triggerExtensionLogin(clientId, exchangeToken, apiUrl, username, password, gstin, firmName, skipTabCreation) {
   const now = Date.now();
-  if (clientId === lastTriggerClientId && (now - lastTriggerTime) < 1000) {
-    console.log("[Efilingg Content] Ignoring duplicate login trigger within 1000ms for client ID: " + clientId);
+  if (clientId === lastTriggerClientId && (now - lastTriggerTime) < 500) {
+    console.log("[Efilingg Content] Debouncing rapid trigger for client: " + clientId);
     return;
   }
   lastTriggerTime = now;
   lastTriggerClientId = clientId;
 
   const resolvedApiUrl = getCRMOrigin(apiUrl);
-  console.log("[Efilingg Content] CRM Connection: Action triggered login for client " + (gstin || clientId) + " on API: " + resolvedApiUrl + " with skipTabCreation: " + !!skipTabCreation);
-  
+  console.log(`[Efilingg Content] Triggering login for ${username || gstin || clientId}...`);
+
   chrome.runtime.sendMessage({
     action: "initiate_gst_login",
     clientId,
@@ -36,40 +35,34 @@ function triggerExtensionLogin(clientId, exchangeToken, apiUrl, username, passwo
     username,
     password,
     gstin,
+    firmName,
     skipTabCreation: !!skipTabCreation,
     apiUrl: resolvedApiUrl
   }, (response) => {
-    // Error handling on message response
     if (chrome.runtime.lastError) {
-      console.error("[Efilingg Content] Connection Failure: Could not reach extension background script.", chrome.runtime.lastError);
+      console.warn("[Efilingg Content] Extension service worker not reachable:", chrome.runtime.lastError.message);
       return;
     }
-
     if (response && response.success) {
-      console.log("[Efilingg Content] CRM Connection: Extension acknowledged initiation. Credentials cached in background service worker.");
-    } else {
-      const errMsg = response ? response.error : 'Connection timeout';
-      console.error("[Efilingg Content] Secure receipt rejected:", errMsg);
+      console.log("[Efilingg Content] Credentials stored in extension storage cache.");
     }
   });
 }
 
-// 1. Check for standard window messages (extremely reliable for crossing isolated world limits from the CRM page)
+// 1. Listen for CRM page postMessages
 window.addEventListener('message', (event) => {
   if (event.data && event.data.source === 'efilingg-crm-page') {
     if (event.data.action === 'initiate_gst_login') {
-      const { clientId, exchangeToken, username, password, gstin, crmUrl, skipTabCreation } = event.data;
+      const { clientId, exchangeToken, username, password, gstin, firmName, crmUrl, skipTabCreation } = event.data;
       const apiUrl = crmUrl || event.origin || window.location.origin;
-      triggerExtensionLogin(clientId, exchangeToken, apiUrl, username, password, gstin, skipTabCreation);
+      triggerExtensionLogin(clientId, exchangeToken, apiUrl, username, password, gstin, firmName, skipTabCreation);
     } 
-    
     else if (event.data.action === 'ping_extension') {
-      console.log("[Efilingg Content] Ping received from CRM page. Responding pong to confirm connectivity.");
       window.postMessage({
         source: 'efilingg-extension',
         action: 'extension_pong',
         success: true,
-        version: '1.0.0'
+        version: '2.0.0'
       }, '*');
     }
   }
@@ -83,478 +76,278 @@ document.addEventListener('EfilinggLaunchExtension', (event) => {
     if (typeof detail === 'string') {
       try { data = JSON.parse(detail); } catch (e) {}
     }
-    const { clientId, exchangeToken, username, password, gstin, crmUrl, skipTabCreation } = data;
+    const { clientId, exchangeToken, username, password, gstin, firmName, crmUrl, skipTabCreation } = data;
     const apiUrl = crmUrl || window.location.origin;
-    triggerExtensionLogin(clientId, exchangeToken, apiUrl, username, password, gstin, skipTabCreation);
+    triggerExtensionLogin(clientId, exchangeToken, apiUrl, username, password, gstin, firmName, skipTabCreation);
   }
 });
 
+// 3. Listen for manual autofill trigger from popup
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === "force_autofill_now") {
+    console.log("[Efilingg Content] Force autofill requested from popup.");
+    attemptGstAutofill(true);
+    sendResponse({ success: true });
+  }
+});
 
-// 3. IDENTIFY IF CURRENTLY RUNNING SECURELY ON GOVERNMENT GST PORTAL LOGIN
-if (window.location.hostname.includes("gst.gov.in") && window.location.pathname.includes("/login")) {
-  console.log("GST page detected");
-  console.log("[Efilingg Content] GST Portal: Page Match! Querying extension background script for active credentials...");
-  
-  let attempts = 0;
-  const maxAttempts = 50; // 25 seconds of polling retry
-  
-  const locatorInterval = setInterval(() => {
-    attempts++;
-    
-    // Dynamic / fallback selector collection on DOM inputs with strict null checking
-    const usernameField = document.getElementById('username') || 
-                          document.querySelector('input[name="username"]') || 
-                          document.querySelector('input[formcontrolname="username"]') ||
-                          document.querySelector('input[placeholder*="Username"]') ||
-                          document.querySelector('input[id*="username" i]');
-                          
-    const passwordField = document.getElementById('user_pass') || 
-                          document.querySelector('input[name="user_pass"]') ||
-                          document.getElementById('password') || 
-                          document.querySelector('input[type="password"]:not([style*="display: none"]):not([style*="display:none"])') ||
-                          document.querySelector('input[type="password"]') || 
-                          document.querySelector('input[name="password"]') ||
-                          document.querySelector('input[formcontrolname="password"]') ||
-                          document.querySelector('input[placeholder*="Password"]') ||
-                          document.querySelector('input[id*="password" i]');
-    
-    if (usernameField && passwordField) {
-      clearInterval(locatorInterval);
-      console.log("[Efilingg Content] GST Portal: Input selectors found in DOM. Querying stored session credentials...");
-      
+// 4. GST PORTAL AUTO-FILL LOGIC
+const isGstPortal = window.location.hostname.includes("gst.gov.in") || 
+                    window.location.pathname.includes("/services/login") ||
+                    window.location.href.includes("services.gst.gov.in");
+
+if (isGstPortal) {
+  console.log("[Efilingg Content] Active on GST Portal page. Starting autofill watcher...");
+  attemptGstAutofill(false);
+}
+
+function findInputElement(selectors) {
+  for (const selector of selectors) {
+    try {
+      const el = document.querySelector(selector);
+      if (el && el.offsetParent !== null) return el; // visible
+      if (el) return el;
+    } catch (e) {}
+  }
+  return null;
+}
+
+const usernameSelectors = [
+  '#username',
+  'input[name="username"]',
+  'input[formcontrolname="username"]',
+  'input[ng-model*="username" i]',
+  'input[placeholder*="Username" i]',
+  'input[id*="username" i]'
+];
+
+const passwordSelectors = [
+  '#user_pass',
+  'input[name="user_pass"]',
+  '#password',
+  'input[name="password"]',
+  'input[type="password"]',
+  'input[formcontrolname="password"]',
+  'input[ng-model*="password" i]',
+  'input[placeholder*="Password" i]',
+  'input[id*="password" i]'
+];
+
+const captchaSelectors = [
+  '#captcha',
+  'input[name="captcha"]',
+  'input[placeholder*="Captcha" i]',
+  'input[id*="captcha" i]'
+];
+
+// Helper to set input value safely across AngularJS, React, Vue, and Native HTML
+function fillInputField(inputElement, value) {
+  if (!inputElement || value === undefined || value === null) return;
+
+  try {
+    inputElement.focus();
+
+    // Set value directly bypassing virtual DOM / setters
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    if (nativeSetter) {
+      nativeSetter.call(inputElement, value);
+    } else {
+      inputElement.value = value;
+    }
+
+    // Fire standard input & change event sequence
+    inputElement.dispatchEvent(new Event('focus', { bubbles: true }));
+    inputElement.dispatchEvent(new Event('beforeinput', { bubbles: true }));
+    inputElement.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
+    inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+    inputElement.dispatchEvent(new Event('change', { bubbles: true }));
+    inputElement.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a' }));
+    inputElement.dispatchEvent(new Event('blur', { bubbles: true }));
+
+    // Visual feedback
+    inputElement.style.borderColor = '#10b981';
+    inputElement.style.backgroundColor = '#ecfdf5';
+  } catch (err) {
+    console.warn("[Efilingg Content] fillInputField warning:", err);
+    inputElement.value = value;
+  }
+}
+
+// Main autofill execution
+function attemptGstAutofill(forceImmediate) {
+  let pollCount = 0;
+  const maxPolls = forceImmediate ? 10 : 40; // Poll up to 20 seconds
+  let filled = false;
+
+  const intervalId = setInterval(() => {
+    pollCount++;
+
+    const userInput = findInputElement(usernameSelectors);
+    const passInput = findInputElement(passwordSelectors);
+
+    if (userInput && passInput && !filled) {
+      clearInterval(intervalId);
+      filled = true;
+
+      // Query active credentials from Extension Background
       chrome.runtime.sendMessage({ action: "request_gst_credentials" }, (response) => {
         if (chrome.runtime.lastError) {
-          console.warn("[Efilingg Content] Failed to query workspace credentials. Chrome Service Worker is sleeping.", chrome.runtime.lastError);
+          console.warn("[Efilingg Content] Extension service worker not ready:", chrome.runtime.lastError.message);
           return;
         }
 
         if (response && response.success && response.username) {
-          console.log("[Efilingg Content] Credential receipt: Secure credentials confirmed! Injecting user-action prompt bar at the absolute top of the page...");
-          
-          injectAutofillBanner(response.username, response.password, usernameField, passwordField);
+          console.log(`[Efilingg Content] Injecting credentials for username: "${response.username}"...`);
+
+          // 1. Fill fields natively
+          fillInputField(userInput, response.username);
+          if (response.password) {
+            fillInputField(passInput, response.password);
+          }
+
+          // 2. Inject main-world script to update AngularJS $scope if available
+          injectMainWorldAngularSync(response.username, response.password || '');
+
+          // 3. Focus Captcha code field so user only has to type 6 digits
+          setTimeout(() => {
+            const captchaInput = findInputElement(captchaSelectors);
+            if (captchaInput) {
+              captchaInput.focus();
+              captchaInput.style.borderColor = '#6366f1';
+              captchaInput.style.boxShadow = '0 0 0 3px rgba(99, 102, 241, 0.2)';
+            }
+          }, 300);
+
+          // 4. Render top floating helper banner
+          injectAutofillBanner(response.username, response.password || '', response.gstin || '', userInput, passInput);
         } else {
-          console.log("[Efilingg Content] Idle: No active credentials ready in Chrome extension cache. Awaiting CRM launch.");
+          console.log("[Efilingg Content] No active client credentials in extension cache. Click '1-Click Launch' on any client in Efilingg CRM.");
         }
       });
     }
-    
-    if (attempts >= maxAttempts) {
-      clearInterval(locatorInterval);
-      console.log("[Efilingg Content] End Polling: Input targets not found on the page in 25s.");
+
+    if (pollCount >= maxPolls) {
+      clearInterval(intervalId);
     }
-  }, 500); // 500ms intervals
+  }, 500);
 }
 
+// Inject main world script to sync AngularJS scope directly
+function injectMainWorldAngularSync(username, password) {
+  try {
+    const script = document.createElement('script');
+    script.textContent = `
+      (function() {
+        try {
+          const u = ${JSON.stringify(username)};
+          const p = ${JSON.stringify(password)};
+          const uEl = document.querySelector('#username') || document.querySelector('input[name="username"]');
+          const pEl = document.querySelector('#user_pass') || document.querySelector('#password') || document.querySelector('input[type="password"]');
 
-// 4. FUNCTION TO INJECT A PREMIUM INFORMATION BAR AND AUTOMATICALLY INJECT CREDENTIALS
-function injectAutofillBanner(username, password, usernameField, passwordField) {
-  // Prevent double injection
+          if (window.angular && uEl && window.angular.element) {
+            const ngEl = window.angular.element(uEl);
+            const scope = ngEl.scope();
+            if (scope) {
+              scope.$apply(function() {
+                if (scope.user) {
+                  scope.user.username = u;
+                  if (p) scope.user.password = p;
+                }
+              });
+            }
+          }
+        } catch (e) {}
+      })();
+    `;
+    (document.head || document.documentElement).appendChild(script);
+    script.remove();
+  } catch (e) {
+    // CSP may restrict inline scripts; native input dispatch already handled it
+  }
+}
+
+// 5. Floating action banner on top of GST portal
+function injectAutofillBanner(username, password, gstin, usernameField, passwordField) {
   if (document.getElementById('efilingg-action-bar')) return;
-  
-  // Create beautiful, non-intrusive container
+
   const bar = document.createElement('div');
   bar.id = 'efilingg-action-bar';
-  
-  // Custom Styles for our bar
-  bar.style.position = 'fixed';
-  bar.style.top = '0';
-  bar.style.left = '0';
-  bar.style.right = '0';
-  bar.style.height = '50px';
-  bar.style.background = 'linear-gradient(90deg, #1e1b4b 0%, #0f172a 100%)';
-  bar.style.borderBottom = '3px solid #10b981';
-  bar.style.color = '#ffffff';
-  bar.style.display = 'flex';
-  bar.style.alignItems = 'center';
-  bar.style.justifyContent = 'space-between';
-  bar.style.padding = '0 24px';
-  bar.style.zIndex = '2147483647';
-  bar.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  bar.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.05)';
-  bar.style.transition = 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease';
-  
-  // Left Label
-  const leftLabel = document.createElement('div');
-  leftLabel.style.display = 'flex';
-  leftLabel.style.alignItems = 'center';
-  leftLabel.style.gap = '10px';
-  
-  const logoCircle = document.createElement('div');
-  logoCircle.style.background = '#10b981';
-  logoCircle.style.width = '24px';
-  logoCircle.style.height = '24px';
-  logoCircle.style.borderRadius = '50%';
-  logoCircle.style.display = 'flex';
-  logoCircle.style.alignItems = 'center';
-  logoCircle.style.justifyContent = 'center';
-  logoCircle.style.fontSize = '12px';
-  logoCircle.style.fontWeight = 'bold';
-  logoCircle.style.color = '#ffffff';
-  logoCircle.innerText = 'E';
-  
-  const labelText = document.createElement('span');
-  labelText.style.fontSize = '12.5px';
-  labelText.style.fontWeight = 'bold';
-  labelText.style.letterSpacing = '0.3px';
-  labelText.innerHTML = `Efilingg CRM <span style="color:#34d399">✔</span> Secured login active for <span style="color:#34d399; font-weight:800; font-family: monospace;">${username}</span>. Credentials automatically filled & protected.`;
-  
-  leftLabel.appendChild(logoCircle);
-  leftLabel.appendChild(labelText);
-  
-  // Right Actions Container
-  const actions = document.createElement('div');
-  actions.style.display = 'flex';
-  actions.style.alignItems = 'center';
-  actions.style.gap = '12px';
-  
-  // Re-inject Action Button
-  const fillBtn = document.createElement('button');
-  fillBtn.type = 'button';
-  fillBtn.innerText = '⚡ Re-Inject';
-  fillBtn.style.background = 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)';
-  fillBtn.style.color = '#ffffff';
-  fillBtn.style.border = 'none';
-  fillBtn.style.padding = '7px 16px';
-  fillBtn.style.borderRadius = '8px';
-  fillBtn.style.fontWeight = '800';
-  fillBtn.style.fontSize = '11px';
-  fillBtn.style.textTransform = 'uppercase';
-  fillBtn.style.letterSpacing = '0.5px';
-  fillBtn.style.cursor = 'pointer';
-  fillBtn.style.transition = 'all 0.2s ease';
-  fillBtn.style.boxShadow = '0 2px 4px rgba(99, 102, 241, 0.2)';
-  
-  fillBtn.onmouseenter = () => {
-    fillBtn.style.transform = 'scale(1.02)';
+  bar.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 48px;
+    background: linear-gradient(90deg, #022c22 0%, #064e3b 100%);
+    border-bottom: 3px solid #10b981;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    z-index: 2147483647;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  `;
+
+  const left = document.createElement('div');
+  left.style.cssText = 'display: flex; align-items: center; gap: 10px;';
+  left.innerHTML = `
+    <div style="background: #10b981; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: #ffffff;">E</div>
+    <div style="font-size: 12px; font-weight: 600;">
+      <span style="color: #6ee7b7; font-weight: 800;">Efilingg CRM:</span> 
+      Auto-filled login for <span style="color: #34d399; font-weight: 800; font-family: monospace;">${username}</span> 
+      ${gstin ? `(${gstin})` : ''} ✔
+    </div>
+  `;
+
+  const right = document.createElement('div');
+  right.style.cssText = 'display: flex; align-items: center; gap: 10px;';
+
+  const reInjectBtn = document.createElement('button');
+  reInjectBtn.innerText = '⚡ Re-Fill';
+  reInjectBtn.style.cssText = `
+    background: #10b981;
+    color: #ffffff;
+    border: none;
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 800;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  `;
+
+  reInjectBtn.onclick = () => {
+    fillInputField(usernameField, username);
+    if (password) fillInputField(passwordField, password);
+    injectMainWorldAngularSync(username, password);
+    reInjectBtn.innerText = '✔ Filled!';
+    setTimeout(() => { reInjectBtn.innerText = '⚡ Re-Fill'; }, 1200);
   };
-  fillBtn.onmouseleave = () => {
-    fillBtn.style.transform = 'none';
-  };
-  
-  // Dismiss Button
+
   const closeBtn = document.createElement('button');
-  closeBtn.type = 'button';
   closeBtn.innerText = '✕';
-  closeBtn.style.background = 'transparent';
-  closeBtn.style.color = '#94a3b8';
-  closeBtn.style.border = 'none';
-  closeBtn.style.fontSize = '16px';
-  closeBtn.style.cursor = 'pointer';
-  closeBtn.style.transition = 'color 0.2s';
-  closeBtn.style.padding = '4px 8px';
-  closeBtn.onmouseenter = () => { closeBtn.style.color = '#ffffff'; };
-  closeBtn.onmouseleave = () => { closeBtn.style.color = '#94a3b8'; };
-  
-  actions.appendChild(fillBtn);
-  actions.appendChild(closeBtn);
-  
-  bar.appendChild(leftLabel);
-  bar.appendChild(actions);
-  
-  // Push body down slightly so bar does not overlay official GST headers
-  document.body.style.paddingTop = '50px';
-  document.body.appendChild(bar);
-  
-  // Core Autofill Execution Function
-  const executeAutofill = () => {
-    try {
-      console.log("[Efilingg Content] Autofill execution: Securing Main World AngularJS update...");
-      
-      // Phase 1: Local Context fallback (just in case)
-      if (usernameField) {
-        usernameField.focus();
-        usernameField.click();
-        usernameField.value = username;
-      }
-      
-      if (passwordField) {
-        passwordField.focus();
-        passwordField.click();
-        passwordField.value = password;
-      }
-      
-      // Phase 2: Create dynamic script to execute directly in webpage's MAIN world context
-      // This has full execution access to window.angular and can properly trigger digests
-      const bridgeScript = document.createElement('script');
-      bridgeScript.id = 'efilingg-main-world-bridge';
-      bridgeScript.textContent = `
-        (function() {
-          console.log("[Efilingg Bridge] Running main-world credential syncing routine...");
-          const rawUser = ${JSON.stringify(username)};
-          const rawPass = ${JSON.stringify(password)};
-          
-          function dispatchEventSequence(element) {
-            const events = ['focus', 'beforeinput', 'keydown', 'input', 'keyup', 'change', 'blur'];
-            events.forEach(evType => {
-              try {
-                let event;
-                if (evType === 'beforeinput') {
-                  event = new InputEvent('beforeinput', { bubbles: true, cancelable: true });
-                } else if (evType.startsWith('key')) {
-                  event = new KeyboardEvent(evType, { bubbles: true, cancelable: true });
-                } else {
-                  event = new Event(evType, { bubbles: true, cancelable: true });
-                }
-                element.dispatchEvent(event);
-              } catch (err) {
-                console.warn("[Efilingg Bridge] Dispatch event failed: " + evType, err);
-              }
-            });
-          }
-          
-          function syncAngularModel(fieldElement, rawTextValue) {
-            try {
-              if (window.angular && window.angular.element) {
-                const ngEl = window.angular.element(fieldElement);
-                const scope = ngEl.scope();
-                const ngModelCtrl = ngEl.controller('ngModel');
-                if (scope) {
-                  scope.$apply(function() {
-                    if (ngModelCtrl) {
-                      ngModelCtrl.$setViewValue(rawTextValue);
-                      ngModelCtrl.$render();
-                      ngModelCtrl.$setDirty();
-                      ngModelCtrl.$setTouched();
-                    } else {
-                      // Fallback direct string key path setting
-                      const ngModelAttr = fieldElement.getAttribute('ng-model');
-                      if (ngModelAttr) {
-                        const modelKeys = ngModelAttr.split('.');
-                        let currentObj = scope;
-                        for (let i = 0; i < modelKeys.length - 1; i++) {
-                          if (!currentObj[modelKeys[i]]) {
-                            currentObj[modelKeys[i]] = {};
-                          }
-                          currentObj = currentObj[modelKeys[i]];
-                        }
-                        currentObj[modelKeys[modelKeys.length - 1]] = rawTextValue;
-                      }
-                    }
-                  });
-                }
-              }
-            } catch (angularErr) {
-              console.error("[Efilingg Bridge] AngularJS scope digest error:", angularErr);
-            }
-          }
-
-          function getFieldElement(selectors) {
-            for (const selector of selectors) {
-              try {
-                const el = document.querySelector(selector);
-                if (el) return el;
-              } catch (e) {}
-            }
-            return null;
-          }
-
-          const usernameSelectors = ['#username', 'input[name="username"]', 'input[formcontrolname="username"]', 'input[id*="username" i]'];
-          const passwordSelectors = ['#user_pass', '#password', 'input[type="password"]', 'input[name="password"]', 'input[id*="password" i]'];
-
-          let usernameField = getFieldElement(usernameSelectors);
-          let passwordField = getFieldElement(passwordSelectors);
-
-          if (!usernameField || !passwordField) {
-            console.error("[Efilingg Bridge] Crucial form fields are missing from DOM!");
-            return;
-          }
-
-          // 1. Detect browser autofill
-          const detectedAutofill = (usernameField.value && usernameField.value !== rawUser) || (passwordField.value && passwordField.value !== rawPass);
-          if (detectedAutofill) {
-            console.log("Autofill detected");
-            console.log("[Efilingg Bridge] Autofill detected pre-existing/saved values in form. Removing and clearing...");
-            usernameField.value = '';
-            passwordField.value = '';
-            dispatchEventSequence(usernameField);
-            dispatchEventSequence(passwordField);
-          }
-
-          // 2. Insert CRM credentials
-          console.log("[Efilingg Bridge] Inserting CRM credentials into inputs...");
-          
-          usernameField.value = rawUser;
-          console.log("Username injected");
-          syncAngularModel(usernameField, rawUser);
-          dispatchEventSequence(usernameField);
-
-          passwordField.value = rawPass;
-          console.log("Password injected");
-          syncAngularModel(passwordField, rawPass);
-          dispatchEventSequence(passwordField);
-
-          // Force autocomplete attributes to off to block native Chrome autofill hooks
-          usernameField.setAttribute('autocomplete', 'new-password');
-          passwordField.setAttribute('autocomplete', 'new-password');
-
-          // 3. Define getter/setter properties to intercept Chrome Password Manager overwrites dynamically
-          const originalValueDesc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
-
-          function applyValueLock(fieldElement, targetValue, fieldName) {
-            try {
-              Object.defineProperty(fieldElement, 'value', {
-                get: function() {
-                  return originalValueDesc.get.call(this);
-                },
-                set: function(newValue) {
-                  if (newValue !== targetValue) {
-                    console.log("Credentials replaced");
-                    console.log("[Efilingg Bridge] Overwrite attempt detected on " + fieldName + " to: '" + newValue + "'. Restoring CRM credentials immediately.");
-                    originalValueDesc.set.call(this, targetValue);
-                    syncAngularModel(this, targetValue);
-                    dispatchEventSequence(this);
-                  } else {
-                    originalValueDesc.set.call(this, newValue);
-                  }
-                },
-                configurable: true
-              });
-            } catch (err) {
-              console.warn("[Efilingg Bridge] Could not apply value lock on " + fieldName + ":", err);
-            }
-          }
-
-          applyValueLock(usernameField, rawUser, 'username');
-          applyValueLock(passwordField, rawPass, 'password');
-
-          // 4. Observe the login form using MutationObserver for attributes/class changes
-          const observer = new MutationObserver((mutations) => {
-            console.log("Mutation detected");
-            
-            // Handle element recreation or DOM replacement gracefully
-            const currentU = getFieldElement(usernameSelectors);
-            const currentP = getFieldElement(passwordSelectors);
-
-            if (currentU && currentU !== usernameField) {
-              console.log("[Efilingg Bridge] Username element recreated. Re-applying security locks...");
-              usernameField = currentU;
-              applyValueLock(usernameField, rawUser, 'username');
-            }
-            if (currentP && currentP !== passwordField) {
-              console.log("[Efilingg Bridge] Password element recreated. Re-applying security locks...");
-              passwordField = currentP;
-              applyValueLock(passwordField, rawPass, 'password');
-            }
-
-            // Restore if changed
-            if (usernameField && usernameField.value !== rawUser) {
-              console.log("Credentials replaced");
-              originalValueDesc.set.call(usernameField, rawUser);
-              syncAngularModel(usernameField, rawUser);
-              dispatchEventSequence(usernameField);
-            }
-            if (passwordField && passwordField.value !== rawPass) {
-              console.log("Credentials replaced");
-              originalValueDesc.set.call(passwordField, rawPass);
-              syncAngularModel(passwordField, rawPass);
-              dispatchEventSequence(passwordField);
-            }
-          });
-
-          const form = usernameField.closest('form') || document.querySelector('form');
-          if (form) {
-            observer.observe(form, { childList: true, subtree: true, attributes: true });
-          }
-          observer.observe(usernameField, { attributes: true, attributeFilter: ['value', 'class', 'style', 'autocomplete'] });
-          observer.observe(passwordField, { attributes: true, attributeFilter: ['value', 'class', 'style', 'autocomplete'] });
-
-          // 5. Intercept the Login button click / submit event
-          function verifyAndRestoreBeforeLogin(event) {
-            console.log("[Efilingg Bridge] Login submit/click action intercepted. Verifying final credentials state...");
-            
-            let changed = false;
-            if (usernameField && usernameField.value !== rawUser) {
-              console.log("Credentials replaced");
-              console.log("[Efilingg Bridge] Username was incorrect on login click. Re-injecting CRM credentials.");
-              originalValueDesc.set.call(usernameField, rawUser);
-              syncAngularModel(usernameField, rawUser);
-              dispatchEventSequence(usernameField);
-              changed = true;
-            }
-            
-            if (passwordField && passwordField.value !== rawPass) {
-              console.log("Credentials replaced");
-              console.log("[Efilingg Bridge] Password was incorrect on login click. Re-injecting CRM credentials.");
-              originalValueDesc.set.call(passwordField, rawPass);
-              syncAngularModel(passwordField, rawPass);
-              dispatchEventSequence(passwordField);
-              changed = true;
-            }
-
-            console.log("Final credentials verified");
-            console.log("Login allowed");
-          }
-
-          if (form) {
-            form.addEventListener('submit', verifyAndRestoreBeforeLogin, true);
-          }
-
-          document.addEventListener('click', function(e) {
-            const target = e.target;
-            if (target) {
-              const isSubmitBtn = target.matches('button[type="submit"]') || 
-                                  target.matches('input[type="submit"]') ||
-                                  target.closest('button[type="submit"]') ||
-                                  target.id === 'login' ||
-                                  (target.innerText && target.innerText.toUpperCase().includes('LOGIN'));
-              if (isSubmitBtn) {
-                verifyAndRestoreBeforeLogin(e);
-              }
-            }
-          }, true);
-
-          console.log("[Efilingg Bridge] Main world lockdown complete. Ready for secure submission.");
-        })();
-      `;
-      (document.head || document.documentElement).appendChild(bridgeScript);
-      bridgeScript.remove(); // Keep page DOM pristine
-      
-      // Apply beautiful visual success borders
-      if (usernameField) {
-        usernameField.style.border = "2px solid #059669";
-        usernameField.style.backgroundColor = "#ecfdf5";
-      }
-      if (passwordField) {
-        passwordField.style.border = "2px solid #059669";
-        passwordField.style.backgroundColor = "#ecfdf5";
-      }
-      
-      // Direct focus onto the Captcha code field to complete employee operation
-      const captchaField = document.getElementById('captcha') || 
-                           document.querySelector('input[name="captcha"]') || 
-                           document.querySelector('input[placeholder*="Captcha"]') ||
-                           document.querySelector('input[id*="captcha" i]');
-                           
-      if (captchaField) {
-        captchaField.focus();
-        captchaField.style.border = "2px solid #3b82f6";
-      }
-      
-      console.log("[Efilingg Content] Autofill process completed successfully.");
-    } catch (err) {
-      console.error("[Efilingg Content] Autofill execution caught an unexpected error:", err);
-    }
+  closeBtn.style.cssText = `
+    background: transparent;
+    color: #a7f3d0;
+    border: none;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 4px 8px;
+  `;
+  closeBtn.onclick = () => {
+    bar.remove();
+    document.body.style.paddingTop = '0px';
   };
 
-  // Run automatically on load!
-  executeAutofill();
+  right.appendChild(reInjectBtn);
+  right.appendChild(closeBtn);
 
-  // Button Click allows manually re-injecting if needed
-  fillBtn.addEventListener('click', () => {
-    executeAutofill();
-    fillBtn.innerText = '✔ Re-Injected';
-    setTimeout(() => {
-      fillBtn.innerText = '⚡ Re-Inject';
-    }, 1500);
-  });
-  
-  // Close Button behavior
-  closeBtn.addEventListener('click', () => {
-    bar.style.transform = 'translateY(-100%)';
-    bar.style.opacity = '0';
-    setTimeout(() => {
-      bar.remove();
-      document.body.style.paddingTop = '0px';
-    }, 400);
-  });
+  bar.appendChild(left);
+  bar.appendChild(right);
+
+  document.body.style.paddingTop = '48px';
+  document.body.appendChild(bar);
 }

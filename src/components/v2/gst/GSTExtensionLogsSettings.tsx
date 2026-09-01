@@ -141,17 +141,27 @@ export default function GSTExtensionLogsSettings({
     if (onTriggerGstLogin) {
       onTriggerGstLogin(client);
     } else {
-      window.postMessage({
+      const payload = {
         source: 'efilingg-crm-page',
         action: 'initiate_gst_login',
         clientId: client.id,
-        exchangeToken: 'dev-token',
+        exchangeToken: `CRM-DIRECT-${Date.now()}`,
         username: client.userId,
         password: client.password || '',
-        gstin: client.gstin,
+        gstin: client.gstin || '',
+        firmName: client.firmName || client.clientName,
         crmUrl: window.location.origin,
-        skipTabCreation: false
-      }, '*');
+        skipTabCreation: true
+      };
+
+      window.postMessage(payload, '*');
+      document.dispatchEvent(new CustomEvent('EfilinggLaunchExtension', {
+        detail: payload
+      }));
+
+      if (navigator.clipboard && client.userId) {
+        navigator.clipboard.writeText(client.userId).catch(() => {});
+      }
       window.open('https://services.gst.gov.in/services/login', '_blank', 'noopener,noreferrer');
     }
 

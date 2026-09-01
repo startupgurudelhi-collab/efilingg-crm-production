@@ -199,54 +199,48 @@ export default function V2GST({
 
   // 1-Click Launch GST Portal & Token Exchange
   const handleTriggerGstLogin = async (cl: V2GstClient) => {
+    // 1. Instantly dispatch direct event to Chrome Extension content script
+    const launchPayload = {
+      source: 'efilingg-crm-page',
+      action: 'initiate_gst_login',
+      clientId: cl.id,
+      exchangeToken: `CRM-EXCHANGE-${Date.now()}`,
+      username: cl.userId,
+      password: cl.password || '',
+      gstin: cl.gstin || '',
+      firmName: cl.firmName || cl.clientName,
+      crmUrl: window.location.origin,
+      skipTabCreation: true
+    };
+
+    window.postMessage(launchPayload, '*');
+    document.dispatchEvent(new CustomEvent('EfilinggLaunchExtension', {
+      detail: launchPayload
+    }));
+
     try {
       const user = getCurrentSession();
-      const response = await fetch('/api/auth/generate-exchange-token', {
+      // 2. Synchronize token on CRM server for secure fallback verification
+      await fetch('/api/auth/generate-exchange-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           clientId: cl.id,
+          username: cl.userId,
+          password: cl.password || '',
+          gstin: cl.gstin || '',
+          firmName: cl.firmName || cl.clientName,
           employeeId: user?.id || 'admin',
           employeeName: user?.name || 'Master Admin',
           employeeEmail: user?.email || 'admin@efilingg.com',
           employeeRole: user?.role || 'admin'
         })
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.token) {
-          const credsResponse = await fetch(`/api/extension/get-credentials?clientId=${cl.id}`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${data.token}`,
-              'Content-Type': 'application/json'
-            }
-          });
-
-          if (credsResponse.ok) {
-            const creds = await credsResponse.json();
-            if (creds.success && creds.username) {
-              window.postMessage({
-                source: 'efilingg-crm-page',
-                action: 'initiate_gst_login',
-                clientId: cl.id,
-                exchangeToken: data.token,
-                username: creds.username,
-                password: creds.password,
-                gstin: creds.gstin,
-                crmUrl: window.location.origin,
-                skipTabCreation: true
-              }, '*');
-            }
-          }
-        }
-      }
     } catch (err) {
-      console.warn('Manual fallback triggered', err);
+      console.warn('[GST Auto-Login] Backend token sync notice:', err);
     } finally {
       if (navigator.clipboard && cl.userId) {
-        navigator.clipboard.writeText(cl.userId);
+        navigator.clipboard.writeText(cl.userId).catch(() => {});
         setCopiedField('username');
       }
       setPortalLoginHelperClient(cl);

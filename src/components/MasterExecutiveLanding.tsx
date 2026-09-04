@@ -56,6 +56,8 @@ import {
   completeV2Task,
   V2Task
 } from '../lib/v2_db';
+import { getWorkflowClients } from '../lib/workflowClients';
+import { getWorkflowWorkOrders } from '../lib/workflowWorkOrders';
 import { getAttendances, getISTDateString, getLeaveRequests } from '../lib/db';
 import {
   BusinessOperationsIllustration,
@@ -83,7 +85,7 @@ interface MasterExecutiveLandingProps {
   followups: FollowUp[];
   proposals: Proposal[];
   syncStatus: 'syncing' | 'connected' | 'error' | 'no_table' | 'idle';
-  onNavigateModule: (module: 'sales' | 'ops' | 'settings' | 'hr', specificTab?: string) => void;
+  onNavigateModule: (module: 'sales' | 'ops' | 'workflow' | 'settings' | 'hr', specificTab?: string) => void;
   onRefreshData: () => void;
   onTriggerLeadDetail?: (id: string | null) => void;
   onTriggerProposalDraft?: () => void;
@@ -207,6 +209,8 @@ export default function MasterExecutiveLanding({
   const totalPendingOps = pendingGstCount + pendingItrCount + pendingTasksCount;
   const completedOpsCount = v2Tasks.filter((t) => t.status === 'completed').length + gstReturns.filter((r) => r.gstr1 === 'FILED' && r.gstr3b === 'FILED').length;
   const todayDueCount = v2Tasks.filter((t) => t.dueDate === todayStr && t.status !== 'completed').length;
+  const workflowClientsList = getWorkflowClients();
+  const workflowWorkOrdersList = getWorkflowWorkOrders();
 
   // Total pending tasks (leads + ops)
   const totalExecutivePendingTasks = pendingFollowupsCount + totalPendingOps;
@@ -429,10 +433,10 @@ export default function MasterExecutiveLanding({
               Select a specialized command workspace to manage operations, teams, compliance and growth
             </p>
           </div>
-          <span className="text-[10px] font-mono text-slate-400 hidden sm:inline font-bold">4 CORE DIVISIONS ACTIVE</span>
+          <span className="text-[10px] font-mono text-slate-400 hidden sm:inline font-bold">5 CORE DIVISIONS ACTIVE</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-3.5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-3.5">
           
           {/* MODULE 1: SALES & MARKETING */}
           {hasModuleAccess(sessionUser, 'sales_marketing') && (
@@ -603,6 +607,76 @@ export default function MasterExecutiveLanding({
               </div>
             </div>
           )}
+
+          {/* MODULE: WORKFLOW MANAGEMENT */}
+          <div
+            onClick={() => onNavigateModule('workflow', 'directory')}
+            className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3.5 sm:p-4 shadow-md hover:shadow-xl transition-all duration-200 hover:-translate-y-0.5 cursor-pointer flex flex-col justify-between"
+          >
+            {/* Top Accent Gradient */}
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 to-purple-500" />
+
+            <div className="space-y-2.5">
+              {/* Icon & Badge */}
+              <div className="flex items-center justify-between">
+                <div className="h-9 w-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 group-hover:scale-105 transition-transform">
+                  <Briefcase className="h-4.5 w-4.5" />
+                </div>
+                <span className="text-[9px] font-bold font-mono px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                  NEW
+                </span>
+              </div>
+
+              {/* Title & Description */}
+              <div>
+                <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors leading-tight">
+                  WORKFLOW MANAGEMENT
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug line-clamp-2">
+                  Client Enrollment (CL-ID), Lead Conversion, Work Orders Engine ({'{SERVICE}-{YEAR}-{SEQ}'}) & Complete Audit Vault
+                </p>
+              </div>
+
+              {/* Statistics Grid */}
+              <div className="grid grid-cols-2 gap-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">
+                    Clients
+                  </span>
+                  <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-200 font-mono leading-tight">
+                    {workflowClientsList.length} Active
+                  </span>
+                </div>
+                <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/40">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">
+                    Work Orders
+                  </span>
+                  <span className="text-xs sm:text-sm font-black text-indigo-600 dark:text-indigo-400 font-mono leading-tight">
+                    {workflowWorkOrdersList.length} Orders
+                  </span>
+                </div>
+              </div>
+
+              {/* Sub-items list tags */}
+              <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex flex-wrap gap-1">
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">Clients (CL-ID)</span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">Work Orders (Phase 2)</span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">Work Execution (Phase 5)</span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">Kanban Board</span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300">Audit Vault</span>
+                </div>
+              </div>
+            </div>
+
+            {/* CTA Button */}
+            <div className="pt-2 mt-1">
+              <div className="w-full py-1.5 px-3 rounded-lg bg-indigo-600 group-hover:bg-indigo-500 text-white text-[11px] font-bold flex items-center justify-between shadow-xs transition-all">
+                <span>Open Workflow Engine</span>
+                <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
+              </div>
+            </div>
+          </div>
 
           {/* MODULE 3: SETTINGS & CONTROL CENTER */}
           {hasModuleAccess(sessionUser, 'settings_control') && (

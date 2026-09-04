@@ -205,6 +205,11 @@ export interface Lead extends VersionedRecord {
   incentiveApprovedAt?: string;
   transferredFromId?: string;
   transferredFromName?: string;
+  // Phase 4: Permanent Lead -> Client -> Work Order Linkage
+  linkedClientId?: string;
+  linkedClientName?: string;
+  linkedWorkOrderId?: string;
+  convertedAt?: string;
 }
 
 export interface FollowUp {
@@ -265,7 +270,7 @@ export interface Notification {
   id: string;
   title: string;
   message: string;
-  type: 'followup_due' | 'lead_assigned' | 'lead_transfer' | 'proposal_generated' | 'lead_converted';
+  type: 'followup_due' | 'lead_assigned' | 'lead_transfer' | 'proposal_generated' | 'lead_converted' | 'workflow_stage_change' | 'automation_alert';
   link?: string; // target ID or route
   userId: string; // Employee ID or 'admin' or 'all'
   read: boolean;

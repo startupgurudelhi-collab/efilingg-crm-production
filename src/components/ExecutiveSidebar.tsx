@@ -33,6 +33,10 @@ import {
   Clock,
   AlertTriangle,
   MessageSquare,
+  GitBranch,
+  CheckSquare,
+  Zap,
+  BarChart3,
 } from 'lucide-react';
 import { Employee } from '../types';
 import { hasModuleAccess } from '../lib/permissions';
@@ -51,11 +55,30 @@ import {
 } from '../lib/v2_db';
 import { getISTDateString } from '../lib/db';
 import { AiAgentRepository } from '../lib/aiAgent/db';
+import { getWorkflowClients } from '../lib/workflowClients';
+import { getWorkflowWorkOrders } from '../lib/workflowWorkOrders';
+import { getWorkflowTasks } from '../lib/workflowTasks';
+import { getWorkflowDocuments } from '../lib/workflowDocuments';
+import { getDeliveryLogs } from '../lib/workflowAutomationEngine';
 
-export type ActiveModule = 'landing' | 'sales' | 'ops' | 'settings' | 'hr';
+export type ActiveModule = 'landing' | 'sales' | 'ops' | 'workflow' | 'settings' | 'hr';
 
 export type NavigationTarget =
   | 'landing'
+  // Workflow Management
+  | 'workflow_clients'
+  | 'workflow_clients_enroll'
+  | 'workflow_clients_conversion'
+  | 'workflow_work_orders'
+  | 'workflow_work_orders_create'
+  | 'workflow_work_orders_kanban'
+  | 'workflow_execution'
+  | 'workflow_tasks'
+  | 'workflow_documents'
+  | 'workflow_automation'
+  | 'workflow_reporting'
+  | 'workflow_templates'
+  | 'workflow_clients_audit'
   // Sales & Marketing
   | 'sales_dashboard'
   | 'sales_leads'
@@ -217,6 +240,7 @@ export default function ExecutiveSidebar({
 
   // Accordion open states for Operations Module
   const [openAccordions, setOpenAccordions] = useState<{ [key: string]: boolean }>({
+    workflow: true,
     tasks: true,
     trademark: true,
     gst: false,
@@ -413,6 +437,36 @@ export default function ExecutiveSidebar({
     ]
   };
 
+  const workflowModuleConfig: ModuleConfig = {
+    id: 'workflow',
+    title: 'WORKFLOW MANAGEMENT',
+    shortTitle: 'Workflow Engine',
+    subtitle: 'Clients, Linking & Audits',
+    icon: Briefcase,
+    theme: {
+      text: 'text-indigo-600 dark:text-indigo-400',
+      border: 'border-indigo-200 dark:border-indigo-800',
+      bgBadge: 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800',
+      bgAccent: 'bg-indigo-500/10',
+      activeTabClass: 'bg-indigo-600 text-white shadow-md shadow-indigo-900/20'
+    },
+    items: [
+      { id: 'workflow_clients', label: 'Clients Directory', icon: Users, badge: getWorkflowClients().length },
+      { id: 'workflow_clients_enroll', label: 'Manual Enrollment', icon: UserCheck },
+      { id: 'workflow_clients_conversion', label: 'Lead Conversion', icon: Sparkles },
+      { id: 'workflow_work_orders', label: 'Work Orders Engine', icon: Layers, badge: getWorkflowWorkOrders().length, highlight: true },
+      { id: 'workflow_execution', label: 'Work Execution (Phase 5)', icon: Briefcase, badge: getWorkflowWorkOrders().filter(w => w.status !== 'completed').length, highlight: true },
+      { id: 'workflow_tasks', label: 'Tasks Integration (Phase 6)', icon: CheckSquare, badge: getWorkflowTasks().length, highlight: true },
+      { id: 'workflow_documents', label: 'Document Vault (Phase 7)', icon: FileCheck2, badge: getWorkflowDocuments().length, highlight: true },
+      { id: 'workflow_automation', label: 'Automation Engine (Phase 8)', icon: Zap, badge: getDeliveryLogs().length, highlight: true },
+      { id: 'workflow_reporting', label: 'Reporting & Analytics (Phase 9)', icon: BarChart3, highlight: true },
+      { id: 'workflow_work_orders_create', label: 'New Work Order', icon: FileCheck },
+      { id: 'workflow_work_orders_kanban', label: 'Lifecycle Kanban', icon: LayoutDashboard },
+      { id: 'workflow_templates', label: 'Workflow Templates', icon: GitBranch, highlight: true },
+      { id: 'workflow_clients_audit', label: 'Audit Trail Vault', icon: ShieldCheck }
+    ]
+  };
+
   const isOps = activeModule === 'ops';
 
   // Helper for item click
@@ -426,7 +480,7 @@ export default function ExecutiveSidebar({
     id: NavigationTarget,
     label: string,
     badge?: number,
-    highlight?: 'red' | 'amber' | 'green' | 'default'
+    highlight?: 'red' | 'amber' | 'green' | 'indigo' | 'default'
   ) => {
     const isActive = currentTab === id;
     let badgeColor = 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300';
@@ -436,6 +490,8 @@ export default function ExecutiveSidebar({
       badgeColor = 'bg-amber-500 text-white font-bold';
     } else if (highlight === 'green') {
       badgeColor = 'bg-emerald-600 text-white';
+    } else if (highlight === 'indigo') {
+      badgeColor = 'bg-indigo-600 text-white font-bold';
     }
 
     return (
@@ -484,18 +540,18 @@ export default function ExecutiveSidebar({
         </button>
 
         {/* Active Module Header Banner */}
-        <div className={`p-2.5 rounded-2xl ${isOps ? 'bg-emerald-500/10 border border-emerald-200 dark:border-emerald-800' : 'bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700'} flex items-center justify-between`}>
+        <div className={`p-2.5 rounded-2xl ${isOps ? 'bg-emerald-500/10 border border-emerald-200 dark:border-emerald-800' : activeModule === 'workflow' ? 'bg-indigo-500/10 border border-indigo-200 dark:border-indigo-800' : 'bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700'} flex items-center justify-between`}>
           <div className="flex items-center space-x-2.5 truncate">
-            <div className={`h-7 w-7 rounded-xl bg-white dark:bg-slate-900 shadow-xs flex items-center justify-center shrink-0 ${isOps ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-600 dark:text-slate-300'}`}>
-              {isOps ? <Briefcase className="h-4 w-4" /> : activeModule === 'sales' ? <TrendingUp className="h-4 w-4" /> : activeModule === 'settings' ? <Shield className="h-4 w-4" /> : <Users className="h-4 w-4" />}
+            <div className={`h-7 w-7 rounded-xl bg-white dark:bg-slate-900 shadow-xs flex items-center justify-center shrink-0 ${isOps ? 'text-emerald-600 dark:text-emerald-400' : activeModule === 'workflow' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300'}`}>
+              {isOps ? <Briefcase className="h-4 w-4" /> : activeModule === 'workflow' ? <Briefcase className="h-4 w-4" /> : activeModule === 'sales' ? <TrendingUp className="h-4 w-4" /> : activeModule === 'settings' ? <Shield className="h-4 w-4" /> : <Users className="h-4 w-4" />}
             </div>
             {!isCollapsed && (
               <div className="truncate text-left leading-tight">
-                <span className={`text-[10px] font-black uppercase tracking-wider block font-mono ${isOps ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-200'}`}>
-                  {isOps ? 'OPERATIONS' : activeModule === 'sales' ? 'SALES DESK' : activeModule === 'settings' ? 'SETTINGS' : 'HR HUB'}
+                <span className={`text-[10px] font-black uppercase tracking-wider block font-mono ${isOps ? 'text-emerald-600 dark:text-emerald-400' : activeModule === 'workflow' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-slate-200'}`}>
+                  {isOps ? 'OPERATIONS' : activeModule === 'workflow' ? 'WORKFLOW MGMT' : activeModule === 'sales' ? 'SALES DESK' : activeModule === 'settings' ? 'SETTINGS' : 'HR HUB'}
                 </span>
                 <span className="text-[9px] text-slate-400 truncate block">
-                  {isOps ? 'Single Primary Nav' : 'Module Navigation'}
+                  {activeModule === 'workflow' ? 'Clients & Engine' : isOps ? 'Single Primary Nav' : 'Module Navigation'}
                 </span>
               </div>
             )}
@@ -532,6 +588,40 @@ export default function ExecutiveSidebar({
               </span>
             )}
           </button>
+
+          {/* ACCORDION 0: WORKFLOW MANAGEMENT */}
+          <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
+            <button
+              onClick={() => toggleAccordion('workflow')}
+              className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 cursor-pointer"
+            >
+              <div className="flex items-center gap-1.5">
+                <Briefcase className="h-3.5 w-3.5 text-indigo-500" />
+                {!isCollapsed && <span>WORKFLOW MANAGEMENT</span>}
+              </div>
+              {!isCollapsed && (
+                <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.workflow ? 'rotate-180' : ''}`} />
+              )}
+            </button>
+
+            {(!isCollapsed && openAccordions.workflow) && (
+              <div className="space-y-0.5 pl-2 border-l border-indigo-500/20 ml-2">
+                {renderOpsSubItem('workflow_clients', 'Clients (CL-ID)', getWorkflowClients().length, 'green')}
+                {renderOpsSubItem('workflow_clients_enroll', 'Manual Enrollment')}
+                {renderOpsSubItem('workflow_clients_conversion', 'Lead Conversion')}
+                {renderOpsSubItem('workflow_work_orders', 'Work Orders', getWorkflowWorkOrders().length, 'indigo')}
+                {renderOpsSubItem('workflow_execution', 'Work Execution (Phase 5)', getWorkflowWorkOrders().filter(w => w.status !== 'completed').length, 'indigo')}
+                {renderOpsSubItem('workflow_tasks', 'Tasks Integration (Phase 6)', getWorkflowTasks().length, 'indigo')}
+                {renderOpsSubItem('workflow_documents', 'Document Vault (Phase 7)', getWorkflowDocuments().length, 'indigo')}
+                {renderOpsSubItem('workflow_automation', 'Automation Engine (Phase 8)', getDeliveryLogs().length, 'amber')}
+                {renderOpsSubItem('workflow_reporting', 'Reporting & Analytics (Phase 9)', undefined, 'amber')}
+                {renderOpsSubItem('workflow_work_orders_create', 'New Work Order')}
+                {renderOpsSubItem('workflow_work_orders_kanban', 'Work Orders Kanban')}
+                {renderOpsSubItem('workflow_templates', 'Workflow Templates')}
+                {renderOpsSubItem('workflow_clients_audit', 'Audit Trail Vault')}
+              </div>
+            )}
+          </div>
 
           {/* ACCORDION 1: TASK COMMAND CENTER (ALWAYS ACCESSIBLE TO ALL EMPLOYEES) */}
           <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
@@ -791,9 +881,9 @@ export default function ExecutiveSidebar({
           )}
         </div>
       ) : (
-        /* STANDARD MODULES (SALES, SETTINGS, HR) */
+        /* STANDARD MODULES (SALES, WORKFLOW, SETTINGS, HR) */
         <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
-          {((activeModule === 'sales' ? salesModuleConfig : activeModule === 'settings' ? settingsModuleConfig : hrModuleConfig).items).map((item) => {
+          {((activeModule === 'sales' ? salesModuleConfig : activeModule === 'workflow' ? workflowModuleConfig : activeModule === 'settings' ? settingsModuleConfig : hrModuleConfig).items).map((item) => {
             const Icon = item.icon;
             const isActive = currentTab === item.id;
             return (

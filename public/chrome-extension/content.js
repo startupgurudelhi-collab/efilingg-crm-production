@@ -101,6 +101,25 @@ if (isGstPortal) {
   attemptGstAutofill(false);
 }
 
+// Storage change listener - auto-fill immediately if new credentials arrive
+if (chrome?.storage?.onChanged) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.activeCredentials && changes.activeCredentials.newValue && changes.activeCredentials.newValue.username) {
+      console.log("[Efilingg Content] Detected active credentials update in storage, triggering autofill...");
+      if (isGstPortal) {
+        attemptGstAutofill(true);
+      }
+    }
+  });
+}
+
+// Re-attempt autofill when user focuses the tab
+window.addEventListener('focus', () => {
+  if (isGstPortal) {
+    attemptGstAutofill(true);
+  }
+});
+
 function findInputElement(selectors) {
   for (const selector of selectors) {
     try {
@@ -173,63 +192,82 @@ function fillInputField(inputElement, value) {
   }
 }
 
-// Main autofill execution
+// Main autofill execution with robust polling and storage sync
+let autofillPollingInterval = null;
+
 function attemptGstAutofill(forceImmediate) {
+  if (autofillPollingInterval) {
+    clearInterval(autofillPollingInterval);
+    autofillPollingInterval = null;
+  }
+
   let pollCount = 0;
-  const maxPolls = forceImmediate ? 10 : 40; // Poll up to 20 seconds
-  let filled = false;
+  const maxPolls = forceImmediate ? 20 : 60; // Poll up to 30 seconds
 
-  const intervalId = setInterval(() => {
-    pollCount++;
-
+  const executeFill = (username, password, gstin) => {
     const userInput = findInputElement(usernameSelectors);
     const passInput = findInputElement(passwordSelectors);
 
-    if (userInput && passInput && !filled) {
-      clearInterval(intervalId);
-      filled = true;
+    if (userInput && username) {
+      fillInputField(userInput, username);
+      if (passInput && password) {
+        fillInputField(passInput, password);
+      }
+      injectMainWorldAngularSync(username, password || '');
 
-      // Query active credentials from Extension Background
-      chrome.runtime.sendMessage({ action: "request_gst_credentials" }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.warn("[Efilingg Content] Extension service worker not ready:", chrome.runtime.lastError.message);
+      setTimeout(() => {
+        const captchaInput = findInputElement(captchaSelectors);
+        if (captchaInput) {
+          captchaInput.focus();
+          captchaInput.style.borderColor = '#6366f1';
+          captchaInput.style.boxShadow = '0 0 0 3px rgba(99, 102, 241, 0.2)';
+        }
+      }, 300);
+
+      injectAutofillBanner(username, password || '', gstin || '', userInput, passInput);
+      return true;
+    }
+    return false;
+  };
+
+  const checkAndFill = () => {
+    pollCount++;
+
+    // Try reading credentials from storage directly first
+    chrome.storage.local.get(['activeCredentials'], (store) => {
+      const creds = store?.activeCredentials;
+      if (creds && creds.username) {
+        const success = executeFill(creds.username, creds.password, creds.gstin);
+        if (success) {
+          clearInterval(autofillPollingInterval);
+          autofillPollingInterval = null;
+          console.log(`[Efilingg Content] Auto-filled credentials for ${creds.username} successfully.`);
           return;
         }
-
-        if (response && response.success && response.username) {
-          console.log(`[Efilingg Content] Injecting credentials for username: "${response.username}"...`);
-
-          // 1. Fill fields natively
-          fillInputField(userInput, response.username);
-          if (response.password) {
-            fillInputField(passInput, response.password);
-          }
-
-          // 2. Inject main-world script to update AngularJS $scope if available
-          injectMainWorldAngularSync(response.username, response.password || '');
-
-          // 3. Focus Captcha code field so user only has to type 6 digits
-          setTimeout(() => {
-            const captchaInput = findInputElement(captchaSelectors);
-            if (captchaInput) {
-              captchaInput.focus();
-              captchaInput.style.borderColor = '#6366f1';
-              captchaInput.style.boxShadow = '0 0 0 3px rgba(99, 102, 241, 0.2)';
+      } else {
+        // Fallback: ask background worker
+        chrome.runtime.sendMessage({ action: "request_gst_credentials" }, (response) => {
+          if (chrome.runtime.lastError) return;
+          if (response && response.success && response.username) {
+            const success = executeFill(response.username, response.password, response.gstin);
+            if (success) {
+              clearInterval(autofillPollingInterval);
+              autofillPollingInterval = null;
+              console.log(`[Efilingg Content] Auto-filled credentials from worker for ${response.username}.`);
             }
-          }, 300);
+          }
+        });
+      }
 
-          // 4. Render top floating helper banner
-          injectAutofillBanner(response.username, response.password || '', response.gstin || '', userInput, passInput);
-        } else {
-          console.log("[Efilingg Content] No active client credentials in extension cache. Click '1-Click Launch' on any client in Efilingg CRM.");
-        }
-      });
-    }
+      if (pollCount >= maxPolls) {
+        clearInterval(autofillPollingInterval);
+        autofillPollingInterval = null;
+      }
+    });
+  };
 
-    if (pollCount >= maxPolls) {
-      clearInterval(intervalId);
-    }
-  }, 500);
+  autofillPollingInterval = setInterval(checkAndFill, 500);
+  checkAndFill(); // Immediate run
 }
 
 // Inject main world script to sync AngularJS scope directly

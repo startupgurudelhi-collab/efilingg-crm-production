@@ -93,6 +93,142 @@ export const INITIAL_SEED_TEMPLATES: WhatsAppTemplate[] = [
     lastSyncedAt: new Date().toISOString(),
   },
   {
+    id: 'tmpl_name_reservation_approved',
+    name: 'name_reservation_approved',
+    category: 'UTILITY',
+    language: 'en_US',
+    status: 'APPROVED', // Meta confirmed approved template
+    headerType: 'TEXT',
+    headerText: 'MCA Name Approval Notice',
+    bodyText:
+      'Dear {{1}},\n\nGood news! Your Company Name Reservation for {{2}} has been successfully APPROVED by the Ministry of Corporate Affairs (MCA CRC).\n\nApproval SRN: {{3}}\nValid Until: {{4}}\n\nNext step: SPICe+ Part B & charter document drafting is initiated by your assigned legal team.',
+    footerText: 'EFilingg Corporate Secretarial Wing',
+    buttons: [
+      {
+        type: 'URL',
+        text: 'View Work Order',
+        url: 'https://efilingg.com/orders/{{3}}',
+      },
+    ],
+    parameterCount: 4,
+    sampleParameters: [
+      'Vikram Singhania',
+      'Singhania Global Technologies Pvt Ltd',
+      'SRN-RUN-9821827',
+      '24-Sep-2026',
+    ],
+    metaTemplateId: 'meta_name_reservation_approved_v1',
+    metaQualityScore: 'GREEN',
+    version: 1,
+    createdAt: '2026-08-15T09:00:00.000Z',
+    updatedAt: '2026-09-01T10:00:00.000Z',
+    createdBy: 'EMP-ADMIN',
+    createdByName: 'Master Administrator',
+    lastSyncedAt: new Date().toISOString(),
+  },
+  {
+    id: 'tmpl_gst_approved',
+    name: 'gst_approved',
+    category: 'UTILITY',
+    language: 'en_US',
+    status: 'APPROVED', // Meta confirmed approved template
+    headerType: 'TEXT',
+    headerText: 'GST Registration Approved',
+    bodyText:
+      'Dear {{1}},\n\nCongratulations! Your Goods & Services Tax (GST) registration for {{2}} has been officially APPROVED.\n\nGSTIN: {{3}}\nEffective Date: {{4}}\n\nYour Registration Certificate (Form GST REG-06) is now available in your Document Vault.',
+    footerText: 'EFilingg Indirect Tax Wing',
+    buttons: [
+      {
+        type: 'URL',
+        text: 'Download Certificate',
+        url: 'https://efilingg.com/vault/gst',
+      },
+    ],
+    parameterCount: 4,
+    sampleParameters: [
+      'Sunil Mehta',
+      'Mehta Logistics & Supply Chain',
+      '07AAAAA0000A1Z5',
+      '01-Sep-2026',
+    ],
+    metaTemplateId: 'meta_gst_approved_v1',
+    metaQualityScore: 'GREEN',
+    version: 1,
+    createdAt: '2026-08-16T09:00:00.000Z',
+    updatedAt: '2026-09-01T10:00:00.000Z',
+    createdBy: 'EMP-ADMIN',
+    createdByName: 'Master Administrator',
+    lastSyncedAt: new Date().toISOString(),
+  },
+  {
+    id: 'tmpl_trademark_registered',
+    name: 'trademark_registered',
+    category: 'UTILITY',
+    language: 'en_US',
+    status: 'APPROVED', // Meta confirmed approved template
+    headerType: 'TEXT',
+    headerText: 'Trademark Registered (®)',
+    bodyText:
+      'Dear {{1}},\n\nCongratulations! Your Trademark application for "{{2}}" under Class {{3}} has been successfully REGISTERED by the Trade Marks Registry.\n\nRegistration No: {{4}}\n\nYou are now legally authorized to affix the registered ® symbol with your brand.',
+    footerText: 'EFilingg IP & Trademark Bureau',
+    buttons: [
+      {
+        type: 'URL',
+        text: 'View TM Certificate',
+        url: 'https://efilingg.com/vault/trademark',
+      },
+    ],
+    parameterCount: 4,
+    sampleParameters: [
+      'Ananya Sharma',
+      'ZENITH COGNITIVE',
+      'Class 42 (Technology)',
+      'TM-REG-5491029',
+    ],
+    metaTemplateId: 'meta_trademark_registered_v1',
+    metaQualityScore: 'GREEN',
+    version: 1,
+    createdAt: '2026-08-18T09:00:00.000Z',
+    updatedAt: '2026-09-01T10:00:00.000Z',
+    createdBy: 'EMP-ADMIN',
+    createdByName: 'Master Administrator',
+    lastSyncedAt: new Date().toISOString(),
+  },
+  {
+    id: 'tmpl_workflow_stage_completed',
+    name: 'workflow_stage_completed',
+    category: 'UTILITY',
+    language: 'en_US',
+    status: 'APPROVED', // Meta confirmed approved template
+    headerType: 'TEXT',
+    headerText: 'Workflow Milestone Update',
+    bodyText:
+      'Dear {{1}},\n\nMilestone update on your work order {{2}} ({{3}}):\n\nStage Completed: {{4}}\nStatus: Successfully Verified & Completed\n\nTrack real-time progress inside your EFilingg client workspace.',
+    footerText: 'EFilingg Operations Command',
+    buttons: [
+      {
+        type: 'URL',
+        text: 'Track Work Order',
+        url: 'https://efilingg.com/orders',
+      },
+    ],
+    parameterCount: 4,
+    sampleParameters: [
+      'Rajesh Gupta',
+      'PLC-2026-000001',
+      'Private Limited Registration',
+      'Class 3 DSC Verification',
+    ],
+    metaTemplateId: 'meta_workflow_stage_completed_v1',
+    metaQualityScore: 'GREEN',
+    version: 1,
+    createdAt: '2026-08-20T09:00:00.000Z',
+    updatedAt: '2026-09-01T10:00:00.000Z',
+    createdBy: 'EMP-ADMIN',
+    createdByName: 'Master Administrator',
+    lastSyncedAt: new Date().toISOString(),
+  },
+  {
     id: 'tmpl_lead_first_touch_v1',
     name: 'lead_first_touch_v1',
     category: 'MARKETING',
@@ -283,6 +419,20 @@ export class WhatsAppTemplateRepository {
         if (stored) {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed) && parsed.length > 0) {
+            let updated = false;
+            INITIAL_SEED_TEMPLATES.forEach((seedTmpl) => {
+              const existingIdx = parsed.findIndex((p: any) => p.name === seedTmpl.name);
+              if (existingIdx === -1) {
+                parsed.push(seedTmpl);
+                updated = true;
+              } else if (seedTmpl.status === 'APPROVED' && parsed[existingIdx].status !== 'APPROVED') {
+                parsed[existingIdx] = { ...parsed[existingIdx], status: 'APPROVED' };
+                updated = true;
+              }
+            });
+            if (updated) {
+              this.persistTemplates(parsed);
+            }
             return parsed;
           }
         }

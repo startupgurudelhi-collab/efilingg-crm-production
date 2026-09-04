@@ -21,9 +21,18 @@ import LoginForm from './components/LoginForm';
 import AdminDashboard from './components/AdminDashboard';
 import EmployeeDashboard from './components/EmployeeDashboard';
 import OperationManagementDashboard from './components/v2/OperationManagementDashboard';
+import WorkflowClientsManagement from './components/workflow/WorkflowClientsManagement';
+import WorkflowWorkOrdersManagement from './components/workflow/WorkflowWorkOrdersManagement';
+import WorkflowTemplatesManagement from './components/workflow/WorkflowTemplatesManagement';
+import WorkExecutionDashboard from './components/workflow/WorkExecutionDashboard';
+import WorkflowTasksIntegration from './components/workflow/WorkflowTasksIntegration';
+import WorkflowDocumentsManagement from './components/workflow/WorkflowDocumentsManagement';
+import { WorkflowAutomationEngine } from './components/workflow/WorkflowAutomationEngine';
+import { WorkflowReportingDashboard } from './components/workflow/WorkflowReportingDashboard';
 import MasterExecutiveLanding from './components/MasterExecutiveLanding';
 import ExecutiveSidebar, { NavigationTarget } from './components/ExecutiveSidebar';
 import LeadModal from './components/LeadModal';
+import EnrollmentWizardModal from './components/workflow/EnrollmentWizardModal';
 import ProposalBuilder from './components/ProposalBuilder';
 import ProposalPdf from './components/ProposalPdf';
 import NotificationBar from './components/NotificationBar';
@@ -59,6 +68,7 @@ function AppContent() {
   // Overlay portaling states
   const [activeLeadId, setActiveLeadId] = useState<string | null>(null);
   const [isCreatingLead, setIsCreatingLead] = useState(false);
+  const [activeEnrollmentWizardLead, setActiveEnrollmentWizardLead] = useState<Lead | null>(null);
   const [isCreatingProposal, setIsCreatingProposal] = useState(false);
   const [activeProposalPreview, setActiveProposalPreview] = useState<Proposal | null>(null);
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
@@ -210,7 +220,8 @@ function AppContent() {
   };
 
   // Navigation helpers for Executive Dashboard
-  const getModuleForTarget = (target: NavigationTarget): 'landing' | 'sales' | 'ops' | 'settings' | 'hr' => {
+  const getModuleForTarget = (target: NavigationTarget): 'landing' | 'sales' | 'ops' | 'workflow' | 'settings' | 'hr' => {
+    if (target.startsWith('workflow_')) return 'workflow';
     if (target.startsWith('sales_')) return 'sales';
     if (target.startsWith('ops_')) return 'ops';
     if (target.startsWith('settings_')) return 'settings';
@@ -273,6 +284,21 @@ function AppContent() {
 
   const getBreadcrumbs = (target: NavigationTarget) => {
     switch (target) {
+      // Workflow Management
+      case 'workflow_clients': return { group: 'Workflow Management', title: 'Clients Directory & Lifecycle' };
+      case 'workflow_clients_enroll': return { group: 'Workflow Management', title: 'Client Enrollment Engine (CL-ID)' };
+      case 'workflow_clients_conversion': return { group: 'Workflow Management', title: 'Lead Conversion Enrollment' };
+      case 'workflow_clients_audit': return { group: 'Workflow Management', title: 'Complete Audit Trail Vault' };
+      case 'workflow_work_orders': return { group: 'Workflow Management', title: 'Work Orders · Directory & Lifecycle' };
+      case 'workflow_work_orders_create': return { group: 'Workflow Management', title: 'Work Orders · Generate Work Order' };
+      case 'workflow_work_orders_kanban': return { group: 'Workflow Management', title: 'Work Orders · Stage Board (Kanban)' };
+      case 'workflow_execution': return { group: 'Workflow Management', title: 'Work Execution Dashboard · Phase 5' };
+      case 'workflow_tasks': return { group: 'Workflow Management', title: 'Task Integration & Delegation · Phase 6' };
+      case 'workflow_documents': return { group: 'Workflow Management', title: 'Document Management Repository · Phase 7' };
+      case 'workflow_automation': return { group: 'Workflow Management', title: 'Workflow Stage Automation Engine · Phase 8' };
+      case 'workflow_reporting': return { group: 'Workflow Management', title: 'Executive Reporting & Business Analytics · Phase 9' };
+      case 'workflow_templates': return { group: 'Workflow Management', title: 'Workflow Templates Engine (Phase 3)' };
+
       case 'sales_dashboard': return { group: 'Sales & Marketing', title: 'Sales Performance & Analytics' };
       case 'sales_leads': return { group: 'Sales & Marketing', title: 'Leads Pipeline Management' };
       case 'sales_followups': return { group: 'Sales & Marketing', title: 'Pending Followups & Client Calls' };
@@ -363,8 +389,23 @@ function AppContent() {
     }
   };
 
-  const handleNavigateModule = (module: 'sales' | 'ops' | 'settings' | 'hr', specificTab?: string) => {
-    if (module === 'sales') {
+  const handleNavigateModule = (module: 'sales' | 'ops' | 'workflow' | 'settings' | 'hr', specificTab?: string) => {
+    if (module === 'workflow') {
+      setAdminNavTarget(
+        specificTab === 'enroll' ? 'workflow_clients_enroll' :
+        specificTab === 'conversion' ? 'workflow_clients_conversion' :
+        specificTab === 'work_orders' ? 'workflow_work_orders' :
+        specificTab === 'work_orders_create' ? 'workflow_work_orders_create' :
+        specificTab === 'work_orders_kanban' ? 'workflow_work_orders_kanban' :
+        specificTab === 'execution' ? 'workflow_execution' :
+        specificTab === 'tasks' ? 'workflow_tasks' :
+        specificTab === 'documents' ? 'workflow_documents' :
+        specificTab === 'automation' ? 'workflow_automation' :
+        (specificTab === 'reporting' || specificTab === 'analytics') ? 'workflow_reporting' :
+        specificTab === 'audit' ? 'workflow_clients_audit' :
+        'workflow_clients'
+      );
+    } else if (module === 'sales') {
       setAdminNavTarget(
         specificTab === 'leads' ? 'sales_leads' :
         specificTab === 'followups' ? 'sales_followups' :
@@ -408,6 +449,7 @@ function AppContent() {
 
   const isMasterOrTL = sessionUser.role === 'admin' || sessionUser.role === 'team_leader';
   const isOpsTarget = adminNavTarget.startsWith('ops_');
+  const isWorkflowTarget = adminNavTarget.startsWith('workflow_');
   const breadcrumbInfo = getBreadcrumbs(adminNavTarget);
 
   return (
@@ -595,7 +637,89 @@ function AppContent() {
               </div>
 
               {/* Active Isolated Workspace Rendering */}
-              {isOpsTarget ? (
+              {adminNavTarget === 'workflow_reporting' ? (
+                <WorkflowReportingDashboard
+                  sessionUser={sessionUser}
+                  onNavigateToWorkOrder={(_woId) => {
+                    setAdminNavTarget('workflow_execution');
+                  }}
+                  onNavigateToClient={(_clientId) => {
+                    setAdminNavTarget('workflow_clients');
+                  }}
+                />
+              ) : adminNavTarget === 'workflow_automation' ? (
+                <WorkflowAutomationEngine
+                  onNavigateToWorkOrder={(_woId) => {
+                    setAdminNavTarget('workflow_execution');
+                  }}
+                />
+              ) : adminNavTarget === 'workflow_documents' ? (
+                <WorkflowDocumentsManagement
+                  sessionUser={sessionUser}
+                  onNavigateToWorkOrder={(_woId) => {
+                    setAdminNavTarget('workflow_execution');
+                  }}
+                  onNavigateToClient={(_clientId) => {
+                    setAdminNavTarget('workflow_clients');
+                  }}
+                />
+              ) : adminNavTarget === 'workflow_tasks' ? (
+                <WorkflowTasksIntegration
+                  sessionUser={sessionUser}
+                  initialScope="my_assigned"
+                  onNavigateToWorkOrder={(_woId) => {
+                    setAdminNavTarget('workflow_execution');
+                  }}
+                  onNavigateToClient={(_clientId) => {
+                    setAdminNavTarget('workflow_clients');
+                  }}
+                />
+              ) : adminNavTarget === 'workflow_execution' ? (
+                <WorkExecutionDashboard
+                  sessionUser={sessionUser}
+                  initialScope="my"
+                  initialView="list"
+                  onNavigateToClient={(_clientId) => {
+                    setAdminNavTarget('workflow_clients');
+                  }}
+                  onOpenCreateModal={() => {
+                    setAdminNavTarget('workflow_work_orders_create');
+                  }}
+                />
+              ) : adminNavTarget === 'workflow_templates' ? (
+                <WorkflowTemplatesManagement
+                  sessionUser={sessionUser}
+                  onUseTemplateInWorkOrder={(_tmplId, _svcName) => {
+                    setAdminNavTarget('workflow_work_orders_create');
+                  }}
+                />
+              ) : adminNavTarget.startsWith('workflow_work_orders') ? (
+                <WorkflowWorkOrdersManagement
+                  sessionUser={sessionUser}
+                  initialTab={
+                    adminNavTarget === 'workflow_work_orders_create' ? 'create' :
+                    adminNavTarget === 'workflow_work_orders_kanban' ? 'kanban' : 'orders'
+                  }
+                  onNavigateToClient={(_clientId) => {
+                    setAdminNavTarget('workflow_clients');
+                  }}
+                />
+              ) : isWorkflowTarget ? (
+                <WorkflowClientsManagement
+                  sessionUser={sessionUser}
+                  initialTab={
+                    adminNavTarget === 'workflow_clients_enroll' ? 'manual' :
+                    adminNavTarget === 'workflow_clients_conversion' ? 'lead_conversion' :
+                    adminNavTarget === 'workflow_clients_audit' ? 'audit_trail' : 'directory'
+                  }
+                  onNavigateTask={(_taskId) => {
+                    setAdminNavTarget('ops_tasks_my');
+                  }}
+                  onOpenEnrollmentWizard={(lead) => {
+                    setActiveEnrollmentWizardLead(lead);
+                  }}
+                />
+              ) : isOpsTarget ? (
                 <OperationManagementDashboard
                   initialSegment={getOpsDashboardSegment(adminNavTarget)}
                   activeNavTarget={adminNavTarget}
@@ -619,6 +743,9 @@ function AppContent() {
                   }}
                   onTriggerProposalPreview={(p) => setActiveProposalPreview(p)}
                   onTriggerProposalDraft={() => setIsCreatingProposal(true)}
+                  onOpenEnrollmentWizard={(lead) => {
+                    setActiveEnrollmentWizardLead(lead);
+                  }}
                 />
               )}
             </div>
@@ -642,6 +769,31 @@ function AppContent() {
           }}
           onRefreshData={handleRefreshAllData}
           onCreateLeadSubmit={handleCreateLeadSubmit}
+          onTriggerEnrollmentWizard={(lead) => {
+            setActiveLeadId(null);
+            setIsCreatingLead(false);
+            setActiveEnrollmentWizardLead(lead);
+          }}
+        />
+      )}
+
+      {/* OVERLAY 1B: Phase 4 Lead to Workflow Enrollment Wizard */}
+      {activeEnrollmentWizardLead && (
+        <EnrollmentWizardModal
+          lead={activeEnrollmentWizardLead}
+          sessionUser={sessionUser}
+          onClose={() => setActiveEnrollmentWizardLead(null)}
+          onSuccess={(_result, navigateTarget) => {
+            setActiveEnrollmentWizardLead(null);
+            handleRefreshAllData();
+            if (navigateTarget === 'work_order') {
+              setAdminNavTarget('workflow_work_orders');
+            } else if (navigateTarget === 'client') {
+              setAdminNavTarget('workflow_clients');
+            } else {
+              setAdminNavTarget('sales_leads');
+            }
+          }}
         />
       )}
 

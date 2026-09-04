@@ -116,6 +116,7 @@ interface AdminDashboardProps {
   hideTabBar?: boolean;
   activePayrollSubTab?: 'calc' | 'history' | 'attendance' | 'leaves';
   activeCategoryFilter?: 'ALL' | 'INTRESTED' | 'FOLLOWUP PENDING' | 'FINAL DISPOSED' | 'CONVERTED';
+  onOpenEnrollmentWizard?: (lead: Lead) => void;
 }
 
 export default function AdminDashboard({
@@ -129,7 +130,8 @@ export default function AdminDashboard({
   onTabChange,
   hideTabBar = false,
   activePayrollSubTab,
-  activeCategoryFilter
+  activeCategoryFilter,
+  onOpenEnrollmentWizard
 }: AdminDashboardProps) {
   // DB States
   const [rawEmployees, setEmployees] = useState<Employee[]>([]);
@@ -2444,6 +2446,12 @@ export default function AdminDashboard({
                                   <span className="text-[9px] font-mono bg-indigo-50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded font-black max-w-max inline-block uppercase mt-0.5">
                                     Stage: {lead.stage}
                                   </span>
+                                  {lead.linkedClientId && (
+                                    <div className="text-[9px] font-mono text-emerald-600 dark:text-emerald-400 font-bold mt-0.5 flex items-center space-x-1">
+                                      <span>⚡ {lead.linkedClientId}</span>
+                                      {lead.linkedWorkOrderId && <span>&bull; {lead.linkedWorkOrderId}</span>}
+                                    </div>
+                                  )}
                                 </td>
                                 <td className="p-3.5 font-mono space-y-0.5">
                                   {activeFollowup ? (
@@ -2518,6 +2526,19 @@ export default function AdminDashboard({
                                     >
                                       <ExternalLink className="h-3.5 w-3.5" />
                                     </button>
+                                    {onOpenEnrollmentWizard && (
+                                      <button 
+                                        onClick={() => onOpenEnrollmentWizard(lead)}
+                                        className={`p-1.5 rounded-lg cursor-pointer transition-all ${
+                                          lead.stage === 'Converted'
+                                            ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400'
+                                            : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400'
+                                        }`}
+                                        title={lead.stage === 'Converted' ? 'View/Manage Workflow Linkage' : '⚡ Convert to Client & Work Order'}
+                                      >
+                                        <Briefcase className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
                                   </div>
                                 </td>
                               </tr>

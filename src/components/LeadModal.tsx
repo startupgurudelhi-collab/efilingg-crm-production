@@ -47,6 +47,7 @@ interface LeadModalProps {
   onClose: () => void;
   onRefreshData: () => void;
   onCreateLeadSubmit?: (leadData: Omit<Lead, 'id' | 'createdBy'>) => void;
+  onTriggerEnrollmentWizard?: (lead: Lead) => void;
 }
 
 export default function LeadModal({
@@ -55,7 +56,8 @@ export default function LeadModal({
   currentUserRole,
   onClose,
   onRefreshData,
-  onCreateLeadSubmit
+  onCreateLeadSubmit,
+  onTriggerEnrollmentWizard
 }: LeadModalProps) {
   const isCreateMode = !leadId;
 
@@ -73,6 +75,7 @@ export default function LeadModal({
     return new Date().toISOString().split('T')[0];
   });
   const [transferredFromName, setTransferredFromName] = useState<string | undefined>(undefined);
+  const [fullLead, setFullLead] = useState<Lead | null>(null);
 
   // Subsections state
   const [activeTab, setActiveTab] = useState<'details' | 'followup' | 'transfer' | 'timeline' | 'discussion'>('details');
@@ -125,6 +128,7 @@ export default function LeadModal({
     if (leadId) {
       const lead = getLeadById(leadId);
       if (lead) {
+        setFullLead(lead);
         setCustomerName(lead.customerName);
         setMobile(lead.mobile);
         setEmail(lead.email);
@@ -190,6 +194,17 @@ export default function LeadModal({
           currentUserId
         );
         onRefreshData();
+        
+        // PHASE 4 AUTOMATION: If stage is Converted, open Enrollment Wizard!
+        if (stage === 'Converted' && onTriggerEnrollmentWizard) {
+          const freshLead = getLeadById(leadId);
+          onClose();
+          if (freshLead) {
+            onTriggerEnrollmentWizard(freshLead);
+          }
+          return;
+        }
+
         onClose();
         alert('Lead properties synchronized successfully.');
       }
@@ -244,6 +259,12 @@ export default function LeadModal({
       const updatedLead = getLeadById(leadId);
       if (updatedLead) {
         setStage(updatedLead.stage);
+        if (updatedLead.stage === 'Converted' && onTriggerEnrollmentWizard) {
+          onRefreshData();
+          onClose();
+          onTriggerEnrollmentWizard(updatedLead);
+          return;
+        }
       }
     }
     onRefreshData();
@@ -570,9 +591,16 @@ export default function LeadModal({
 
                   {/* Stage Selection */}
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-350 block">
-                      Lead Conversion Stage
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-350 block">
+                        Lead Conversion Stage
+                      </label>
+                      {stage === 'Converted' && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                          Workflow Conversion Active
+                        </span>
+                      )}
+                    </div>
                     <select
                       value={stage}
                       onChange={(e) => setStage(e.target.value as LeadStage)}
@@ -585,6 +613,36 @@ export default function LeadModal({
                   </div>
 
                 </div>
+
+                {/* Permanent Linkage Banner if lead is linked */}
+                {fullLead?.linkedClientId && (
+                  <div className="p-3.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 flex items-center justify-between text-xs">
+                    <div className="flex items-center space-x-2 text-indigo-900 dark:text-indigo-200">
+                      <Bookmark className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      <div>
+                        <span className="font-bold">Permanent Linkage Active:</span>
+                        <div className="text-[11px] text-indigo-700 dark:text-indigo-300 mt-0.5">
+                          Enrolled Client: <span className="font-mono font-bold">{fullLead.linkedClientId}</span>
+                          {fullLead.linkedWorkOrderId && (
+                            <> &bull; Work Order: <span className="font-mono font-bold">{fullLead.linkedWorkOrderId}</span></>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (fullLead && onTriggerEnrollmentWizard) {
+                          onClose();
+                          onTriggerEnrollmentWizard(fullLead);
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-bold text-[10px] hover:bg-indigo-500 transition cursor-pointer"
+                    >
+                      View Linkage
+                    </button>
+                  </div>
+                )}
 
                 {/* Notes input */}
                 <div className="space-y-1">
@@ -601,7 +659,26 @@ export default function LeadModal({
                 </div>
 
                 {/* Submits */}
-                <div className="pt-2 flex items-center justify-end space-x-3">
+                <div className="pt-2 flex items-center justify-between">
+                  <div>
+                    {!isCreateMode && leadId && onTriggerEnrollmentWizard && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentLead = fullLead || getLeadById(leadId);
+                          if (currentLead) {
+                            onClose();
+                            onTriggerEnrollmentWizard(currentLead);
+                          }
+                        }}
+                        className="py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs tracking-wide transition-all shadow-sm flex items-center space-x-1.5 cursor-pointer"
+                      >
+                        <UserCheck className="h-4 w-4" />
+                        <span>⚡ Convert to Client &amp; Work Order</span>
+                      </button>
+                    )}
+                  </div>
+
                   <button
                     type="submit"
                     className="py-2.5 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs tracking-wide transition-all shadow-md cursor-pointer"

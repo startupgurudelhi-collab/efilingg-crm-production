@@ -1,6 +1,6 @@
 {
   "name": "eFilingg CRM",
-  "description": "Enterprise-level Lead Management \u0026 Proposal System for eFilingg with dashboard analytics, follow-up notifications, lead transfers, bulk imports, and a premium professional PDF proposal builder.",
+  "description": "Enterprise-level Workflow Management, Lead CRM & Proposal System for eFilingg with compliance tracking, stage automation engine, workload analytics, turnaround time metrics, and multi-format exports (Excel, PDF, CSV).",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

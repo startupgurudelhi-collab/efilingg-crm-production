@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Efilingg CRM GST Portal Auto-Login Assistant",
-  "version": "1.0.0",
-  "description": "Secure, JWT-verified corporate auto-filler for GST Portal logins within Efilingg CRM V2.",
+  "version": "2.1.0",
+  "description": "Secure, corporate auto-filler for GST Portal logins within Efilingg CRM V2.",
   "permissions": [
     "storage",
     "activeTab",
@@ -33,10 +33,13 @@
         "*://*.run.app/*",
         "*://efilingg.cloud/*",
         "*://*.efilingg.cloud/*",
-        "*://*/*"
+        "*://*/*",
+        "<all_urls>"
       ],
       "js": ["content.js"],
-      "run_at": "document_start"
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true
     }
   ]
 }

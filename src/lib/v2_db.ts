@@ -213,6 +213,7 @@ export interface V2Task {
   priority?: 'low' | 'medium' | 'high' | 'urgent';
   category?: string;
   clientName?: string;
+  clientId?: string; // Linked Client ID (e.g. CL-2026-000001)
 }
 
 // Storage keys

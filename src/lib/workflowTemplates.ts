@@ -751,6 +751,298 @@ export function getBuiltInWorkflowTemplates(): WorkflowTemplate[] {
           mandatoryDocuments: ['Form MGT-7 / 7A', 'Filing Challan', 'List of Shareholders']
         }
       ]
+    },
+
+    // 9. ISO Certification (QMS 9001 / EMS 14001)
+    {
+      id: 'tmpl_iso_cert',
+      serviceName: 'ISO Certification',
+      serviceCode: 'ISO',
+      department: 'Licensing & Registrations',
+      category: 'Quality & Standardization',
+      description: 'Accredited ISO Quality Management System certification process including gap analysis, internal audit, documentation manual, and Stage 1 & 2 external audit.',
+      totalExpectedDurationDays: 14,
+      isSystemDefault: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      stages: [
+        {
+          id: 'stage_iso_1',
+          name: 'Scope Definition & Gap Analysis',
+          sequence: 1,
+          expectedDurationDays: 3,
+          dependencies: [],
+          description: 'Assess business organizational processes, define ISO scope/annexures, and benchmark against ISO 9001/27001 standard clauses.',
+          checklist: [
+            'Collect business organization chart and process flowcharts',
+            'Conduct preliminary gap analysis questionnaire with client management',
+            'Finalize ISO scope of certification and site locations'
+          ],
+          mandatoryDocuments: ['Business Profile', 'Process Flowchart', 'Entity KYC']
+        },
+        {
+          id: 'stage_iso_2',
+          name: 'Quality Manual & SOP Documentation',
+          sequence: 2,
+          expectedDurationDays: 4,
+          dependencies: ['stage_iso_1'],
+          description: 'Draft Quality Policy, Objectives, Standard Operating Procedures (SOPs), and Risk Assessment register.',
+          checklist: [
+            'Draft organization Quality Manual and Quality Policy',
+            'Standard Operating Procedures (SOPs) prepared for all core operations',
+            'Documented Information & Records control register established'
+          ],
+          mandatoryDocuments: ['Quality Manual Draft', 'Standard Operating Procedures']
+        },
+        {
+          id: 'stage_iso_3',
+          name: 'Internal Audit & Management Review Meeting (MRM)',
+          sequence: 3,
+          expectedDurationDays: 3,
+          dependencies: ['stage_iso_2'],
+          description: 'Execute internal audit across departments, log Non-Conformance Reports (NCRs), and conduct Management Review Meeting.',
+          checklist: [
+            'Conduct cross-departmental internal compliance audit',
+            'Prepare Internal Audit Report and Corrective Action Plans (CAPA)',
+            'Document Management Review Meeting minutes and resolutions'
+          ],
+          mandatoryDocuments: ['Internal Audit Report', 'MRM Minutes', 'CAPA Log']
+        },
+        {
+          id: 'stage_iso_4',
+          name: 'Stage 1 & 2 Certification Audit & Certificate Issuance',
+          sequence: 4,
+          expectedDurationDays: 4,
+          dependencies: ['stage_iso_3'],
+          description: 'Coordinate with accredited registrar certification body for Stage 1 documentation review and Stage 2 certification audit.',
+          checklist: [
+            'Facilitate external certification body auditor review',
+            'Clear minor audit observations or non-conformances within deadline',
+            'Secure accredited ISO Certificate and deliver framed digital & physical docket'
+          ],
+          mandatoryDocuments: ['External Audit Report', 'Accredited ISO Certificate']
+        }
+      ]
+    },
+
+    // 10. MSME / Udyam Registration
+    {
+      id: 'tmpl_msme_reg',
+      serviceName: 'MSME Registration',
+      serviceCode: 'MSME',
+      department: 'Licensing & Registrations',
+      category: 'Government Licensing',
+      description: 'Statutory registration on official Udyam portal under MSME Act for Micro, Small & Medium enterprises to unlock collateral-free credit, subsidies and tender exemptions.',
+      totalExpectedDurationDays: 3,
+      isSystemDefault: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      stages: [
+        {
+          id: 'stage_msme_1',
+          name: 'Aadhaar & PAN Verification',
+          sequence: 1,
+          expectedDurationDays: 1,
+          dependencies: [],
+          description: 'Verify proprietor / partner / director Aadhaar linked with mobile and match entity PAN details with Income Tax and GSTN records.',
+          checklist: [
+            'Verify entrepreneur 12-digit Aadhaar number with OTP verification readiness',
+            'Cross-check PAN business classification and GSTIN status',
+            'Collect bank account details (IFSC & Account Number) for subsidy linkage'
+          ],
+          mandatoryDocuments: ['Aadhaar Card', 'PAN Card', 'Cancelled Cheque']
+        },
+        {
+          id: 'stage_msme_2',
+          name: 'NIC Code Selection & Enterprise Classification',
+          sequence: 2,
+          expectedDurationDays: 1,
+          dependencies: ['stage_msme_1'],
+          description: 'Map business activities to correct 2-digit, 4-digit and 5-digit National Industry Classification (NIC) codes and calculate plant/machinery investment.',
+          checklist: [
+            'Select primary manufacturing / service 5-digit NIC codes',
+            'Calculate net investment in plant & machinery and turnover from latest ITR',
+            'Verify employee headcount classification (Micro/Small/Medium)'
+          ],
+          mandatoryDocuments: ['Investment Declaration', 'Plant & Machinery Book Value']
+        },
+        {
+          id: 'stage_msme_3',
+          name: 'Udyam Portal Submission & Certificate Handover',
+          sequence: 3,
+          expectedDurationDays: 1,
+          dependencies: ['stage_msme_2'],
+          description: 'Final submission on MSME ministry portal, Aadhaar e-sign, and generation of official Udyam Registration Certificate with dynamic QR code.',
+          checklist: [
+            'Complete online form on Udyam Registration portal',
+            'Authenticate final submission via Aadhaar OTP e-signature',
+            'Download Udyam Registration Certificate with permanent Udyam Registration Number (URN)',
+            'Deliver certificate and government subsidy brochure to client'
+          ],
+          mandatoryDocuments: ['Udyam Registration Certificate']
+        }
+      ]
+    },
+
+    // 11. Website Development
+    {
+      id: 'tmpl_web_dev',
+      serviceName: 'Website Development',
+      serviceCode: 'TECH',
+      department: 'Operations Command',
+      category: 'Technology & Web',
+      description: 'Corporate responsive web development, domain registration, SSL security, contact lead forms, Google Search Console indexing, and corporate branding.',
+      totalExpectedDurationDays: 12,
+      isSystemDefault: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      stages: [
+        {
+          id: 'stage_web_1',
+          name: 'Wireframing, Architecture & Content Brief',
+          sequence: 1,
+          expectedDurationDays: 3,
+          dependencies: [],
+          description: 'Client briefing meeting, sitemap structuring, content copywriting, and UI wireframe approval.',
+          checklist: [
+            'Collect brand assets (logo, brand colors, typography guide)',
+            'Finalize sitemap: Home, About, Services, Contact, Terms & Privacy',
+            'Wireframe mockup review and client approval milestone'
+          ],
+          mandatoryDocuments: ['Brand Assets', 'Sitemap Spec', 'Content Document']
+        },
+        {
+          id: 'stage_web_2',
+          name: 'Frontend UI/UX & Responsive Development',
+          sequence: 2,
+          expectedDurationDays: 4,
+          dependencies: ['stage_web_1'],
+          description: 'Code modern mobile-responsive design, speed optimization, and dynamic inquiry forms.',
+          checklist: [
+            'Responsive layout coding across desktop, tablet, and mobile',
+            'Lead inquiry form integration with email/WhatsApp webhook',
+            'Page speed performance optimization (Web Vitals)'
+          ],
+          mandatoryDocuments: ['Staging Preview URL']
+        },
+        {
+          id: 'stage_web_3',
+          name: 'Domain, SSL & Corporate Email Setup',
+          sequence: 3,
+          expectedDurationDays: 2,
+          dependencies: ['stage_web_2'],
+          description: 'Configure DNS records, provision TLS/SSL certificates, and configure corporate Google Workspace / Zoho mailboxes.',
+          checklist: [
+            'DNS A/CNAME records linked to cloud hosting',
+            'Automated HTTPS/SSL certificate provisioning verified',
+            'SPF, DKIM, and DMARC email authentication configured'
+          ],
+          mandatoryDocuments: ['DNS Records Sheet', 'SSL Validation']
+        },
+        {
+          id: 'stage_web_4',
+          name: 'Quality Testing, SEO Indexing & Production Launch',
+          sequence: 4,
+          expectedDurationDays: 3,
+          dependencies: ['stage_web_3'],
+          description: 'Final cross-browser QA testing, Google Search Console sitemap submission, analytics setup, and client handover.',
+          checklist: [
+            'Comprehensive QA test on Chrome, Safari, Edge, Android, iOS',
+            'Google Analytics 4 & Search Console property setup and sitemap ping',
+            'Deliver CMS admin credentials and maintenance documentation kit'
+          ],
+          mandatoryDocuments: ['Credentials Sheet', 'Live Website Acceptance Signoff']
+        }
+      ]
+    },
+
+    // 12. Register Section 8 Company (NGO)
+    {
+      id: 'tmpl_section8_ngo',
+      serviceName: 'Register Section 8 Company (NGO)',
+      serviceCode: 'NGO',
+      department: 'NGO & Trust Management',
+      category: 'NGO & Non-Profit',
+      description: 'Statutory incorporation of non-profit Section 8 company under MCA, including name approval, central government license (Form INC-12), MOA/AOA, and Darpan portal advisory.',
+      totalExpectedDurationDays: 21,
+      isSystemDefault: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      stages: [
+        {
+          id: 'stage_ngo_1',
+          name: 'Promoter KYC & Digital Signature Certificates (DSC)',
+          sequence: 1,
+          expectedDurationDays: 3,
+          dependencies: [],
+          description: 'Collect identification, address proofs, and photos for minimum 2 directors/members; issue Class 3 DSC tokens.',
+          checklist: [
+            'Verify PAN, Aadhaar/Passport of proposed founding trustees/directors',
+            'Complete video e-KYC for Class 3 Digital Signatures',
+            'Collect registered office electricity bill and NOC from landlord'
+          ],
+          mandatoryDocuments: ['Promoter PAN & Aadhaar', 'Director Photographs', 'Office NOC & Utility Bill']
+        },
+        {
+          id: 'stage_ngo_2',
+          name: 'Name Reservation with Charitable Suffix',
+          sequence: 2,
+          expectedDurationDays: 3,
+          dependencies: ['stage_ngo_1'],
+          description: 'File SPICe+ Part A with non-profit terms like Foundation, Association, Forum, Council, Federation, or Sansthan.',
+          checklist: [
+            'Perform trademark similarity search to ensure non-conflict',
+            'Draft main objects demonstrating public charitable, educational, or social utility',
+            'File SPICe+ Part A and secure MCA Name Approval SRN'
+          ],
+          mandatoryDocuments: ['Name Reservation Application', 'Proposed Object Clause']
+        },
+        {
+          id: 'stage_ngo_3',
+          name: 'Section 8 License Application (Form INC-12)',
+          sequence: 3,
+          expectedDurationDays: 6,
+          dependencies: ['stage_ngo_2'],
+          description: 'Draft Memorandum of Association (MOA) and Articles of Association (AOA) with irrevocable charitable covenants; file Form INC-12 with Regional Director.',
+          checklist: [
+            'Draft MOA & AOA with non-distribution of dividend clause under Section 8',
+            'Prepare 3-year projected financial budget and statement of income & expenditure',
+            'Obtain declaration in Form INC-14 from practicing CA/CS and Form INC-15 by promoters',
+            'File Form INC-12 and track Regional Director (RD) license approval'
+          ],
+          mandatoryDocuments: ['Draft MOA/AOA', 'Form INC-12', '3-Year Financial Projections', 'INC-14 Certificate']
+        },
+        {
+          id: 'stage_ngo_4',
+          name: 'SPICe+ Part B Filing & Certificate of Incorporation',
+          sequence: 4,
+          expectedDurationDays: 5,
+          dependencies: ['stage_ngo_3'],
+          description: 'Upload consolidated SPICe+ Part B along with AGILE-PRO-S, pay MCA filing fees and obtain Certificate of Incorporation with Section 8 license.',
+          checklist: [
+            'Attach RD Section 8 License to SPICe+ Part B package',
+            'Affix director and certifying professional digital signatures',
+            'Pay MCA statutory fee and monitor CRC processing',
+            'Download official Certificate of Incorporation (INC-11) bearing CIN and license number'
+          ],
+          mandatoryDocuments: ['Consolidated SPICe+ Part B', 'Certificate of Incorporation (INC-11)']
+        },
+        {
+          id: 'stage_ngo_5',
+          name: 'PAN, TAN, Bank A/C & NGO Darpan Enrollment',
+          sequence: 5,
+          expectedDurationDays: 4,
+          dependencies: ['stage_ngo_4'],
+          description: 'Archive official e-PAN and e-TAN, pass First Board Resolution for Current Bank Account, and initiate NITI Aayog NGO Darpan registration.',
+          checklist: [
+            'Obtain NGO PAN & TAN certificates',
+            'Draft First Board Meeting minutes and bank account resolution',
+            'File enrollment on NITI Aayog NGO Darpan portal for government grant eligibility',
+            'Provide introductory consultation for 12A & 80G tax exemption filings'
+          ],
+          mandatoryDocuments: ['NGO PAN Card', 'NGO TAN Certificate', 'Board Resolution', 'Darpan Acknowledgment']
+        }
+      ]
     }
   ];
 }
@@ -769,6 +1061,17 @@ export function getWorkflowTemplates(): WorkflowTemplate[] {
   try {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
+      const defaults = getBuiltInWorkflowTemplates();
+      let hasChanges = false;
+      defaults.forEach(def => {
+        if (!parsed.some((p: WorkflowTemplate) => p.id === def.id || p.serviceCode === def.serviceCode)) {
+          parsed.push(def);
+          hasChanges = true;
+        }
+      });
+      if (hasChanges) {
+        setStorageString(STORAGE_KEY_WORKFLOW_TEMPLATES, JSON.stringify(parsed));
+      }
       return parsed;
     }
   } catch (err) {
@@ -845,6 +1148,18 @@ export function getWorkflowTemplateForService(serviceNameOrCode: string, fallbac
   }
   if (search.includes('mca') || search.includes('roc')) {
     return templates.find(t => t.serviceCode === 'MCA');
+  }
+  if (search.includes('iso')) {
+    return templates.find(t => t.serviceCode === 'ISO');
+  }
+  if (search.includes('msme') || search.includes('udyam')) {
+    return templates.find(t => t.serviceCode === 'MSME');
+  }
+  if (search.includes('web') || search.includes('tech') || search.includes('site')) {
+    return templates.find(t => t.serviceCode === 'TECH');
+  }
+  if (search.includes('ngo') || search.includes('section 8') || search.includes('trust') || search.includes('society')) {
+    return templates.find(t => t.serviceCode === 'NGO');
   }
 
   return templates[0];

@@ -45,7 +45,7 @@ import {
   FolderArchive
 } from 'lucide-react';
 import { Employee } from '../../types';
-import { getEmployees } from '../../lib/db';
+import { getEmployees, getCustomServices, getDefaultPredefinedServices, addCustomService } from '../../lib/db';
 import {
   WorkflowWorkOrder,
   WorkOrderStatus,
@@ -73,7 +73,10 @@ import {
 } from '../../lib/workflowTemplates';
 import {
   getWorkflowClients,
-  WorkflowClient
+  WorkflowClient,
+  getUnifiedCrmClients,
+  UnifiedCrmClient,
+  ensureWorkflowClientForOrder
 } from '../../lib/workflowClients';
 import { getWorkflowDocuments } from '../../lib/workflowDocuments';
 import WorkflowTemplatesManagement from './WorkflowTemplatesManagement';
@@ -85,6 +88,8 @@ interface WorkflowWorkOrdersManagementProps {
   sessionUser: Employee;
   initialTab?: 'orders' | 'create' | 'kanban' | 'templates' | 'audit' | 'execution' | 'tasks' | 'documents';
   preselectedClientId?: string;
+  preselectedService?: string;
+  preselectedEstimatedFee?: number;
   onNavigateToClient?: (clientId: string) => void;
 }
 
@@ -92,6 +97,8 @@ export default function WorkflowWorkOrdersManagement({
   sessionUser,
   initialTab = 'orders',
   preselectedClientId,
+  preselectedService,
+  preselectedEstimatedFee,
   onNavigateToClient
 }: WorkflowWorkOrdersManagementProps) {
   const [activeTab, setActiveTab] = useState<'orders' | 'create' | 'kanban' | 'templates' | 'audit' | 'execution' | 'tasks' | 'documents'>(initialTab);
@@ -100,6 +107,133 @@ export default function WorkflowWorkOrdersManagement({
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [drawerActiveTab, setDrawerActiveTab] = useState<'stages' | 'overview' | 'audit'>('stages');
   const [stageActionError, setStageActionError] = useState<string | null>(null);
+
+  // Synchronized Catalogue Services from Sales & Marketing
+  const [servicesRefreshKey, setServicesRefreshKey] = useState(0);
+  const [isNewServiceModalOpen, setIsNewServiceModalOpen] = useState(false);
+  const [newServiceName, setNewServiceName] = useState('');
+  const [newServicePrice, setNewServicePrice] = useState<number | string>('');
+  const [newServiceCategory, setNewServiceCategory] = useState('General Services');
+  const [newServiceDescription, setNewServiceDescription] = useState('');
+  const [newServiceError, setNewServiceError] = useState<string | null>(null);
+  const [newServiceSubmitting, setNewServiceSubmitting] = useState(false);
+
+  const catalogueServices = useMemo(() => {
+    const custom = getCustomServices();
+    const sourceList = custom && custom.length > 0 ? custom : getDefaultPredefinedServices();
+    
+    return sourceList.map(srv => {
+      let code = 'SRV';
+      let dept = 'Operations Command';
+      let tat = 7;
+      const lower = srv.name.toLowerCase();
+      
+      if (lower.includes('company') || lower.includes('pvt') || lower.includes('incorporation')) {
+        code = 'PLC';
+        dept = 'MCA & Corporate Legal';
+        tat = 10;
+      } else if (lower.includes('gst')) {
+        code = 'GST';
+        dept = 'GST Department';
+        tat = 5;
+      } else if (lower.includes('trademark') || lower.includes('brand') || lower.includes('tm')) {
+        code = 'TM';
+        dept = 'Intellectual Property (IP)';
+        tat = 14;
+      } else if (lower.includes('llp')) {
+        code = 'LLP';
+        dept = 'MCA & Corporate Legal';
+        tat = 10;
+      } else if (lower.includes('itr') || lower.includes('income tax')) {
+        code = 'ITR';
+        dept = 'Income Tax & Audit';
+        tat = 5;
+      } else if (lower.includes('iso')) {
+        code = 'ISO';
+        dept = 'Licensing & Registrations';
+        tat = 7;
+      } else if (lower.includes('fssai') || lower.includes('food')) {
+        code = 'FSSAI';
+        dept = 'Licensing & Registrations';
+        tat = 7;
+      } else if (lower.includes('msme') || lower.includes('udyam')) {
+        code = 'MSME';
+        dept = 'Licensing & Registrations';
+        tat = 2;
+      } else if (lower.includes('web') || lower.includes('site') || lower.includes('software')) {
+        code = 'WEB';
+        dept = 'Operations Command';
+        tat = 15;
+      } else if (lower.includes('account') || lower.includes('bookkeeping')) {
+        code = 'ACC';
+        dept = 'Accounts & Financial Services';
+        tat = 30;
+      } else if (lower.includes('ngo') || lower.includes('section 8') || lower.includes('trust')) {
+        code = 'NGO';
+        dept = 'NGO & Trust Management';
+        tat = 21;
+      } else if (lower.includes('mca') || lower.includes('roc')) {
+        code = 'MCA';
+        dept = 'MCA & Corporate Legal';
+        tat = 15;
+      } else if (lower.includes('dsc') || lower.includes('signature')) {
+        code = 'DSC';
+        dept = 'Digital Credentials & DSC';
+        tat = 2;
+      }
+
+      return {
+        name: srv.name,
+        code,
+        department: dept,
+        category: srv.category || 'General Service',
+        price: srv.price || 0,
+        defaultTatDays: tat,
+        description: srv.scope?.join(', ') || srv.name
+      };
+    });
+  }, [servicesRefreshKey]);
+
+  const handleCreateNewService = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newServiceName.trim()) {
+      setNewServiceError('Service name is required');
+      return;
+    }
+    const cleanPrice = Number(newServicePrice) || 0;
+    setNewServiceSubmitting(true);
+    try {
+      const added = addCustomService(
+        {
+          name: newServiceName.trim(),
+          price: cleanPrice,
+          category: newServiceCategory.trim() || 'General Services',
+          timeline: '5-7 Working Days',
+          packagesIncluded: ['Official Statutory Filing', 'Expert Verification & Advice'],
+          documentsRequired: ['Aadhaar Card', 'PAN Card', 'Address & Registration Details'],
+          scope: newServiceDescription.trim()
+            ? [newServiceDescription.trim()]
+            : ['Client document review', 'Filing preparation', 'Statutory submission'],
+          deliverables: ['Official Filing Receipt / Government Registration Document'],
+          employeeIncentive: Math.round(cleanPrice * 0.15) || 200
+        },
+        sessionUser?.id || 'EMP-ADMIN'
+      );
+      if (added) {
+        setServicesRefreshKey(k => k + 1);
+        handleServiceChange(added.name);
+        setIsNewServiceModalOpen(false);
+        setNewServiceName('');
+        setNewServicePrice('');
+        setNewServiceDescription('');
+        setNewServiceError(null);
+      }
+    } catch (err: any) {
+      setNewServiceError(err.message || 'Failed to create service');
+    } finally {
+      setNewServiceSubmitting(false);
+    }
+  };
 
   // Search and Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -147,14 +281,20 @@ export default function WorkflowWorkOrdersManagement({
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccessMessage, setFormSuccessMessage] = useState<string | null>(null);
 
+  // Unified CRM Clients (Aggregated from GST, Income Tax, MCA, NGO, Others, Workflow - excludes leads)
+  const [unifiedClients, setUnifiedClients] = useState<UnifiedCrmClient[]>([]);
+  const [clientModuleFilter, setClientModuleFilter] = useState<'ALL' | 'GST' | 'Income Tax' | 'MCA' | 'NGO' | 'Others'>('ALL');
+
   // Reload data
   const loadData = () => {
     const loadedOrders = getWorkflowWorkOrders();
     const loadedClients = getWorkflowClients();
     const loadedEmployees = getEmployees();
+    const loadedUnified = getUnifiedCrmClients();
     setWorkOrders(loadedOrders);
     setClients(loadedClients);
     setEmployees(loadedEmployees);
+    setUnifiedClients(loadedUnified);
   };
 
   useEffect(() => {
@@ -164,27 +304,73 @@ export default function WorkflowWorkOrdersManagement({
       loadData();
     };
 
+    const handleClientsUpdated = () => {
+      loadData();
+    };
+
     const handleStorage = (e: StorageEvent) => {
-      if (e.key === 'efilingg_crm_workflow_work_orders') {
+      if (e.key === 'efilingg_crm_workflow_work_orders' || e.key === 'efilingg_crm_workflow_clients') {
         loadData();
       }
     };
 
     window.addEventListener('efilingg_workflow_work_orders_updated', handleOrdersUpdated);
+    window.addEventListener('efilingg_workflow_clients_updated', handleClientsUpdated);
     window.addEventListener('storage', handleStorage);
 
     return () => {
       window.removeEventListener('efilingg_workflow_work_orders_updated', handleOrdersUpdated);
+      window.removeEventListener('efilingg_workflow_clients_updated', handleClientsUpdated);
       window.removeEventListener('storage', handleStorage);
     };
   }, []);
 
+  // Preselected client, service and fee synchronization
   useEffect(() => {
     if (preselectedClientId) {
       setClientFilter(preselectedClientId);
       setFormClientId(preselectedClientId);
+      setActiveTab('create');
     }
   }, [preselectedClientId]);
+
+  // Handle service dropdown selection in form
+  const handleServiceChange = (serviceNameOrCode: string) => {
+    if (serviceNameOrCode === 'CUSTOM') {
+      setFormServiceCode('CUSTOM');
+      setFormServiceName('');
+      return;
+    }
+    const matched =
+      catalogueServices.find(s => s.name.toLowerCase() === serviceNameOrCode.toLowerCase() || s.code.toLowerCase() === serviceNameOrCode.toLowerCase()) ||
+      PREDEFINED_WORKFLOW_SERVICES.find(s => s.name.toLowerCase() === serviceNameOrCode.toLowerCase() || s.code.toLowerCase() === serviceNameOrCode.toLowerCase());
+    
+    if (matched) {
+      setFormServiceCode(matched.code);
+      setFormServiceName(matched.name);
+      setFormDepartment(matched.department);
+      if ('price' in matched && typeof (matched as any).price === 'number' && (!formEstimatedFee || formEstimatedFee === 12000)) {
+        setFormEstimatedFee(Number((matched as any).price));
+      }
+      // compute default due date
+      const d = new Date();
+      d.setDate(d.getDate() + matched.defaultTatDays);
+      setFormDueDate(d.toISOString().split('T')[0]);
+    } else {
+      setFormServiceCode('WRK');
+      setFormServiceName(serviceNameOrCode);
+    }
+  };
+
+  useEffect(() => {
+    if (preselectedService) {
+      handleServiceChange(preselectedService);
+      setActiveTab('create');
+    }
+    if (preselectedEstimatedFee !== undefined && !isNaN(preselectedEstimatedFee) && preselectedEstimatedFee > 0) {
+      setFormEstimatedFee(preselectedEstimatedFee);
+    }
+  }, [preselectedService, preselectedEstimatedFee, catalogueServices]);
 
   // When initialTab changes from parent
   useEffect(() => {
@@ -193,46 +379,80 @@ export default function WorkflowWorkOrdersManagement({
     }
   }, [initialTab]);
 
-  // Handle service dropdown selection in form
-  const handleServiceChange = (code: string) => {
-    setFormServiceCode(code);
-    if (code === 'CUSTOM') {
-      setFormServiceName('');
-    } else {
-      const predefined = PREDEFINED_WORKFLOW_SERVICES.find(s => s.code === code);
-      if (predefined) {
-        setFormServiceName(predefined.name);
-        setFormDepartment(predefined.department);
-        // compute default due date
-        const d = new Date();
-        d.setDate(d.getDate() + predefined.defaultTatDays);
-        setFormDueDate(d.toISOString().split('T')[0]);
-      }
-    }
-  };
-
   // Live Work ID preview for the form
   const liveWorkIdPreview = useMemo(() => {
     const code = formServiceCode === 'CUSTOM' ? (formCustomServiceName.slice(0, 4).toUpperCase() || 'WRK') : formServiceCode;
     return generateNextWorkOrderId(code);
   }, [formServiceCode, formCustomServiceName, workOrders]);
 
-  // Filtered Client Selection for Form
+  // Filtered Client Selection for Form (aggregates GST, Income Tax, MCA, NGO, Others, Workflow; strictly excludes unconverted leads)
   const filteredClientsForForm = useMemo(() => {
-    if (!clientSearchText.trim()) return clients.slice(0, 8);
-    const q = clientSearchText.toLowerCase();
-    return clients.filter(
+    let list = unifiedClients;
+    if (clientModuleFilter !== 'ALL') {
+      list = list.filter(c => c.sourceModule === clientModuleFilter);
+    }
+    if (!clientSearchText.trim()) return list;
+    const q = clientSearchText.toLowerCase().trim();
+    return list.filter(
       c =>
         c.id.toLowerCase().includes(q) ||
         c.clientName.toLowerCase().includes(q) ||
+        (c.authorisedSignatoryName && c.authorisedSignatoryName.toLowerCase().includes(q)) ||
         c.mobile.includes(q) ||
-        c.pan.toLowerCase().includes(q)
+        c.pan.toLowerCase().includes(q) ||
+        (c.gstin && c.gstin.toLowerCase().includes(q)) ||
+        c.category.toLowerCase().includes(q) ||
+        c.sourceModule.toLowerCase().includes(q)
     );
-  }, [clients, clientSearchText]);
+  }, [unifiedClients, clientSearchText, clientModuleFilter]);
 
   const selectedClientForForm = useMemo(() => {
-    return clients.find(c => c.id === formClientId);
-  }, [clients, formClientId]);
+    if (!formClientId) return null;
+    const unified = unifiedClients.find(c => c.id === formClientId);
+    if (unified) {
+      return {
+        id: unified.id,
+        clientName: unified.clientName,
+        mobile: unified.mobile,
+        email: unified.email,
+        pan: unified.pan,
+        gstin: unified.gstin,
+        clientCategory: unified.category,
+        address: unified.address,
+        sourceModule: unified.sourceModule
+      };
+    }
+    const wf = clients.find(c => c.id === formClientId);
+    if (wf) {
+      return {
+        id: wf.id,
+        clientName: wf.clientName,
+        mobile: wf.mobile,
+        email: wf.email,
+        pan: wf.pan,
+        gstin: wf.gstin,
+        clientCategory: wf.clientCategory,
+        address: wf.address,
+        sourceModule: 'Workflow'
+      };
+    }
+    return null;
+  }, [unifiedClients, clients, formClientId]);
+
+  // Handle client selection from search results
+  const handleSelectClient = (crmClient: UnifiedCrmClient) => {
+    const enrolled = ensureWorkflowClientForOrder(crmClient, {
+      id: sessionUser.id,
+      name: sessionUser.name,
+      role: sessionUser.role
+    });
+    setFormClientId(enrolled.id);
+    setClientSearchText(`${enrolled.clientName} (${enrolled.id})`);
+    setIsClientDropdownOpen(false);
+    setFormError(null);
+    setClients(getWorkflowClients());
+    setUnifiedClients(getUnifiedCrmClients());
+  };
 
   // Filtered Work Orders for table/kanban
   const filteredOrders = useMemo(() => {
@@ -290,6 +510,16 @@ export default function WorkflowWorkOrdersManagement({
     if (!formClientId) {
       setFormError('Every Work Order must be linked with a Client. Please select a Client from the list.');
       return;
+    }
+
+    // Ensure client is enrolled in workflow clients if from unified CRM
+    const crmClient = unifiedClients.find(c => c.id === formClientId);
+    if (crmClient) {
+      ensureWorkflowClientForOrder(crmClient, {
+        id: sessionUser.id,
+        name: sessionUser.name,
+        role: sessionUser.role
+      });
     }
 
     const resolvedService = formServiceCode === 'CUSTOM' ? formCustomServiceName.trim() : formServiceName;
@@ -653,133 +883,23 @@ export default function WorkflowWorkOrdersManagement({
         </div>
       </div>
 
-      {/* 3. Tab Navigation Bar */}
-      <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
-        <div className="flex items-center space-x-2">
+      {/* Client filter indicator if active */}
+      {clientFilter !== 'all' && (
+        <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs">
+          <div className="flex items-center space-x-2">
+            <span className="font-semibold">Filtering for Client:</span>
+            <span className="font-mono font-bold bg-white dark:bg-slate-900 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">{clientFilter}</span>
+          </div>
           <button
-            onClick={() => setActiveTab('execution')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'execution'
-                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
-                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-            }`}
+            onClick={() => setClientFilter('all')}
+            className="hover:text-red-500 font-semibold flex items-center space-x-1 cursor-pointer"
+            title="Clear client filter"
           >
-            <Briefcase className="h-4 w-4 text-indigo-400" />
-            <span>Work Execution (Phase 5)</span>
-            <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-emerald-500 text-white font-mono font-bold">
-              LIVE
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('tasks')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'tasks'
-                ? 'bg-purple-600 text-white shadow-md'
-                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-            }`}
-          >
-            <CheckSquare className="h-4 w-4 text-purple-400" />
-            <span>Tasks Integration (Phase 6)</span>
-            <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-purple-500 text-white font-mono font-bold">
-              NEW
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('documents')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'documents'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-            }`}
-          >
-            <FolderArchive className="h-4 w-4 text-blue-400" />
-            <span>Document Vault (Phase 7)</span>
-            <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-blue-500 text-white font-mono font-bold">
-              VAULT
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('orders')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'orders'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-            }`}
-          >
-            <Layers className="h-4 w-4" />
-            <span>Work Orders Directory ({filteredOrders.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('kanban')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'kanban'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-            }`}
-          >
-            <FolderKanban className="h-4 w-4" />
-            <span>Lifecycle Kanban</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab('create');
-              setFormSuccessMessage(null);
-            }}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'create'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-            }`}
-          >
-            <Plus className="h-4 w-4" />
-            <span>Generate Work Order</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('audit')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'audit'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-            }`}
-          >
-            <History className="h-4 w-4" />
-            <span>Audit Vault ({allAuditEntries.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('templates')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'templates'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-            }`}
-          >
-            <GitBranch className="h-4 w-4" />
-            <span>Workflow Templates</span>
+            <X className="h-3.5 w-3.5" />
+            <span>Clear Filter</span>
           </button>
         </div>
-
-        {/* Client filter indicator if active */}
-        {clientFilter !== 'all' && (
-          <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs">
-            <span className="font-semibold">Filtering Client:</span>
-            <span className="font-mono font-bold">{clientFilter}</span>
-            <button
-              onClick={() => setClientFilter('all')}
-              className="ml-1 hover:text-red-500 cursor-pointer"
-              title="Clear client filter"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* ========================================================
           PHASE 5: WORK EXECUTION DASHBOARD (MY WORKS, TEAM WORKS, ALL WORKS)
@@ -909,6 +1029,17 @@ export default function WorkflowWorkOrdersManagement({
                     </option>
                   ))}
                 </select>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('create');
+                    setFormSuccessMessage(null);
+                  }}
+                  className="px-3.5 py-2 text-xs font-bold rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm flex items-center space-x-1.5 cursor-pointer shrink-0 ml-auto"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>+ New Work Order</span>
+                </button>
               </div>
             </div>
           </div>
@@ -1221,117 +1352,244 @@ export default function WorkflowWorkOrdersManagement({
                 )}
               </div>
 
-              {/* Client Selector with search dropdown */}
+              {/* Client Search Interface (Search Only - Dropdown removed per user request) */}
               <div className="relative">
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1">
-                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
                     <input
                       type="text"
-                      placeholder="Search Client by CL-ID (e.g. CL-2026-000001), Client Name, Mobile, PAN..."
+                      placeholder="Search Client by Name, PAN, GSTIN, Mobile, or ID across eFilingg CRM (GST, Income Tax, MCA, NGO, Others)..."
                       value={clientSearchText}
                       onChange={e => {
                         setClientSearchText(e.target.value);
                         setIsClientDropdownOpen(true);
                       }}
                       onFocus={() => setIsClientDropdownOpen(true)}
-                      className="w-full pl-9 pr-4 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
+                      className="w-full pl-10 pr-10 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium transition-all"
                     />
-                  </div>
-
-                  {/* Direct Dropdown of enrolled clients */}
-                  <select
-                    value={formClientId}
-                    onChange={e => {
-                      setFormClientId(e.target.value);
-                      setIsClientDropdownOpen(false);
-                    }}
-                    className="px-3 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold cursor-pointer max-w-[220px]"
-                  >
-                    <option value="">-- Choose Client --</option>
-                    {clients.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.id} - {c.clientName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Autocomplete Dropdown popup */}
-                {isClientDropdownOpen && (
-                  <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-slate-850 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl z-30 max-h-64 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
-                    <div className="p-2 bg-slate-50 dark:bg-slate-900 text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center justify-between">
-                      <span>Matching Enrolled Clients ({filteredClientsForForm.length})</span>
+                    {clientSearchText && (
                       <button
                         type="button"
-                        onClick={() => setIsClientDropdownOpen(false)}
-                        className="text-slate-400 hover:text-slate-600"
+                        onClick={() => {
+                          setClientSearchText('');
+                          setIsClientDropdownOpen(true);
+                        }}
+                        className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 p-0.5"
                       >
-                        <X className="h-3 w-3" />
+                        <X className="h-3.5 w-3.5" />
                       </button>
+                    )}
+                  </div>
+
+                  {/* Search / Browse CRM Clients Button */}
+                  <button
+                    type="button"
+                    onClick={() => setIsClientDropdownOpen(prev => !prev)}
+                    className="px-4 py-2.5 text-xs rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800/60 flex items-center gap-2 transition-all shrink-0 cursor-pointer shadow-sm"
+                  >
+                    <Search className="h-3.5 w-3.5" />
+                    <span>{isClientDropdownOpen ? 'Close Client List' : 'Search CRM Clients'}</span>
+                  </button>
+                </div>
+
+                {/* Autocomplete Dropdown popup aggregating GST, Income Tax, MCA, NGO, Others, and Workflow clients */}
+                {isClientDropdownOpen && (
+                  <div className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl z-40 max-h-80 overflow-hidden flex flex-col divide-y divide-slate-100 dark:divide-slate-800">
+                    {/* Filter Tabs Header */}
+                    <div className="p-2.5 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 mr-1">Modules:</span>
+                        {(
+                          [
+                            { key: 'ALL', label: 'All Clients', count: unifiedClients.length },
+                            { key: 'GST', label: 'GST', count: unifiedClients.filter(c => c.sourceModule === 'GST').length },
+                            { key: 'Income Tax', label: 'Income Tax', count: unifiedClients.filter(c => c.sourceModule === 'Income Tax').length },
+                            { key: 'MCA', label: 'MCA / ROC', count: unifiedClients.filter(c => c.sourceModule === 'MCA').length },
+                            { key: 'NGO', label: 'NGO / Trust', count: unifiedClients.filter(c => c.sourceModule === 'NGO').length },
+                            { key: 'Others', label: 'Others', count: unifiedClients.filter(c => c.sourceModule === 'Others').length }
+                          ] as const
+                        ).map(tab => (
+                          <button
+                            key={tab.key}
+                            type="button"
+                            onClick={() => setClientModuleFilter(tab.key)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                              clientModuleFilter === tab.key
+                                ? 'bg-indigo-600 text-white shadow-sm'
+                                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                            }`}
+                          >
+                            {tab.label} <span className="opacity-75 text-[10px]">({tab.count})</span>
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center gap-2 self-end sm:self-auto">
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                          {filteredClientsForForm.length} available
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setIsClientDropdownOpen(false)}
+                          className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
 
-                    {filteredClientsForForm.length === 0 ? (
-                      <div className="p-4 text-center text-xs text-slate-400">
-                        No clients matched "{clientSearchText}". Please enroll client first in Workflow Management.
-                      </div>
-                    ) : (
-                      filteredClientsForForm.map(c => (
-                        <div
-                          key={c.id}
-                          onClick={() => {
-                            setFormClientId(c.id);
-                            setClientSearchText(`${c.id} - ${c.clientName}`);
-                            setIsClientDropdownOpen(false);
-                          }}
-                          className={`p-2.5 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 cursor-pointer transition-colors flex items-center justify-between ${
-                            formClientId === c.id ? 'bg-indigo-50/70 dark:bg-indigo-950/60' : ''
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-center space-x-1.5">
-                              <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400 text-xs">
-                                {c.id}
-                              </span>
-                              <span className="font-bold text-slate-900 dark:text-white text-xs">
-                                {c.clientName}
-                              </span>
-                            </div>
-                            <div className="flex items-center space-x-2 text-[10px] text-slate-400 mt-0.5">
-                              <span>Mobile: {c.mobile}</span>
-                              <span>•</span>
-                              <span>PAN: {c.pan}</span>
-                              <span>•</span>
-                              <span>{c.clientCategory}</span>
-                            </div>
-                          </div>
-                          {formClientId === c.id && <Check className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />}
+                    {/* Clients List */}
+                    <div className="overflow-y-auto max-h-64 divide-y divide-slate-100 dark:divide-slate-800">
+                      {filteredClientsForForm.length === 0 ? (
+                        <div className="p-6 text-center text-xs text-slate-400 space-y-1">
+                          <AlertCircle className="h-5 w-5 mx-auto text-slate-400 opacity-60" />
+                          <p className="font-semibold text-slate-600 dark:text-slate-300">
+                            No clients found matching "{clientSearchText}"
+                          </p>
+                          <p className="text-[11px]">
+                            Showing clients from GST, Income Tax, MCA, NGO, Others and Workflow (sales leads excluded).
+                          </p>
                         </div>
-                      ))
-                    )}
+                      ) : (
+                        filteredClientsForForm.map(c => {
+                          const isSelected = formClientId === c.id;
+                          return (
+                            <div
+                              key={`${c.sourceModule}-${c.id}`}
+                              onClick={() => handleSelectClient(c)}
+                              className={`p-3 hover:bg-indigo-50/80 dark:hover:bg-indigo-950/40 cursor-pointer transition-colors flex items-center justify-between gap-3 ${
+                                isSelected ? 'bg-indigo-50 dark:bg-indigo-950/60' : ''
+                              }`}
+                            >
+                              <div className="space-y-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {/* Module Badge */}
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                                      c.sourceModule === 'GST'
+                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                        : c.sourceModule === 'Income Tax'
+                                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                                        : c.sourceModule === 'MCA'
+                                        ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300'
+                                        : c.sourceModule === 'NGO'
+                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                        : c.sourceModule === 'Workflow'
+                                        ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300'
+                                        : 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300'
+                                    }`}
+                                  >
+                                    {c.sourceModule}
+                                  </span>
+
+                                  <span className="font-mono font-bold text-slate-500 dark:text-slate-400 text-xs">
+                                    {c.id}
+                                  </span>
+
+                                  <span className="font-bold text-slate-900 dark:text-white text-xs truncate">
+                                    {c.clientName}
+                                  </span>
+
+                                  <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                                    • {c.category}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 flex-wrap">
+                                  {c.mobile && (
+                                    <span className="flex items-center gap-1">
+                                      <Phone className="h-3 w-3 text-slate-400" />
+                                      {c.mobile}
+                                    </span>
+                                  )}
+                                  {c.email && (
+                                    <span className="flex items-center gap-1">
+                                      <Mail className="h-3 w-3 text-slate-400" />
+                                      {c.email}
+                                    </span>
+                                  )}
+                                  {c.pan && (
+                                    <span className="flex items-center gap-1">
+                                      <span className="font-semibold text-slate-600 dark:text-slate-300">PAN:</span> {c.pan}
+                                    </span>
+                                  )}
+                                  {c.gstin && (
+                                    <span className="flex items-center gap-1">
+                                      <span className="font-semibold text-slate-600 dark:text-slate-300">GSTIN:</span> {c.gstin}
+                                    </span>
+                                  )}
+                                  {c.address && (
+                                    <span className="truncate max-w-[240px] text-[10px] text-slate-400">
+                                      {c.address}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="shrink-0 flex items-center gap-1">
+                                {isSelected ? (
+                                  <span className="px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 text-[10px] font-black flex items-center gap-1">
+                                    <Check className="h-3 w-3" /> Linked
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleSelectClient(c);
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-600 hover:text-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition-all"
+                                  >
+                                    Select
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
 
               {/* Selected Client Card Preview */}
               {selectedClientForForm ? (
-                <div className="p-3 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="space-y-0.5">
-                    <div className="flex items-center space-x-2">
+                <div className="p-4 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                          selectedClientForForm.sourceModule === 'GST'
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                            : selectedClientForForm.sourceModule === 'Income Tax'
+                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                            : selectedClientForForm.sourceModule === 'MCA'
+                            ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300'
+                            : selectedClientForForm.sourceModule === 'NGO'
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                            : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300'
+                        }`}
+                      >
+                        {selectedClientForForm.sourceModule || 'Workflow Client'}
+                      </span>
                       <span className="font-mono font-bold text-xs text-indigo-700 dark:text-indigo-300">
                         {selectedClientForForm.id}
                       </span>
                       <span className="font-bold text-slate-900 dark:text-white text-xs">
                         {selectedClientForForm.clientName}
                       </span>
-                      <span className="px-1.5 py-0.2 rounded text-[10px] bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 font-semibold">
+                      <span className="px-1.5 py-0.2 rounded text-[10px] bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold">
                         {selectedClientForForm.clientCategory}
                       </span>
                     </div>
-                    <div className="flex items-center space-x-3 text-[11px] text-slate-500 dark:text-slate-400">
-                      <span>Phone: {selectedClientForForm.mobile}</span>
-                      <span>Email: {selectedClientForForm.email}</span>
-                      <span>PAN: {selectedClientForForm.pan}</span>
+                    <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 flex-wrap">
+                      {selectedClientForForm.mobile && <span>Phone: {selectedClientForForm.mobile}</span>}
+                      {selectedClientForForm.email && <span>Email: {selectedClientForForm.email}</span>}
+                      {selectedClientForForm.pan && <span>PAN: {selectedClientForForm.pan}</span>}
+                      {selectedClientForForm.gstin && <span>GSTIN: {selectedClientForForm.gstin}</span>}
+                      {selectedClientForForm.address && <span>Address: {selectedClientForForm.address}</span>}
                     </div>
                   </div>
                   <button
@@ -1339,15 +1597,18 @@ export default function WorkflowWorkOrdersManagement({
                     onClick={() => {
                       setFormClientId('');
                       setClientSearchText('');
+                      setIsClientDropdownOpen(true);
                     }}
-                    className="text-xs text-red-500 hover:text-red-700 font-bold self-start sm:self-auto cursor-pointer"
+                    className="text-xs text-red-500 hover:text-red-700 font-bold self-start sm:self-auto cursor-pointer flex items-center gap-1 hover:underline"
                   >
-                    Change Client
+                    <X className="h-3.5 w-3.5" />
+                    <span>Change Client</span>
                   </button>
                 </div>
               ) : (
-                <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
-                  ⚠️ Note: A Work Order cannot be generated without an enrolled Client ID.
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1.5">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  <span>Use the search bar above to link an active Client from GST, Income Tax, MCA, NGO, or Others. Unconverted sales leads are excluded.</span>
                 </p>
               )}
             </div>
@@ -1359,40 +1620,61 @@ export default function WorkflowWorkOrdersManagement({
                 <span>2. Service Details & Code Assignment</span>
               </label>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Select Standard Service <span className="text-red-500">*</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Select Standard Service <span className="text-red-500">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewServiceError(null);
+                        setIsNewServiceModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 transition cursor-pointer"
+                    >
+                      <Plus className="h-3 w-3" />
+                      <span>Add New Service</span>
+                    </button>
+                  </div>
                   <select
-                    value={formServiceCode}
-                    onChange={e => handleServiceChange(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold cursor-pointer"
+                    value={formServiceName || formServiceCode}
+                    onChange={e => {
+                      if (e.target.value === '__ADD_NEW__') {
+                        setNewServiceError(null);
+                        setIsNewServiceModalOpen(true);
+                      } else {
+                        handleServiceChange(e.target.value);
+                      }
+                    }}
+                    className="w-full px-3 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold cursor-pointer"
                   >
-                    {PREDEFINED_WORKFLOW_SERVICES.map(s => (
-                      <option key={s.code} value={s.code}>
-                        [{s.code}] {s.name}
-                      </option>
-                    ))}
+                    <optgroup label="Services from Service Catalogue (Sales & Marketing)">
+                      {catalogueServices.map(s => (
+                        <option key={s.name} value={s.name}>
+                          {s.name} [{s.code}] • ₹{s.price.toLocaleString('en-IN')} ({s.department})
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Additional Workflow Services">
+                      {PREDEFINED_WORKFLOW_SERVICES.filter(p => !catalogueServices.some(c => c.name.toLowerCase() === p.name.toLowerCase())).map(s => (
+                        <option key={s.code} value={s.code}>
+                          [{s.code}] {s.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <option value="__ADD_NEW__" className="text-indigo-600 font-bold bg-indigo-50 dark:bg-slate-800">+ Add New Service to Catalogue...</option>
                     <option value="CUSTOM">[OTHER] Custom Service...</option>
                   </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Assigned Department <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={formDepartment}
-                    onChange={e => setFormDepartment(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-medium cursor-pointer"
-                  >
-                    {WORKFLOW_DEPARTMENTS.map(d => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
+                  {formDepartment && (
+                    <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                      <span className="font-medium">Auto-mapped from Service Catalogue:</span>
+                      <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300 font-mono text-[10px]">
+                        {formDepartment}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -2437,6 +2719,127 @@ export default function WorkflowWorkOrdersManagement({
                 <span>Print Work Slip</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD NEW SERVICE TO CATALOGUE MODAL */}
+      {isNewServiceModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 w-full max-w-md shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                  <Briefcase className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">Add New Service to Catalogue</h3>
+                  <p className="text-[11px] text-slate-500">Instantly creates and registers service in the Firm Catalogue</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsNewServiceModalOpen(false);
+                  setNewServiceError(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {newServiceError && (
+              <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-xs text-red-600 dark:text-red-400 font-medium flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>{newServiceError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateNewService} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Service Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g., ISO 9001:2015 Certification, Trademark Opposition"
+                  value={newServiceName}
+                  onChange={e => setNewServiceName(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Standard Fee (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="e.g., 15000"
+                    value={newServicePrice}
+                    onChange={e => setNewServicePrice(e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Category
+                  </label>
+                  <select
+                    value={newServiceCategory}
+                    onChange={e => setNewServiceCategory(e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="General Services">General Services</option>
+                    <option value="Registrations">Registrations</option>
+                    <option value="Licenses">Licenses</option>
+                    <option value="Compliance">Compliance</option>
+                    <option value="Taxation">Taxation</option>
+                    <option value="Legal & Corporate">Legal & Corporate</option>
+                    <option value="Certifications">Certifications</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Scope / Description <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Key deliverables and process summary..."
+                  value={newServiceDescription}
+                  onChange={e => setNewServiceDescription(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsNewServiceModalOpen(false);
+                    setNewServiceError(null);
+                  }}
+                  className="px-3.5 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={newServiceSubmitting}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-xl shadow-md transition cursor-pointer"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>{newServiceSubmitting ? 'Adding...' : 'Add to Catalogue & Select'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

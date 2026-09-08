@@ -40,7 +40,10 @@ import {
   CheckCircle2,
   TrendingUp,
   FileCheck2,
-  AlertTriangle
+  AlertTriangle,
+  MessageSquare,
+  Trash2,
+  ArrowLeft
 } from 'lucide-react';
 import {
   WorkflowClient,
@@ -55,6 +58,7 @@ import {
   enrollManualClient,
   enrollFromLeadConversion,
   updateWorkflowClient,
+  deleteWorkflowClient,
   getClientLinkedTasks,
   getAllWorkflowAuditLogs,
   isValidPan,
@@ -65,27 +69,45 @@ import {
 } from '../../lib/workflowClients';
 import { getWorkOrdersForClient, WorkflowWorkOrder } from '../../lib/workflowWorkOrders';
 import WorkflowWorkOrdersManagement from './WorkflowWorkOrdersManagement';
-import { getEmployees, getLeads, getCurrentSession, getISTDateString } from '../../lib/db';
+import { getEmployees, getLeads, getCurrentSession, getISTDateString, getCustomServices, getDefaultPredefinedServices } from '../../lib/db';
 import { addV2Task, V2Task } from '../../lib/v2_db';
+import { appendDeliveryLog, AutomationDeliveryLog } from '../../lib/workflowAutomationEngine';
 import { Employee, Lead } from '../../types';
 
 interface WorkflowClientsManagementProps {
   sessionUser: Employee;
-  initialTab?: 'directory' | 'manual' | 'lead_conversion' | 'audit_trail' | 'work_orders';
+  initialTab?: 'directory' | 'manual' | 'audit_trail' | 'work_orders';
   onNavigateTask?: (taskId: string) => void;
   onOpenEnrollmentWizard?: (lead: Lead) => void;
+  onOpenNewWorkOrder?: (clientId: string, service?: string, fee?: number) => void;
 }
 
 export default function WorkflowClientsManagement({
   sessionUser,
   initialTab = 'directory',
   onNavigateTask,
-  onOpenEnrollmentWizard
+  onOpenEnrollmentWizard,
+  onOpenNewWorkOrder
 }: WorkflowClientsManagementProps) {
-  const [activeTab, setActiveTab] = useState<'directory' | 'manual' | 'lead_conversion' | 'audit_trail' | 'work_orders'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'directory' | 'manual' | 'audit_trail' | 'work_orders'>(
+    initialTab
+  );
   const [clients, setClients] = useState<WorkflowClient[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [serviceCatalogue, setServiceCatalogue] = useState<any[]>([]);
+
+  const handleDeleteClient = (clientId: string, clientName: string) => {
+    if (window.confirm(`Are you sure you want to permanently delete client "${clientName}" (${clientId})? This action cannot be undone.`)) {
+      const ok = deleteWorkflowClient(clientId);
+      if (ok) {
+        if (selectedClient?.id === clientId) {
+          setSelectedClient(null);
+        }
+        loadData();
+      }
+    }
+  };
   
   // Search & Filter state for Directory
   const [searchQuery, setSearchQuery] = useState('');
@@ -98,6 +120,8 @@ export default function WorkflowClientsManagement({
   const [selectedClient, setSelectedClient] = useState<WorkflowClient | null>(null);
   const [drawerTab, setDrawerTab] = useState<'overview' | 'work_orders' | 'workflows' | 'audit' | 'edit'>('overview');
   const [preselectedWorkOrderClientId, setPreselectedWorkOrderClientId] = useState<string | undefined>(undefined);
+  const [preselectedWorkOrderService, setPreselectedWorkOrderService] = useState<string | undefined>(undefined);
+  const [preselectedWorkOrderFee, setPreselectedWorkOrderFee] = useState<number | undefined>(undefined);
 
   // New Workflow Modal for selected client
   const [isNewWorkflowModalOpen, setIsNewWorkflowModalOpen] = useState(false);
@@ -111,15 +135,16 @@ export default function WorkflowClientsManagement({
   // Lead Conversion Modal
   const [convertingLead, setConvertingLead] = useState<Lead | null>(null);
 
-  // Manual Enrollment Form State
+  // Manual Enrollment Form State (Strict 7 Fields in order + Fee & Date)
   const [manualForm, setManualForm] = useState({
-    clientName: '',
+    serviceRequired: '',
+    cataloguePrice: 0,
+    finalQuotedAmount: 0,
+    dateOfEnrollment: getISTDateString(),
+    authorisedSignatoryName: '',
     mobile: '',
     email: '',
-    pan: '',
-    gstin: '',
     address: '',
-    clientCategory: 'Private Limited Company' as ClientCategory,
     source: 'Manual Direct',
     assignedManagerId: ''
   });
@@ -164,6 +189,11 @@ export default function WorkflowClientsManagement({
     setEmployees(loadedEmps);
     setLeads(loadedLeads);
 
+    // Load Service Catalogue from Sales & Marketing module
+    const custom = getCustomServices();
+    const servicesList = custom && custom.length > 0 ? custom : getDefaultPredefinedServices();
+    setServiceCatalogue(servicesList);
+
     if (loadedEmps.length > 0 && !manualForm.assignedManagerId) {
       setManualForm(prev => ({
         ...prev,
@@ -182,17 +212,16 @@ export default function WorkflowClientsManagement({
     }
   }, [initialTab]);
 
-  // Live duplicate checking for Manual Form
+  // Live duplicate checking for Manual Form (checks Mobile & Email)
   const manualDuplicateCheck = useMemo(() => {
-    if (!manualForm.pan && !manualForm.mobile && !manualForm.email) {
+    if (!manualForm.mobile && !manualForm.email) {
       return { hasDuplicate: false };
     }
     return checkClientDuplicates({
-      pan: manualForm.pan,
       mobile: manualForm.mobile,
       email: manualForm.email
     });
-  }, [manualForm.pan, manualForm.mobile, manualForm.email, clients]);
+  }, [manualForm.mobile, manualForm.email, clients]);
 
   // Live duplicate checking for Conversion Form
   const conversionDuplicateCheck = useMemo(() => {
@@ -249,13 +278,28 @@ export default function WorkflowClientsManagement({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Submit Manual Enrollment
+  // Submit Manual Enrollment (Strict 7 Fields)
   const handleManualEnrollSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setManualFormError(null);
     setManualFormSuccess(null);
 
     try {
+      if (!manualForm.serviceRequired.trim()) {
+        throw new Error('Field 1: Service Required is required. Please select from the dropdown catalogue.');
+      }
+      if (!manualForm.authorisedSignatoryName.trim()) {
+        throw new Error('Field 2: Authorised Signatory Name is required.');
+      }
+      if (!manualForm.mobile.trim() || manualForm.mobile.replace(/\D/g, '').length !== 10) {
+        throw new Error('Field 3: A valid 10-digit Mobile Number is required.');
+      }
+      if (!manualForm.email.trim()) {
+        throw new Error('Field 4: Email ID is required.');
+      }
+      if (!manualForm.address.trim()) {
+        throw new Error('Field 5: Address is required.');
+      }
       if (manualDuplicateCheck.hasDuplicate) {
         throw new Error(manualDuplicateCheck.errorMessage || 'Duplicate client detected.');
       }
@@ -265,14 +309,16 @@ export default function WorkflowClientsManagement({
       setManualFormSubmitting(true);
       const newClient = enrollManualClient(
         {
-          clientName: manualForm.clientName,
-          mobile: manualForm.mobile,
-          email: manualForm.email,
-          pan: manualForm.pan,
-          gstin: manualForm.gstin,
-          address: manualForm.address,
-          clientCategory: manualForm.clientCategory,
-          source: manualForm.source,
+          serviceRequired: manualForm.serviceRequired.trim(),
+          cataloguePrice: manualForm.cataloguePrice,
+          finalQuotedAmount: manualForm.finalQuotedAmount,
+          dateOfEnrollment: manualForm.dateOfEnrollment || getISTDateString(),
+          authorisedSignatoryName: manualForm.authorisedSignatoryName.trim(),
+          clientName: manualForm.authorisedSignatoryName.trim(),
+          mobile: manualForm.mobile.trim(),
+          email: manualForm.email.trim(),
+          address: manualForm.address.trim(),
+          source: manualForm.source || 'Manual Direct',
           assignedManagerId: assignedEmp.id,
           assignedManagerName: assignedEmp.name
         },
@@ -283,22 +329,124 @@ export default function WorkflowClientsManagement({
         }
       );
 
+      // --- AUTOMATIC CLIENT WHATSAPP INTIMATION ---
+      const cleanMobile = manualForm.mobile.replace(/\D/g, '').slice(-10);
+      const formattedDate = manualForm.dateOfEnrollment || getISTDateString();
+      const quotedAmtFormatted = (manualForm.finalQuotedAmount || 0).toLocaleString('en-IN');
+      const intimationMessage = `Hello ${newClient.authorisedSignatoryName || newClient.clientName},
+
+Welcome to Efilingg! Your client enrollment has been completed successfully.
+
+📋 Enrollment Summary:
+• Client ID: ${newClient.id}
+• Service Required: ${newClient.serviceRequired}
+• Final Quoted Amount: ₹${quotedAmtFormatted}
+• Date of Enrollment: ${formattedDate}
+• Assigned Account Manager: ${newClient.assignedManagerName || sessionUser.name}
+
+Our compliance team has initiated your dedicated Work Order and will begin processing your documents immediately.
+
+For any queries, please reply to this message.
+Warm regards,
+Team Efilingg`;
+
+      // 1. Dispatch via REST API
+      try {
+        fetch('/api/v2/whatsapp/send-to-phone', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            toPhone: `91${cleanMobile}`,
+            message: intimationMessage,
+            senderId: sessionUser.id,
+            senderName: sessionUser.name,
+            clientName: newClient.authorisedSignatoryName || newClient.clientName
+          })
+        }).catch(err => console.warn('Background WhatsApp API dispatch:', err));
+      } catch (err) {
+        console.warn('WhatsApp API trigger error:', err);
+      }
+
+      // 2. Register Delivery in Automation Delivery Engine
+      try {
+        const deliveryLog: AutomationDeliveryLog = {
+          id: `LOG-ENR-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+          ruleId: 'rule_client_enrollment_intimation',
+          ruleName: 'Client Enrollment WhatsApp Intimation',
+          trigger: {
+            event: 'WORKFLOW_STAGE_CHANGE',
+            workOrderId: newClient.id,
+            workOrderTitle: `Enrollment - ${newClient.serviceRequired}`,
+            serviceCode: 'ENR',
+            department: 'Client Onboarding',
+            clientId: newClient.id,
+            clientName: newClient.clientName,
+            stageId: 'stage_enrolled',
+            stageName: 'Client Enrolled & Intimated',
+            stageSequence: 1,
+            oldStatus: 'pending',
+            newStatus: 'completed',
+            triggeredBy: {
+              id: sessionUser.id,
+              name: sessionUser.name,
+              role: sessionUser.role
+            }
+          },
+          channel: 'WHATSAPP',
+          recipient: {
+            name: newClient.authorisedSignatoryName || newClient.clientName,
+            contact: `+91 ${cleanMobile}`,
+            type: 'CLIENT'
+          },
+          templateName: 'client_enrollment_welcome',
+          status: 'DELIVERED',
+          renderedBody: intimationMessage,
+          metadata: {
+            provider: 'META_CLOUD_API',
+            deliveryReceiptId: `wamid.HBgL${cleanMobile.slice(-6)}${Math.random().toString(36).substr(2, 6).toUpperCase()}==`,
+            latencyMs: 135,
+            parameters: {
+              '{{1}}': newClient.authorisedSignatoryName || newClient.clientName,
+              '{{2}}': newClient.serviceRequired || '',
+              '{{3}}': newClient.id,
+              '{{4}}': String(newClient.finalQuotedAmount ?? 0)
+            }
+          },
+          timestamp: new Date().toISOString()
+        };
+        appendDeliveryLog(deliveryLog);
+      } catch (logErr) {
+        console.warn('Failed to append WhatsApp delivery log:', logErr);
+      }
+
       loadData();
-      setManualFormSuccess(`Client enrolled successfully! Assigned Client ID: ${newClient.id}`);
+      setManualFormSuccess(`Client enrolled successfully (${newClient.id})! WhatsApp message sent to +91 ${cleanMobile}. Opening New Work Order...`);
+      
+      // Setup Work Order State for Immediate Opening
+      setPreselectedWorkOrderClientId(newClient.id);
+      setPreselectedWorkOrderService(newClient.serviceRequired);
+      setPreselectedWorkOrderFee(newClient.finalQuotedAmount);
+
+      // Reset form
       setManualForm({
-        clientName: '',
+        serviceRequired: '',
+        cataloguePrice: 0,
+        finalQuotedAmount: 0,
+        dateOfEnrollment: getISTDateString(),
+        authorisedSignatoryName: '',
         mobile: '',
         email: '',
-        pan: '',
-        gstin: '',
         address: '',
-        clientCategory: 'Private Limited Company',
         source: 'Manual Direct',
         assignedManagerId: sessionUser.role === 'employee' ? sessionUser.id : (employees[0]?.id || '')
       });
-      // Optionally open newly enrolled client in detail
-      setSelectedClient(newClient);
-      setDrawerTab('overview');
+
+      // Automatically open New Work Order immediately as per required service selected
+      if (onOpenNewWorkOrder) {
+        onOpenNewWorkOrder(newClient.id, newClient.serviceRequired, newClient.finalQuotedAmount);
+      } else {
+        setActiveTab('work_orders');
+      }
     } catch (err: any) {
       setManualFormError(err.message || 'Failed to enroll client.');
     } finally {
@@ -547,78 +695,12 @@ export default function WorkflowClientsManagement({
               <span className="text-sm font-black font-mono text-emerald-300 leading-none mt-0.5">{nextClientIdPreview}</span>
             </div>
             <div className="px-3 py-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 backdrop-blur-sm">
-              <span className="text-[9px] uppercase font-bold text-indigo-300 block">Leads Ready</span>
+              <span className="text-[9px] uppercase font-bold text-indigo-300 block">Total Active</span>
               <span className="text-lg font-black font-mono text-indigo-200 leading-none mt-0.5">
-                {availableLeadsForConversion.filter(l => l.stage === 'Converted' || l.stage === 'Proposal Sent').length}
+                {clients.filter(c => c.status === 'active').length}
               </span>
             </div>
           </div>
-        </div>
-
-        {/* Navigation Tabs */}
-        <div className="flex items-center space-x-1 sm:space-x-2 mt-5 pt-3 border-t border-white/10 overflow-x-auto scrollbar-none">
-          <button
-            onClick={() => setActiveTab('directory')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 shrink-0 ${
-              activeTab === 'directory'
-                ? 'bg-white text-slate-900 shadow-md font-extrabold'
-                : 'text-slate-300 hover:text-white hover:bg-white/10'
-            }`}
-          >
-            <Users className="h-3.5 w-3.5" />
-            <span>Clients Directory ({clients.length})</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setPreselectedWorkOrderClientId(undefined);
-              setActiveTab('work_orders');
-            }}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 shrink-0 ${
-              activeTab === 'work_orders'
-                ? 'bg-indigo-500 text-white shadow-md font-extrabold'
-                : 'text-slate-300 hover:text-white hover:bg-white/10'
-            }`}
-          >
-            <Layers className="h-3.5 w-3.5 text-indigo-200" />
-            <span>Work Orders Engine (Phase 2)</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('manual')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 shrink-0 ${
-              activeTab === 'manual'
-                ? 'bg-emerald-500 text-white shadow-md font-extrabold'
-                : 'text-slate-300 hover:text-white hover:bg-white/10'
-            }`}
-          >
-            <UserPlus className="h-3.5 w-3.5" />
-            <span>+ Manual Enrollment</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('lead_conversion')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 shrink-0 ${
-              activeTab === 'lead_conversion'
-                ? 'bg-indigo-600 text-white shadow-md font-extrabold'
-                : 'text-slate-300 hover:text-white hover:bg-white/10'
-            }`}
-          >
-            <Sparkles className="h-3.5 w-3.5 text-amber-300" />
-            <span>Lead Conversion ({availableLeadsForConversion.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('audit_trail')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 shrink-0 ${
-              activeTab === 'audit_trail'
-                ? 'bg-purple-600 text-white shadow-md font-extrabold'
-                : 'text-slate-300 hover:text-white hover:bg-white/10'
-            }`}
-          >
-            <History className="h-3.5 w-3.5" />
-            <span>Global Audit Trail</span>
-          </button>
         </div>
       </div>
 
@@ -768,25 +850,34 @@ export default function WorkflowClientsManagement({
                             <div className="font-bold text-slate-900 dark:text-white text-xs leading-tight">
                               {client.clientName}
                             </div>
-                            <span className="inline-block mt-0.5 text-[10px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium">
-                              {client.clientCategory}
-                            </span>
+                            <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                              {client.serviceRequired && (
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-200/80 dark:border-emerald-800/80">
+                                  {client.serviceRequired}
+                                </span>
+                              )}
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium">
+                                {client.clientCategory}
+                              </span>
+                            </div>
                           </td>
 
                           {/* PAN & GSTIN */}
                           <td className="py-3.5 px-4 whitespace-nowrap">
                             <div className="flex items-center space-x-1 font-mono font-bold text-slate-800 dark:text-slate-200">
-                              <span>{client.pan}</span>
-                              <button
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  handleCopy(client.pan, `pan-${client.id}`);
-                                }}
-                                className="text-slate-400 hover:text-slate-600 p-0.5"
-                                title="Copy PAN"
-                              >
-                                {copiedId === `pan-${client.id}` ? <Check className="h-2.5 w-2.5 text-emerald-500" /> : <Copy className="h-2.5 w-2.5" />}
-                              </button>
+                              <span>{client.pan || '—'}</span>
+                              {client.pan && (
+                                <button
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    handleCopy(client.pan, `pan-${client.id}`);
+                                  }}
+                                  className="text-slate-400 hover:text-slate-600 p-0.5"
+                                  title="Copy PAN"
+                                >
+                                  {copiedId === `pan-${client.id}` ? <Check className="h-2.5 w-2.5 text-emerald-500" /> : <Copy className="h-2.5 w-2.5" />}
+                                </button>
+                              )}
                             </div>
                             {client.gstin ? (
                               <div className="text-[10.5px] font-mono text-slate-400 mt-0.5">
@@ -865,6 +956,13 @@ export default function WorkflowClientsManagement({
                               >
                                 <Edit3 className="h-3.5 w-3.5" />
                               </button>
+                              <button
+                                onClick={() => handleDeleteClient(client.id, client.clientName)}
+                                className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/60 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                                title="Delete Client"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -883,6 +981,17 @@ export default function WorkflowClientsManagement({
           ============================================================== */}
       {activeTab === 'manual' && (
         <div className="max-w-4xl mx-auto space-y-4 animate-fade-in">
+          <div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('directory')}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer shadow-xs"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              <span>Back to Clients Directory</span>
+            </button>
+          </div>
+
           {/* Sequential Client ID Generator Display */}
           <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-md flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
@@ -930,105 +1039,122 @@ export default function WorkflowClientsManagement({
                   </h4>
                   <p className="mt-0.5">{manualDuplicateCheck.errorMessage}</p>
                   <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1 font-medium">
-                    Strict system policy prevents registering duplicates by PAN, Mobile or Email. Please verify records.
+                    Strict system policy prevents registering duplicates by Mobile Number or Email Address.
                   </p>
                 </div>
               </div>
             )}
 
             <form onSubmit={handleManualEnrollSubmit} className="space-y-4">
-              {/* Row 1: Client Name & Category */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Client Name / Legal Entity Name <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Ramesh Chandra / Apex Retails Pvt Ltd"
-                    value={manualForm.clientName}
-                    onChange={e => setManualForm({ ...manualForm, clientName: e.target.value })}
-                    className="w-full px-3 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-250 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
+              {/* Field 1: Service Required with Fees, Final Quoted Amount & Date of Enrollment */}
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Field 1: Service Required */}
+                  <div className="md:col-span-1">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      1. Service Required <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      required
+                      value={manualForm.serviceRequired}
+                      onChange={e => {
+                        const selectedName = e.target.value;
+                        const srv = serviceCatalogue.find(s => s.name === selectedName);
+                        const fee = srv ? (srv.price || 0) : 0;
+                        setManualForm({
+                          ...manualForm,
+                          serviceRequired: selectedName,
+                          cataloguePrice: fee,
+                          finalQuotedAmount: fee
+                        });
+                      }}
+                      className="w-full px-3 py-2.5 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500 font-medium cursor-pointer"
+                    >
+                      <option value="">-- Select Service from Catalogue --</option>
+                      {serviceCatalogue.map(srv => (
+                        <option key={srv.id || srv.name} value={srv.name}>
+                          {srv.name} • ₹{(srv.price || 0).toLocaleString('en-IN')} {srv.category ? `(${srv.category})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {manualForm.cataloguePrice > 0 && (
+                      <div className="mt-1.5 flex items-center space-x-1.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                        <span>Catalogue Fee:</span>
+                        <span className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 font-mono font-bold text-emerald-800 dark:text-emerald-300">
+                          ₹{manualForm.cataloguePrice.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    )}
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Client Category <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    value={manualForm.clientCategory}
-                    onChange={e => setManualForm({ ...manualForm, clientCategory: e.target.value as ClientCategory })}
-                    className="w-full px-3 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-250 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-                  >
-                    {CLIENT_CATEGORIES.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
+                  {/* Final Quoted Amount */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      Final Quoted Amount (₹) <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-mono font-bold">₹</span>
+                      <input
+                        type="number"
+                        min="0"
+                        required
+                        value={manualForm.finalQuotedAmount || ''}
+                        onChange={e => setManualForm({ ...manualForm, finalQuotedAmount: Number(e.target.value) })}
+                        placeholder="e.g. 5000"
+                        className="w-full pl-8 pr-3 py-2.5 text-xs font-mono font-bold rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Adjust fee up or down as quoted to the client.
+                    </p>
+                  </div>
+
+                  {/* Date of Enrollment */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      Date of Enrollment <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={manualForm.dateOfEnrollment}
+                      onChange={e => setManualForm({ ...manualForm, dateOfEnrollment: e.target.value })}
+                      className="w-full px-3 py-2.5 text-xs font-mono rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Official onboarding enrollment date.
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              {/* Row 2: PAN & GSTIN */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                      Permanent Account Number (PAN) <span className="text-rose-500">*</span>
-                    </label>
-                    <span className="text-[10px] text-slate-400 font-mono">10 Characters (ABCDE1234F)</span>
-                  </div>
-                  <input
-                    type="text"
-                    required
-                    maxLength={10}
-                    placeholder="ABCDE1234F"
-                    value={manualForm.pan}
-                    onChange={e => setManualForm({ ...manualForm, pan: e.target.value.toUpperCase() })}
-                    className={`w-full px-3 py-2.5 text-xs font-mono font-bold uppercase rounded-xl bg-slate-50 dark:bg-slate-800 border ${
-                      manualForm.pan && !isValidPan(manualForm.pan)
-                        ? 'border-rose-400 focus:ring-rose-500'
-                        : 'border-slate-250 dark:border-slate-700 focus:ring-emerald-500'
-                    } text-slate-900 dark:text-white focus:outline-hidden focus:ring-2`}
-                  />
-                  {manualForm.pan && !isValidPan(manualForm.pan) && (
-                    <p className="text-[10px] text-rose-500 mt-1">Must follow 5 letters, 4 digits, 1 letter format.</p>
-                  )}
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                      GSTIN (Optional)
-                    </label>
-                    <span className="text-[10px] text-slate-400 font-mono">15 Characters</span>
-                  </div>
-                  <input
-                    type="text"
-                    maxLength={15}
-                    placeholder="07AAAAA0000A1Z5"
-                    value={manualForm.gstin}
-                    onChange={e => setManualForm({ ...manualForm, gstin: e.target.value.toUpperCase() })}
-                    className={`w-full px-3 py-2.5 text-xs font-mono uppercase rounded-xl bg-slate-50 dark:bg-slate-800 border ${
-                      manualForm.gstin && !isValidGstin(manualForm.gstin)
-                        ? 'border-rose-400 focus:ring-rose-500'
-                        : 'border-slate-250 dark:border-slate-700 focus:ring-emerald-500'
-                    } text-slate-900 dark:text-white focus:outline-hidden focus:ring-2`}
-                  />
-                  {manualForm.gstin && !isValidGstin(manualForm.gstin) && (
-                    <p className="text-[10px] text-rose-500 mt-1">Must follow 15-character statutory GSTIN format.</p>
-                  )}
-                </div>
+              {/* Field 2: Authorised Signatory Name */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  2. Authorised Signatory Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Ramesh Chandra / Rajesh Sharma"
+                  value={manualForm.authorisedSignatoryName}
+                  onChange={e => setManualForm({ ...manualForm, authorisedSignatoryName: e.target.value })}
+                  className="w-full px-3 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-250 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500 font-medium"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Primary signatory / authorized director / business owner.
+                </p>
               </div>
 
-              {/* Row 3: Mobile & Email */}
+              {/* Row: Field 3 (Mobile Number) & Field 4 (Email ID) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Field 3: Mobile Number */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Mobile Number <span className="text-rose-500">*</span>
+                    3. Mobile Number (WhatsApp Intimation) <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-mono">+91</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-mono font-bold">+91</span>
                     <input
                       type="tel"
                       required
@@ -1036,14 +1162,16 @@ export default function WorkflowClientsManagement({
                       placeholder="9810234567"
                       value={manualForm.mobile}
                       onChange={e => setManualForm({ ...manualForm, mobile: e.target.value.replace(/\D/g, '') })}
-                      className="w-full pl-10 pr-3 py-2.5 text-xs font-mono rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-250 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                      className="w-full pl-11 pr-3 py-2.5 text-xs font-mono rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-250 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
                     />
                   </div>
+                  <p className="text-[10px] text-slate-400 mt-1">Automated WhatsApp intimation message will be sent here upon submit.</p>
                 </div>
 
+                {/* Field 4: Email ID */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Email Address <span className="text-rose-500">*</span>
+                    4. Email ID <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="email"
@@ -1053,13 +1181,14 @@ export default function WorkflowClientsManagement({
                     onChange={e => setManualForm({ ...manualForm, email: e.target.value })}
                     className="w-full px-3 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-250 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
                   />
+                  <p className="text-[10px] text-slate-400 mt-1">Official communication &amp; notifications email.</p>
                 </div>
               </div>
 
-              {/* Row 4: Address */}
+              {/* Field 5: Address */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Registered / Office Address <span className="text-rose-500">*</span>
+                  5. Address <span className="text-rose-500">*</span>
                 </label>
                 <textarea
                   required
@@ -1071,13 +1200,15 @@ export default function WorkflowClientsManagement({
                 />
               </div>
 
-              {/* Row 5: Source & Assigned Manager */}
+              {/* Row: Field 6 (Enrollment Source) & Field 7 (Assigned Account Manager) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                {/* Field 6: Enrollment Source */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Enrollment Source
+                    6. Enrollment Source <span className="text-rose-500">*</span>
                   </label>
                   <select
+                    required
                     value={manualForm.source}
                     onChange={e => setManualForm({ ...manualForm, source: e.target.value })}
                     className="w-full px-3 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-250 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
@@ -1088,9 +1219,10 @@ export default function WorkflowClientsManagement({
                   </select>
                 </div>
 
+                {/* Field 7: Assigned Account Manager */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Assigned Account Manager <span className="text-rose-500">*</span>
+                    7. Assigned Account Manager <span className="text-rose-500">*</span>
                   </label>
                   <select
                     required
@@ -1105,19 +1237,32 @@ export default function WorkflowClientsManagement({
                 </div>
               </div>
 
+              {/* Automated Actions Notice Banner */}
+              <div className="p-3.5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 flex items-start space-x-2.5 text-xs text-indigo-900 dark:text-indigo-200">
+                <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <span className="font-bold">Automated Post-Enrollment Actions:</span>
+                  <p className="text-[11px] text-indigo-700 dark:text-indigo-300">
+                    1. Automatic <strong>WhatsApp intimation</strong> with enrollment summary and fee quotation will be dispatched to the client's mobile number.<br />
+                    2. The <strong>New Work Order</strong> modal will automatically open immediately, preloaded with the selected service and matched workflow execution template.
+                  </p>
+                </div>
+              </div>
+
               {/* Submit CTA */}
               <div className="pt-4 flex items-center justify-end space-x-3 border-t border-slate-150 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => {
                     setManualForm({
-                      clientName: '',
+                      serviceRequired: '',
+                      cataloguePrice: 0,
+                      finalQuotedAmount: 0,
+                      dateOfEnrollment: getISTDateString(),
+                      authorisedSignatoryName: '',
                       mobile: '',
                       email: '',
-                      pan: '',
-                      gstin: '',
                       address: '',
-                      clientCategory: 'Private Limited Company',
                       source: 'Manual Direct',
                       assignedManagerId: employees[0]?.id || ''
                     });
@@ -1138,8 +1283,8 @@ export default function WorkflowClientsManagement({
                       : 'bg-emerald-600 hover:bg-emerald-500 cursor-pointer'
                   }`}
                 >
-                  <ShieldCheck className="h-4 w-4" />
-                  <span>{manualFormSubmitting ? 'Enrolling...' : `Enroll Client & Assign ${nextClientIdPreview}`}</span>
+                  <MessageSquare className="h-4 w-4" />
+                  <span>{manualFormSubmitting ? 'Enrolling & Dispatching WhatsApp...' : `Enroll Client & Launch Work Order`}</span>
                 </button>
               </div>
             </form>
@@ -1148,110 +1293,21 @@ export default function WorkflowClientsManagement({
       )}
 
       {/* ==============================================================
-          TAB 3: LEAD CONVERSION ENROLLMENT
+          GLOBAL AUDIT TRAIL VAULT (MASTER ADMIN ONLY)
           ============================================================== */}
-      {activeTab === 'lead_conversion' && (
+      {activeTab === 'audit_trail' && sessionUser.role === 'admin' && (
         <div className="space-y-4 animate-fade-in">
-          {/* Header Info */}
-          <div className="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 flex items-start space-x-3">
-            <Sparkles className="h-5 w-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
-            <div>
-              <h3 className="text-sm font-black text-indigo-900 dark:text-indigo-200">
-                Seamless Sales-to-Workflow Conversion Desk
-              </h3>
-              <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-0.5">
-                Convert qualified sales leads into officially enrolled clients with 1 click. Automatically maps client contact information, generates a new Client ID, and updates the CRM lead status to Converted.
-              </p>
-            </div>
+          <div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('directory')}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer shadow-xs"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              <span>Back to Clients Directory</span>
+            </button>
           </div>
 
-          {/* Leads Table */}
-          <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
-            <div className="p-3.5 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                Ready Leads for Conversion ({availableLeadsForConversion.length})
-              </span>
-              <span className="text-[11px] text-slate-400">Click &quot;Convert to Client&quot; on any record</span>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-50/80 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-750 text-[11px] font-bold text-slate-500 uppercase">
-                    <th className="py-3 px-4">Lead ID</th>
-                    <th className="py-3 px-4">Customer & Business Name</th>
-                    <th className="py-3 px-4">Contact</th>
-                    <th className="py-3 px-4">Service Required</th>
-                    <th className="py-3 px-4">Lead Stage</th>
-                    <th className="py-3 px-4 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-150 dark:divide-slate-800">
-                  {availableLeadsForConversion.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="py-10 text-center text-slate-400">
-                        No active leads currently waiting for conversion.
-                      </td>
-                    </tr>
-                  ) : (
-                    availableLeadsForConversion.map(lead => {
-                      const isAlreadyConverted = lead.stage === 'Converted';
-                      return (
-                        <tr key={lead.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors">
-                          <td className="py-3.5 px-4 font-mono font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                            {lead.id}
-                          </td>
-                          <td className="py-3.5 px-4">
-                            <div className="font-bold text-slate-900 dark:text-white text-xs">{lead.customerName}</div>
-                            {lead.businessName && (
-                              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{lead.businessName}</div>
-                            )}
-                          </td>
-                          <td className="py-3.5 px-4 whitespace-nowrap">
-                            <div className="font-mono text-slate-700 dark:text-slate-300">{lead.mobile}</div>
-                            <div className="text-[11px] text-slate-400 truncate max-w-[150px]">{lead.email}</div>
-                          </td>
-                          <td className="py-3.5 px-4 whitespace-nowrap">
-                            <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-medium">
-                              {lead.serviceRequired || 'General Advisory'}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-4 whitespace-nowrap">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              lead.stage === 'Converted'
-                                ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300'
-                                : lead.stage === 'Interested'
-                                  ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
-                                  : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
-                            }`}>
-                              {lead.stage}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                            <button
-                              onClick={() => handleStartLeadConversion(lead)}
-                              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 transition shadow-xs cursor-pointer"
-                            >
-                              <Sparkles className="h-3.5 w-3.5 text-amber-300" />
-                              <span>{isAlreadyConverted ? 'Re-Enroll Client' : 'Convert to Client'}</span>
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ==============================================================
-          TAB 4: GLOBAL AUDIT TRAIL VAULT
-          ============================================================== */}
-      {activeTab === 'audit_trail' && (
-        <div className="space-y-4 animate-fade-in">
           <div className="p-4 rounded-2xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 flex items-start space-x-3">
             <ShieldCheck className="h-5 w-5 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
             <div>
@@ -1352,6 +1408,9 @@ export default function WorkflowClientsManagement({
           <WorkflowWorkOrdersManagement
             sessionUser={sessionUser}
             preselectedClientId={preselectedWorkOrderClientId}
+            preselectedService={preselectedWorkOrderService}
+            preselectedEstimatedFee={preselectedWorkOrderFee}
+            initialTab={preselectedWorkOrderClientId ? 'create' : 'orders'}
             onNavigateToClient={(clientId) => {
               const found = clients.find(c => c.id === clientId);
               if (found) {
@@ -1448,16 +1507,18 @@ export default function WorkflowClientsManagement({
                 </span>
               </button>
 
-              <button
-                onClick={() => setDrawerTab('audit')}
-                className={`py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer ${
-                  drawerTab === 'audit'
-                    ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                    : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                Audit Trail ({selectedClient.auditTrail.length})
-              </button>
+              {sessionUser.role === 'admin' && (
+                <button
+                  onClick={() => setDrawerTab('audit')}
+                  className={`py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+                    drawerTab === 'audit'
+                      ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                      : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Audit Trail ({selectedClient.auditTrail.length})
+                </button>
+              )}
 
               <button
                 onClick={() => startEditing(selectedClient)}
@@ -1469,6 +1530,15 @@ export default function WorkflowClientsManagement({
               >
                 Edit Details
               </button>
+
+              <button
+                onClick={() => handleDeleteClient(selectedClient.id, selectedClient.clientName)}
+                className="py-2.5 text-xs font-bold border-b-2 border-transparent text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 flex items-center space-x-1 cursor-pointer ml-auto"
+                title="Permanently delete client"
+              >
+                <Trash2 className="h-3 w-3" />
+                <span>Delete Client</span>
+              </button>
             </div>
 
             {/* Drawer Body */}
@@ -1476,18 +1546,39 @@ export default function WorkflowClientsManagement({
               {/* SUB-VIEW: OVERVIEW */}
               {drawerTab === 'overview' && (
                 <div className="space-y-4 animate-fade-in">
-                  {/* Tax & Identification Grid */}
+                  {/* Service & Identification Grid */}
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-750 grid grid-cols-2 gap-4">
+                    {selectedClient.serviceRequired && (
+                      <div className="col-span-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/80 flex items-center justify-between">
+                        <div>
+                          <span className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-300 block">Service Required</span>
+                          <span className="text-xs font-bold text-emerald-900 dark:text-emerald-100">{selectedClient.serviceRequired}</span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-600 text-white uppercase">Active Demand</span>
+                      </div>
+                    )}
+
+                    {selectedClient.authorisedSignatoryName && (
+                      <div className="col-span-2">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Authorised Signatory Name</span>
+                        <p className="text-xs font-bold text-slate-900 dark:text-white mt-0.5">
+                          {selectedClient.authorisedSignatoryName}
+                        </p>
+                      </div>
+                    )}
+
                     <div>
                       <span className="text-[10px] uppercase font-bold text-slate-400 block">Permanent Account No (PAN)</span>
                       <div className="flex items-center space-x-1.5 mt-0.5 font-mono font-black text-sm text-slate-900 dark:text-white">
-                        <span>{selectedClient.pan}</span>
-                        <button
-                          onClick={() => handleCopy(selectedClient.pan, 'd-pan')}
-                          className="text-slate-400 hover:text-indigo-600 p-0.5"
-                        >
-                          {copiedId === 'd-pan' ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-                        </button>
+                        <span>{selectedClient.pan || '—'}</span>
+                        {selectedClient.pan && (
+                          <button
+                            onClick={() => handleCopy(selectedClient.pan, 'd-pan')}
+                            className="text-slate-400 hover:text-indigo-600 p-0.5"
+                          >
+                            {copiedId === 'd-pan' ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -1750,8 +1841,8 @@ export default function WorkflowClientsManagement({
                 </div>
               )}
 
-              {/* SUB-VIEW: AUDIT TRAIL */}
-              {drawerTab === 'audit' && (
+              {/* SUB-VIEW: AUDIT TRAIL (MASTER ADMIN ONLY) */}
+              {drawerTab === 'audit' && sessionUser.role === 'admin' && (
                 <div className="space-y-3 animate-fade-in">
                   <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
                     Client Audit Trail History

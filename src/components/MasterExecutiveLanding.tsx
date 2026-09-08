@@ -633,7 +633,7 @@ export default function MasterExecutiveLanding({
                   WORKFLOW MANAGEMENT
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug line-clamp-2">
-                  Client Enrollment (CL-ID), Lead Conversion, Work Orders Engine ({'{SERVICE}-{YEAR}-{SEQ}'}) & Complete Audit Vault
+                  Client Enrollment (CL-ID), Work Orders Engine ({'{SERVICE}-{YEAR}-{SEQ}'}) & Complete Audit Vault
                 </p>
               </div>
 
@@ -661,8 +661,7 @@ export default function MasterExecutiveLanding({
               <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800">
                 <div className="flex flex-wrap gap-1">
                   <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">Clients (CL-ID)</span>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">Work Orders (Phase 2)</span>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">Work Execution (Phase 5)</span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">Work Orders</span>
                   <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">Kanban Board</span>
                   <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300">Audit Vault</span>
                 </div>

@@ -54,6 +54,7 @@ export interface V2GstReturnStatus {
   gstr1Date?: string;
   gstr3bDate?: string;
   gstr9Date?: string;
+  updatedAt?: string;
 }
 
 export interface V2McaDirector {
@@ -405,12 +406,16 @@ export function getV2GstReturnStatuses(): V2GstReturnStatus[] {
   ]);
 }
 export function saveV2GstReturnStatus(status: V2GstReturnStatus) {
+  const statusWithTimestamp = {
+    ...status,
+    updatedAt: new Date().toISOString()
+  };
   const list = getV2GstReturnStatuses();
   const idx = list.findIndex(item => item.id === status.id);
   if (idx !== -1) {
-    list[idx] = status;
+    list[idx] = statusWithTimestamp;
   } else {
-    list.push(status);
+    list.push(statusWithTimestamp);
   }
   saveV2Items(KEY_V2_GST_RETURNS, list);
 }

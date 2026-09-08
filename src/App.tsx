@@ -73,6 +73,11 @@ function AppContent() {
   const [activeProposalPreview, setActiveProposalPreview] = useState<Proposal | null>(null);
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
 
+  // Cross-module work order initiation state
+  const [workOrderInitialClientId, setWorkOrderInitialClientId] = useState<string | undefined>(undefined);
+  const [workOrderInitialService, setWorkOrderInitialService] = useState<string | undefined>(undefined);
+  const [workOrderInitialFee, setWorkOrderInitialFee] = useState<number | undefined>(undefined);
+
   const { theme, toggleTheme } = useTheme();
 
   // Supabase Live Sync states
@@ -393,16 +398,15 @@ function AppContent() {
     if (module === 'workflow') {
       setAdminNavTarget(
         specificTab === 'enroll' ? 'workflow_clients_enroll' :
-        specificTab === 'conversion' ? 'workflow_clients_conversion' :
         specificTab === 'work_orders' ? 'workflow_work_orders' :
         specificTab === 'work_orders_create' ? 'workflow_work_orders_create' :
         specificTab === 'work_orders_kanban' ? 'workflow_work_orders_kanban' :
-        specificTab === 'execution' ? 'workflow_execution' :
         specificTab === 'tasks' ? 'workflow_tasks' :
         specificTab === 'documents' ? 'workflow_documents' :
-        specificTab === 'automation' ? 'workflow_automation' :
-        (specificTab === 'reporting' || specificTab === 'analytics') ? 'workflow_reporting' :
-        specificTab === 'audit' ? 'workflow_clients_audit' :
+        (sessionUser.role === 'admin' && specificTab === 'automation') ? 'workflow_automation' :
+        (sessionUser.role === 'admin' && (specificTab === 'reporting' || specificTab === 'analytics')) ? 'workflow_reporting' :
+        (sessionUser.role === 'admin' && specificTab === 'templates') ? 'workflow_templates' :
+        (sessionUser.role === 'admin' && specificTab === 'audit') ? 'workflow_clients_audit' :
         'workflow_clients'
       );
     } else if (module === 'sales') {
@@ -638,26 +642,40 @@ function AppContent() {
 
               {/* Active Isolated Workspace Rendering */}
               {adminNavTarget === 'workflow_reporting' ? (
-                <WorkflowReportingDashboard
-                  sessionUser={sessionUser}
-                  onNavigateToWorkOrder={(_woId) => {
-                    setAdminNavTarget('workflow_execution');
-                  }}
-                  onNavigateToClient={(_clientId) => {
-                    setAdminNavTarget('workflow_clients');
-                  }}
-                />
+                sessionUser.role === 'admin' ? (
+                  <WorkflowReportingDashboard
+                    sessionUser={sessionUser}
+                    onNavigateToWorkOrder={(_woId) => {
+                      setAdminNavTarget('workflow_work_orders');
+                    }}
+                    onNavigateToClient={(_clientId) => {
+                      setAdminNavTarget('workflow_clients');
+                    }}
+                  />
+                ) : (
+                  <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
+                    <p className="text-sm font-black text-slate-800 dark:text-slate-200">Access Restricted</p>
+                    <p className="text-xs text-slate-400">Reporting & Analytics is accessible to Master Admin accounts only.</p>
+                  </div>
+                )
               ) : adminNavTarget === 'workflow_automation' ? (
-                <WorkflowAutomationEngine
-                  onNavigateToWorkOrder={(_woId) => {
-                    setAdminNavTarget('workflow_execution');
-                  }}
-                />
+                sessionUser.role === 'admin' ? (
+                  <WorkflowAutomationEngine
+                    onNavigateToWorkOrder={(_woId) => {
+                      setAdminNavTarget('workflow_work_orders');
+                    }}
+                  />
+                ) : (
+                  <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
+                    <p className="text-sm font-black text-slate-800 dark:text-slate-200">Access Restricted</p>
+                    <p className="text-xs text-slate-400">Workflow Automation Engine is accessible to Master Admin accounts only.</p>
+                  </div>
+                )
               ) : adminNavTarget === 'workflow_documents' ? (
                 <WorkflowDocumentsManagement
                   sessionUser={sessionUser}
                   onNavigateToWorkOrder={(_woId) => {
-                    setAdminNavTarget('workflow_execution');
+                    setAdminNavTarget('workflow_work_orders');
                   }}
                   onNavigateToClient={(_clientId) => {
                     setAdminNavTarget('workflow_clients');
@@ -668,7 +686,7 @@ function AppContent() {
                   sessionUser={sessionUser}
                   initialScope="my_assigned"
                   onNavigateToWorkOrder={(_woId) => {
-                    setAdminNavTarget('workflow_execution');
+                    setAdminNavTarget('workflow_work_orders');
                   }}
                   onNavigateToClient={(_clientId) => {
                     setAdminNavTarget('workflow_clients');
@@ -687,12 +705,19 @@ function AppContent() {
                   }}
                 />
               ) : adminNavTarget === 'workflow_templates' ? (
-                <WorkflowTemplatesManagement
-                  sessionUser={sessionUser}
-                  onUseTemplateInWorkOrder={(_tmplId, _svcName) => {
-                    setAdminNavTarget('workflow_work_orders_create');
-                  }}
-                />
+                sessionUser.role === 'admin' ? (
+                  <WorkflowTemplatesManagement
+                    sessionUser={sessionUser}
+                    onUseTemplateInWorkOrder={(_tmplId, _svcName) => {
+                      setAdminNavTarget('workflow_work_orders_create');
+                    }}
+                  />
+                ) : (
+                  <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
+                    <p className="text-sm font-black text-slate-800 dark:text-slate-200">Access Restricted</p>
+                    <p className="text-xs text-slate-400">Workflow Templates are accessible to Master Admin accounts only.</p>
+                  </div>
+                )
               ) : adminNavTarget.startsWith('workflow_work_orders') ? (
                 <WorkflowWorkOrdersManagement
                   sessionUser={sessionUser}
@@ -700,6 +725,9 @@ function AppContent() {
                     adminNavTarget === 'workflow_work_orders_create' ? 'create' :
                     adminNavTarget === 'workflow_work_orders_kanban' ? 'kanban' : 'orders'
                   }
+                  preselectedClientId={workOrderInitialClientId}
+                  preselectedService={workOrderInitialService}
+                  preselectedEstimatedFee={workOrderInitialFee}
                   onNavigateToClient={(_clientId) => {
                     setAdminNavTarget('workflow_clients');
                   }}
@@ -709,14 +737,19 @@ function AppContent() {
                   sessionUser={sessionUser}
                   initialTab={
                     adminNavTarget === 'workflow_clients_enroll' ? 'manual' :
-                    adminNavTarget === 'workflow_clients_conversion' ? 'lead_conversion' :
-                    adminNavTarget === 'workflow_clients_audit' ? 'audit_trail' : 'directory'
+                    (adminNavTarget === 'workflow_clients_audit' && sessionUser.role === 'admin') ? 'audit_trail' : 'directory'
                   }
                   onNavigateTask={(_taskId) => {
                     setAdminNavTarget('ops_tasks_my');
                   }}
                   onOpenEnrollmentWizard={(lead) => {
                     setActiveEnrollmentWizardLead(lead);
+                  }}
+                  onOpenNewWorkOrder={(clientId, service, fee) => {
+                    setWorkOrderInitialClientId(clientId);
+                    setWorkOrderInitialService(service);
+                    setWorkOrderInitialFee(fee);
+                    setAdminNavTarget('workflow_work_orders_create');
                   }}
                 />
               ) : isOpsTarget ? (

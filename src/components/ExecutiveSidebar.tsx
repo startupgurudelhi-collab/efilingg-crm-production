@@ -237,6 +237,7 @@ export default function ExecutiveSidebar({
   employeeCount
 }: ExecutiveSidebarProps) {
   const isTeamLeader = sessionUser.role === 'team_leader';
+  const isAdmin = sessionUser.role === 'admin';
 
   // Accordion open states for Operations Module
   const [openAccordions, setOpenAccordions] = useState<{ [key: string]: boolean }>({
@@ -453,17 +454,19 @@ export default function ExecutiveSidebar({
     items: [
       { id: 'workflow_clients', label: 'Clients Directory', icon: Users, badge: getWorkflowClients().length },
       { id: 'workflow_clients_enroll', label: 'Manual Enrollment', icon: UserCheck },
-      { id: 'workflow_clients_conversion', label: 'Lead Conversion', icon: Sparkles },
       { id: 'workflow_work_orders', label: 'Work Orders Engine', icon: Layers, badge: getWorkflowWorkOrders().length, highlight: true },
-      { id: 'workflow_execution', label: 'Work Execution (Phase 5)', icon: Briefcase, badge: getWorkflowWorkOrders().filter(w => w.status !== 'completed').length, highlight: true },
       { id: 'workflow_tasks', label: 'Tasks Integration (Phase 6)', icon: CheckSquare, badge: getWorkflowTasks().length, highlight: true },
       { id: 'workflow_documents', label: 'Document Vault (Phase 7)', icon: FileCheck2, badge: getWorkflowDocuments().length, highlight: true },
-      { id: 'workflow_automation', label: 'Automation Engine (Phase 8)', icon: Zap, badge: getDeliveryLogs().length, highlight: true },
-      { id: 'workflow_reporting', label: 'Reporting & Analytics (Phase 9)', icon: BarChart3, highlight: true },
+      ...(isAdmin ? [
+        { id: 'workflow_automation' as const, label: 'Automation Engine (Phase 8)', icon: Zap, badge: getDeliveryLogs().length, highlight: true },
+        { id: 'workflow_reporting' as const, label: 'Reporting & Analytics (Phase 9)', icon: BarChart3, highlight: true }
+      ] : []),
       { id: 'workflow_work_orders_create', label: 'New Work Order', icon: FileCheck },
       { id: 'workflow_work_orders_kanban', label: 'Lifecycle Kanban', icon: LayoutDashboard },
-      { id: 'workflow_templates', label: 'Workflow Templates', icon: GitBranch, highlight: true },
-      { id: 'workflow_clients_audit', label: 'Audit Trail Vault', icon: ShieldCheck }
+      ...(isAdmin ? [
+        { id: 'workflow_templates' as const, label: 'Workflow Templates', icon: GitBranch, highlight: true },
+        { id: 'workflow_clients_audit' as const, label: 'Audit Trail Vault', icon: ShieldCheck }
+      ] : [])
     ]
   };
 
@@ -608,17 +611,15 @@ export default function ExecutiveSidebar({
               <div className="space-y-0.5 pl-2 border-l border-indigo-500/20 ml-2">
                 {renderOpsSubItem('workflow_clients', 'Clients (CL-ID)', getWorkflowClients().length, 'green')}
                 {renderOpsSubItem('workflow_clients_enroll', 'Manual Enrollment')}
-                {renderOpsSubItem('workflow_clients_conversion', 'Lead Conversion')}
                 {renderOpsSubItem('workflow_work_orders', 'Work Orders', getWorkflowWorkOrders().length, 'indigo')}
-                {renderOpsSubItem('workflow_execution', 'Work Execution (Phase 5)', getWorkflowWorkOrders().filter(w => w.status !== 'completed').length, 'indigo')}
                 {renderOpsSubItem('workflow_tasks', 'Tasks Integration (Phase 6)', getWorkflowTasks().length, 'indigo')}
                 {renderOpsSubItem('workflow_documents', 'Document Vault (Phase 7)', getWorkflowDocuments().length, 'indigo')}
-                {renderOpsSubItem('workflow_automation', 'Automation Engine (Phase 8)', getDeliveryLogs().length, 'amber')}
-                {renderOpsSubItem('workflow_reporting', 'Reporting & Analytics (Phase 9)', undefined, 'amber')}
+                {isAdmin && renderOpsSubItem('workflow_automation', 'Automation Engine (Phase 8)', getDeliveryLogs().length, 'amber')}
+                {isAdmin && renderOpsSubItem('workflow_reporting', 'Reporting & Analytics (Phase 9)', undefined, 'amber')}
                 {renderOpsSubItem('workflow_work_orders_create', 'New Work Order')}
                 {renderOpsSubItem('workflow_work_orders_kanban', 'Work Orders Kanban')}
-                {renderOpsSubItem('workflow_templates', 'Workflow Templates')}
-                {renderOpsSubItem('workflow_clients_audit', 'Audit Trail Vault')}
+                {isAdmin && renderOpsSubItem('workflow_templates', 'Workflow Templates')}
+                {isAdmin && renderOpsSubItem('workflow_clients_audit', 'Audit Trail Vault')}
               </div>
             )}
           </div>

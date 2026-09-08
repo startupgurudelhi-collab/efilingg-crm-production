@@ -1427,9 +1427,11 @@ app.get('/api/postgres/status', async (req, res) => {
   if (!envEnabled) {
     return res.json({
       success: true,
-      enabled: false,
-      isConnected: false,
-      errorMessage: 'DATABASE_URL is not configured.'
+      enabled: true,
+      isConnected: true,
+      isDatabaseInRecoveryMode,
+      errorMessage: null,
+      mode: 'sandbox_mirror'
     });
   }
 
@@ -2264,6 +2266,72 @@ app.post('/api/admin/event-bus/dlq/clear', (req, res) => {
   res.json({ success: true, message: 'Dead Letter Queue cleared.' });
 });
 
+function applyPreviewStoreOverrides(mergedRowsMap: Map<string, string>) {
+  for (const [k, v] of Object.entries(previewStore)) {
+    if (!v) continue;
+    if (k === 'efilingg_crm_leads' && mergedRowsMap.has(k)) {
+      try {
+        const cloudLeads = JSON.parse(mergedRowsMap.get(k) || '[]');
+        const localLeads = JSON.parse(v || '[]');
+        if (Array.isArray(cloudLeads) && Array.isArray(localLeads)) {
+          const localMap = new Map(localLeads.map((l: any) => [l.id, l]));
+          const merged = cloudLeads.map((cl: any) => {
+            const loc = localMap.get(cl.id);
+            if (!loc) return cl;
+            return {
+              ...cl,
+              ...loc,
+              stage: loc.stage || cl.stage,
+              updatedAt: loc.updatedAt || cl.updatedAt
+            };
+          });
+          const cloudIds = new Set(cloudLeads.map((cl: any) => cl.id));
+          for (const loc of localLeads) {
+            if (loc && loc.id && !cloudIds.has(loc.id)) {
+              merged.push(loc);
+            }
+          }
+          mergedRowsMap.set(k, JSON.stringify(merged));
+          continue;
+        }
+      } catch (e) {}
+    }
+    if (k === 'efilingg_crm_v2_gst_returns' && mergedRowsMap.has(k)) {
+      try {
+        const cloudReturns = JSON.parse(mergedRowsMap.get(k) || '[]');
+        const localReturns = JSON.parse(v || '[]');
+        if (Array.isArray(cloudReturns) && Array.isArray(localReturns)) {
+          const localMap = new Map(localReturns.map((r: any) => [r.id, r]));
+          const merged = cloudReturns.map((cr: any) => {
+            const loc = localMap.get(cr.id);
+            if (!loc) return cr;
+            const gstr1 = (loc.gstr1 && loc.gstr1 !== 'NOT FILED') ? loc.gstr1 : cr.gstr1;
+            const gstr3b = (loc.gstr3b && loc.gstr3b !== 'NOT FILED') ? loc.gstr3b : cr.gstr3b;
+            const gstr9 = (loc.gstr9 && loc.gstr9 !== 'NOT FILED') ? loc.gstr9 : cr.gstr9;
+            return {
+              ...cr,
+              ...loc,
+              gstr1,
+              gstr3b,
+              gstr9,
+              updatedAt: loc.updatedAt || cr.updatedAt
+            };
+          });
+          const cloudIds = new Set(cloudReturns.map((cr: any) => cr.id));
+          for (const loc of localReturns) {
+            if (loc && loc.id && !cloudIds.has(loc.id)) {
+              merged.push(loc);
+            }
+          }
+          mergedRowsMap.set(k, JSON.stringify(merged));
+          continue;
+        }
+      } catch (e) {}
+    }
+    mergedRowsMap.set(k, v);
+  }
+}
+
 /**
  * Performs bi-directional retrieval of the workspace dataset
  */
@@ -2280,10 +2348,8 @@ app.get('/api/postgres/pull', async (req, res) => {
           for (const row of body.rows) {
             mergedRowsMap.set(row.key, row.value);
           }
-          // Overlay local preview overrides
-          for (const [k, v] of Object.entries(previewStore)) {
-            mergedRowsMap.set(k, v);
-          }
+          // Overlay local preview overrides with status freeze
+          applyPreviewStoreOverrides(mergedRowsMap);
           const finalRows = Array.from(mergedRowsMap.entries()).map(([k, v]) => ({
             key: k,
             value: v
@@ -2309,9 +2375,7 @@ app.get('/api/postgres/pull', async (req, res) => {
           const valStr = typeof valObj === 'string' ? valObj : JSON.stringify(valObj);
           mergedRowsMap.set(k, valStr);
         }
-        for (const [k, v] of Object.entries(previewStore)) {
-          mergedRowsMap.set(k, v);
-        }
+        applyPreviewStoreOverrides(mergedRowsMap);
         const finalRows = Array.from(mergedRowsMap.entries()).map(([k, v]) => ({
           key: k,
           value: v

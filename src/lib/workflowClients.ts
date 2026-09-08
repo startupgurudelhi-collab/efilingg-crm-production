@@ -4,7 +4,17 @@
  */
 
 import { getStorageString, setStorageString, getLeads, saveLeads, writeLeadHistory } from './db';
-import { getV2Tasks, V2Task } from './v2_db';
+import {
+  getV2Tasks,
+  V2Task,
+  getV2GstClients,
+  getV2ItrClients,
+  getV2McaClients,
+  getV2TrustClients,
+  getV2OtherServiceClients,
+  getV2Trademarks,
+  getV2DscClients
+} from './v2_db';
 
 export type ClientCategory =
   | 'Individual'
@@ -74,9 +84,15 @@ export interface WorkflowClientAuditEntry {
 export interface WorkflowClient {
   id: string; // Format: CL-{YEAR}-{SEQUENCE}, e.g. CL-2026-000001
   clientName: string;
+  authorisedSignatoryName?: string;
+  serviceRequired?: string;
+  cataloguePrice?: number;
+  finalQuotedAmount?: number;
+  dateOfEnrollment?: string;
+  whatsAppStatus?: 'SENT' | 'DELIVERED' | 'FAILED' | 'PENDING';
   mobile: string;
   email: string;
-  pan: string; // 10-char Indian PAN (e.g. ABCDE1234F)
+  pan: string; // 10-char Indian PAN (e.g. ABCDE1234F) or empty if omitted
   gstin?: string; // 15-char GSTIN
   address: string;
   clientCategory: ClientCategory;
@@ -127,150 +143,351 @@ export function normalizeEmail(email: string): string {
 }
 
 /**
- * Initial Seed Workflow Clients
+ * Unified CRM Client Interface (Aggregates GST, Income Tax, MCA, NGO, and Other Clients)
+ * Strictly excludes unconverted Sales & Marketing leads.
  */
-const SEED_WORKFLOW_CLIENTS: WorkflowClient[] = [
-  {
-    id: 'CL-2026-000001',
-    clientName: 'Apex Retails Corp',
-    mobile: '9810234567',
-    email: 'contact@apexretails.com',
-    pan: 'AAACA4192G',
-    gstin: '09AAACA4192G1ZX',
-    address: 'Plot 42, Okhla Industrial Area Phase III, New Delhi - 110020',
-    clientCategory: 'Private Limited Company',
-    source: 'Lead Conversion',
-    assignedManagerId: 'EMP-ADMIN',
-    assignedManagerName: 'Master Admin',
-    status: 'active',
-    enrollmentType: 'lead_conversion',
-    convertedFromLeadId: 'LEAD-101',
-    createdAt: '2026-01-15T10:30:00.000Z',
-    updatedAt: '2026-02-10T14:20:00.000Z',
-    createdBy: {
-      id: 'EMP-ADMIN',
-      name: 'Master Admin'
-    },
-    auditTrail: [
-      {
-        id: 'aud-001-init',
-        timestamp: '2026-01-15T10:30:00.000Z',
-        action: 'LEAD_CONVERSION',
-        actionTitle: 'Lead Converted to Client (ID: CL-2026-000001)',
-        description: 'Successfully converted from Sales Lead #LEAD-101 (Apex Retails) and enrolled into Workflow Management.',
-        performedBy: {
-          id: 'EMP-ADMIN',
-          name: 'Master Admin',
-          role: 'admin'
-        },
-        metadata: {
-          leadId: 'LEAD-101',
-          initialCategory: 'Private Limited Company'
-        }
-      },
-      {
-        id: 'aud-001-link',
-        timestamp: '2026-02-10T14:20:00.000Z',
-        action: 'WORKFLOW_LINKED',
-        actionTitle: 'Workflow Docket Linked',
-        description: 'Linked statutory task: "Review GSTR-1 Statuses for Apex Retails" (#TSK-1) under Client ID CL-2026-000001.',
-        performedBy: {
-          id: 'EMP-ADMIN',
-          name: 'Master Admin',
-          role: 'admin'
-        }
-      }
-    ]
-  },
-  {
-    id: 'CL-2026-000002',
-    clientName: 'Innogeek Technologies Pvt Ltd',
-    mobile: '9891238491',
-    email: 'accounts@innogeek.in',
-    pan: 'AABCI9481H',
-    gstin: '07AABCI9481H1Z9',
-    address: 'Tower B, Cyber City, DLF Phase 2, Gurugram, Haryana - 122002',
-    clientCategory: 'Private Limited Company',
-    source: 'Manual Direct',
-    assignedManagerId: 'EMP-AMIT',
-    assignedManagerName: 'Amit Verma',
-    status: 'active',
-    enrollmentType: 'manual',
-    createdAt: '2026-02-01T11:15:00.000Z',
-    updatedAt: '2026-02-01T11:15:00.000Z',
-    createdBy: {
-      id: 'EMP-ADMIN',
-      name: 'Master Admin'
-    },
-    auditTrail: [
-      {
-        id: 'aud-002-init',
-        timestamp: '2026-02-01T11:15:00.000Z',
-        action: 'MANUAL_ENROLLMENT',
-        actionTitle: 'Client Enrolled (ID: CL-2026-000002)',
-        description: 'Client enrolled directly into Workflow Management by Master Admin with verified PAN AABCI9481H.',
-        performedBy: {
-          id: 'EMP-ADMIN',
-          name: 'Master Admin',
-          role: 'admin'
-        }
-      }
-    ]
-  },
-  {
-    id: 'CL-2026-000003',
-    clientName: 'Prerna Education Foundation',
-    mobile: '9711823901',
-    email: 'trustee@prernaeducation.org',
-    pan: 'AAATP8812F',
-    gstin: '',
-    address: '14, Institutional Area, Vasant Kunj, New Delhi - 110070',
-    clientCategory: 'Trust / Section 8 NGO',
-    source: 'Referral / CA Network',
-    assignedManagerId: 'EMP-NEHA',
-    assignedManagerName: 'Neha Sharma',
-    status: 'active',
-    enrollmentType: 'manual',
-    createdAt: '2026-02-18T16:40:00.000Z',
-    updatedAt: '2026-02-18T16:40:00.000Z',
-    createdBy: {
-      id: 'EMP-NEHA',
-      name: 'Neha Sharma'
-    },
-    auditTrail: [
-      {
-        id: 'aud-003-init',
-        timestamp: '2026-02-18T16:40:00.000Z',
-        action: 'MANUAL_ENROLLMENT',
-        actionTitle: 'Client Enrolled (ID: CL-2026-000003)',
-        description: 'Trust registered for Section 12A & 80G filing & annual compliance desk.',
-        performedBy: {
-          id: 'EMP-NEHA',
-          name: 'Neha Sharma',
-          role: 'employee'
-        }
-      }
-    ]
-  }
-];
+export interface UnifiedCrmClient {
+  id: string; // Unique Identifier (CL-..., GST-..., MCA-..., ITR-..., etc.)
+  clientName: string;
+  authorisedSignatoryName?: string;
+  sourceModule: 'GST' | 'Income Tax' | 'MCA' | 'NGO' | 'Others' | 'Workflow';
+  category: string;
+  mobile: string;
+  email: string;
+  pan: string;
+  gstin?: string;
+  address: string;
+  rawClient?: any;
+}
+
+/**
+ * Initial Seed Workflow Clients - Kept clean with no sample/dummy clients
+ */
+const SEED_WORKFLOW_CLIENTS: WorkflowClient[] = [];
 
 /**
  * Retrieve all workflow clients from storage
+ * Automatically filters out any old sample dummy records.
  */
 export function getWorkflowClients(): WorkflowClient[] {
   try {
     const raw = getStorageString(STORAGE_KEY_WORKFLOW_CLIENTS);
     if (!raw) {
-      // Seed initially
-      setStorageString(STORAGE_KEY_WORKFLOW_CLIENTS, JSON.stringify(SEED_WORKFLOW_CLIENTS));
-      return SEED_WORKFLOW_CLIENTS;
+      setStorageString(STORAGE_KEY_WORKFLOW_CLIENTS, JSON.stringify([]));
+      return [];
     }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : SEED_WORKFLOW_CLIENTS;
+    if (Array.isArray(parsed)) {
+      // Remove any previous dummy sample records
+      const cleaned = parsed.filter(c =>
+        c.clientName !== 'Apex Retails Corp' &&
+        c.clientName !== 'Innogeek Technologies Pvt Ltd' &&
+        c.clientName !== 'Prerna Education Foundation' &&
+        c.clientName !== 'Apex Retails Pvt Ltd' &&
+        c.clientName !== 'Horizon Tech Innovations LLP' &&
+        c.clientName !== 'Bharat Logistics & Cargo'
+      );
+      if (cleaned.length !== parsed.length) {
+        saveWorkflowClients(cleaned);
+        return cleaned;
+      }
+      return parsed;
+    }
+    return [];
   } catch (err) {
     console.warn('Failed to parse workflow clients:', err);
-    return SEED_WORKFLOW_CLIENTS;
+    return [];
   }
+}
+
+/**
+ * Delete a Workflow Client permanently from storage
+ */
+export function deleteWorkflowClient(clientId: string): boolean {
+  try {
+    const clients = getWorkflowClients();
+    const updated = clients.filter(c => c.id !== clientId);
+    if (updated.length !== clients.length) {
+      saveWorkflowClients(updated);
+      window.dispatchEvent(new CustomEvent('efilingg_workflow_clients_updated'));
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error('Failed to delete workflow client:', err);
+    return false;
+  }
+}
+
+/**
+ * Retrieve all clients across eFilingg CRM modules (GST, Income Tax, MCA, NGO, Others, Workflow)
+ * Strictly excludes unconverted Sales & Marketing leads.
+ */
+export function getUnifiedCrmClients(): UnifiedCrmClient[] {
+  const unified: UnifiedCrmClient[] = [];
+  const seenKeys = new Set<string>();
+
+  const registerClient = (item: UnifiedCrmClient) => {
+    const dedupeKey = (item.pan && item.pan.length === 10 ? `PAN:${item.pan}` : `${item.sourceModule}:${item.id}`).toLowerCase();
+    if (!seenKeys.has(dedupeKey)) {
+      seenKeys.add(dedupeKey);
+      unified.push(item);
+    }
+  };
+
+  // 1. Enrolled Workflow Clients
+  try {
+    const workflowClients = getWorkflowClients();
+    for (const c of workflowClients) {
+      registerClient({
+        id: c.id,
+        clientName: c.clientName,
+        authorisedSignatoryName: c.authorisedSignatoryName || c.clientName,
+        sourceModule: 'Workflow',
+        category: c.clientCategory || 'Workflow Client',
+        mobile: c.mobile || '',
+        email: c.email || '',
+        pan: c.pan || '',
+        gstin: c.gstin || '',
+        address: c.address || '',
+        rawClient: c
+      });
+    }
+  } catch (err) {
+    console.warn('Error reading workflow clients:', err);
+  }
+
+  // 2. GST Clients (Operational GST module)
+  try {
+    const gstClients = getV2GstClients();
+    for (const c of gstClients) {
+      const name = c.clientName || c.firmName || 'GST Client';
+      registerClient({
+        id: c.id,
+        clientName: name,
+        authorisedSignatoryName: c.clientName,
+        sourceModule: 'GST',
+        category: c.clientType ? `${c.clientType} (GST)` : 'GST Registered Entity',
+        mobile: c.clientMobile || '',
+        email: c.clientEmail || '',
+        pan: c.gstin && c.gstin.length >= 12 ? c.gstin.substring(2, 12) : '',
+        gstin: c.gstin || '',
+        address: c.clientAddress ? `${c.clientAddress}${c.clientState ? ', ' + c.clientState : ''}` : (c.clientState || ''),
+        rawClient: c
+      });
+    }
+  } catch (err) {
+    console.warn('Error reading GST clients:', err);
+  }
+
+  // 3. Income Tax / ITR Clients
+  try {
+    const itrClients = getV2ItrClients();
+    for (const c of itrClients) {
+      registerClient({
+        id: c.id,
+        clientName: c.taxpayerName,
+        authorisedSignatoryName: c.taxpayerName,
+        sourceModule: 'Income Tax',
+        category: c.taxpayerType ? `${c.taxpayerType} (ITR)` : 'Income Tax Client',
+        mobile: c.mobileNumber || '',
+        email: c.emailId || '',
+        pan: c.panNumber || '',
+        address: c.address || '',
+        rawClient: c
+      });
+    }
+  } catch (err) {
+    console.warn('Error reading ITR clients:', err);
+  }
+
+  // 4. MCA / ROC Corporate Clients
+  try {
+    const mcaClients = getV2McaClients();
+    for (const c of mcaClients) {
+      registerClient({
+        id: c.id,
+        clientName: c.clientName,
+        authorisedSignatoryName: c.directors?.[0]?.name || c.clientName,
+        sourceModule: 'MCA',
+        category: c.clientType ? `${c.clientType} (ROC)` : 'Corporate / ROC',
+        mobile: c.clientMobile || c.directors?.[0]?.mobile || '',
+        email: c.clientEmail || c.directors?.[0]?.email || '',
+        pan: '',
+        address: c.clientAddress ? `${c.clientAddress}${c.clientState ? ', ' + c.clientState : ''}` : (c.clientState || ''),
+        rawClient: c
+      });
+    }
+  } catch (err) {
+    console.warn('Error reading MCA clients:', err);
+  }
+
+  // 5. Trust / NGO Clients
+  try {
+    const trustClients = getV2TrustClients();
+    for (const c of trustClients) {
+      registerClient({
+        id: c.id,
+        clientName: c.entityName,
+        authorisedSignatoryName: c.authSignatory || c.entityName,
+        sourceModule: 'NGO',
+        category: c.typeOfEntity ? `${c.typeOfEntity} (12A/80G NGO)` : 'Trust / Section 8 NGO',
+        mobile: c.mobileNumber || '',
+        email: c.emailId || '',
+        pan: '',
+        address: c.address || '',
+        rawClient: c
+      });
+    }
+  } catch (err) {
+    console.warn('Error reading Trust clients:', err);
+  }
+
+  // 6. Other Service Clients
+  try {
+    const otherClients = getV2OtherServiceClients();
+    for (const c of otherClients) {
+      registerClient({
+        id: c.id,
+        clientName: c.clientName,
+        authorisedSignatoryName: c.clientName,
+        sourceModule: 'Others',
+        category: c.serviceAvailed || 'Other Compliance Service',
+        mobile: c.mobileNumber || '',
+        email: c.emailId || '',
+        pan: '',
+        address: c.address || '',
+        rawClient: c
+      });
+    }
+  } catch (err) {
+    console.warn('Error reading Other service clients:', err);
+  }
+
+  // 7. Trademark / IP Clients
+  try {
+    const tmClients = getV2Trademarks();
+    for (const c of tmClients) {
+      registerClient({
+        id: c.id,
+        clientName: `${c.clientName} [${c.brandName}]`,
+        authorisedSignatoryName: c.clientName,
+        sourceModule: 'Others',
+        category: `Trademark Class ${c.classNumber || 'General'} (${c.stage})`,
+        mobile: '',
+        email: '',
+        pan: '',
+        address: '',
+        rawClient: c
+      });
+    }
+  } catch (err) {
+    console.warn('Error reading Trademark clients:', err);
+  }
+
+  // 8. DSC Clients
+  try {
+    const dscClients = getV2DscClients();
+    for (const c of dscClients) {
+      registerClient({
+        id: c.id,
+        clientName: `${c.clientName} (${c.firmName || 'Digital Signature'})`,
+        authorisedSignatoryName: c.clientName,
+        sourceModule: 'Others',
+        category: `DSC (${c.issuerName || 'Prodigisgn'})`,
+        mobile: '',
+        email: '',
+        pan: '',
+        address: '',
+        rawClient: c
+      });
+    }
+  } catch (err) {
+    console.warn('Error reading DSC clients:', err);
+  }
+
+  return unified;
+}
+
+/**
+ * Ensures that a selected CRM client (e.g. from GST, ITR, MCA, NGO, Others)
+ * is recorded in Workflow Clients so that Work Orders link seamlessly.
+ */
+export function ensureWorkflowClientForOrder(
+  crmClient: UnifiedCrmClient,
+  performedBy?: { id: string; name: string; role?: string }
+): WorkflowClient {
+  const existingClients = getWorkflowClients();
+  const found = existingClients.find(
+    c =>
+      c.id === crmClient.id ||
+      (crmClient.pan && c.pan && c.pan.length === 10 && c.pan.toUpperCase() === crmClient.pan.toUpperCase()) ||
+      c.clientName.trim().toLowerCase() === crmClient.clientName.trim().toLowerCase()
+  );
+  if (found) {
+    return found;
+  }
+
+  // Map category to a valid ClientCategory
+  let mappedCategory: ClientCategory = 'Private Limited Company';
+  const catLower = (crmClient.category || '').toLowerCase();
+  if (catLower.includes('proprietor') || catLower.includes('individual')) {
+    mappedCategory = 'Sole Proprietorship';
+  } else if (catLower.includes('llp')) {
+    mappedCategory = 'LLP (Limited Liability Partnership)';
+  } else if (catLower.includes('partnership')) {
+    mappedCategory = 'Partnership Firm';
+  } else if (catLower.includes('trust') || catLower.includes('ngo') || catLower.includes('section 8')) {
+    mappedCategory = 'Trust / Section 8 NGO';
+  } else if (catLower.includes('society')) {
+    mappedCategory = 'Society';
+  } else if (catLower.includes('public')) {
+    mappedCategory = 'Public Limited Company';
+  } else if (catLower.includes('huf')) {
+    mappedCategory = 'HUF (Hindu Undivided Family)';
+  }
+
+  const now = new Date().toISOString();
+  const performer = performedBy || { id: 'EMP-SYS', name: 'System' };
+  const clientId = crmClient.id.startsWith('CL-') ? crmClient.id : generateWorkflowClientId();
+
+  const newClient: WorkflowClient = {
+    id: clientId,
+    clientName: crmClient.clientName,
+    authorisedSignatoryName: crmClient.authorisedSignatoryName || crmClient.clientName,
+    mobile: crmClient.mobile || '9999999999',
+    email: crmClient.email || `${clientId.toLowerCase()}@client.efilingg.com`,
+    pan: crmClient.pan || '',
+    gstin: crmClient.gstin || '',
+    address: crmClient.address || 'Address recorded on portal',
+    clientCategory: mappedCategory,
+    source: `eFilingg CRM (${crmClient.sourceModule})`,
+    assignedManagerId: performer.id,
+    assignedManagerName: performer.name,
+    status: 'active',
+    enrollmentType: 'manual',
+    createdAt: now,
+    updatedAt: now,
+    createdBy: {
+      id: performer.id,
+      name: performer.name
+    },
+    auditTrail: [
+      {
+        id: `aud-${Date.now()}`,
+        timestamp: now,
+        action: 'WORKFLOW_LINKED',
+        actionTitle: `Linked from ${crmClient.sourceModule} CRM Portfolio`,
+        description: `Client seamlessly integrated into Workflow Management from eFilingg ${crmClient.sourceModule} portfolio (Ref: ${crmClient.id}).`,
+        performedBy: performer
+      }
+    ]
+  };
+
+  existingClients.unshift(newClient);
+  saveWorkflowClients(existingClients);
+  window.dispatchEvent(new CustomEvent('efilingg_workflow_clients_updated'));
+  return newClient;
 }
 
 /**
@@ -381,13 +598,18 @@ export function isValidGstin(gstin: string): boolean {
 }
 
 export interface EnrollClientPayload {
-  clientName: string;
+  serviceRequired?: string;
+  cataloguePrice?: number;
+  finalQuotedAmount?: number;
+  dateOfEnrollment?: string;
+  authorisedSignatoryName?: string;
+  clientName?: string;
   mobile: string;
   email: string;
-  pan: string;
+  pan?: string;
   gstin?: string;
   address: string;
-  clientCategory: ClientCategory;
+  clientCategory?: ClientCategory;
   source: string;
   assignedManagerId: string;
   assignedManagerName: string;
@@ -401,8 +623,9 @@ export function enrollManualClient(
   performedBy: { id: string; name: string; role?: string }
 ): WorkflowClient {
   // 1. Mandatory validation
-  if (!payload.clientName || !payload.clientName.trim()) {
-    throw new Error('Client Name is required.');
+  const effectiveName = (payload.authorisedSignatoryName || payload.clientName || '').trim();
+  if (!effectiveName) {
+    throw new Error('Authorised Signatory Name is required.');
   }
   if (!payload.mobile || !payload.mobile.trim()) {
     throw new Error('Mobile number is required.');
@@ -410,12 +633,12 @@ export function enrollManualClient(
   if (!payload.email || !payload.email.trim()) {
     throw new Error('Email address is required.');
   }
-  if (!payload.pan || !payload.pan.trim()) {
-    throw new Error('PAN is required.');
+  if (!payload.address || !payload.address.trim()) {
+    throw new Error('Address is required.');
   }
 
-  const cleanPan = normalizePan(payload.pan);
-  if (!isValidPan(cleanPan)) {
+  const cleanPan = payload.pan ? normalizePan(payload.pan) : '';
+  if (cleanPan && !isValidPan(cleanPan)) {
     throw new Error('Invalid PAN format. Standard format is 5 letters, 4 numbers, 1 letter (e.g. ABCDE1234F).');
   }
 
@@ -423,7 +646,7 @@ export function enrollManualClient(
     throw new Error('Invalid GSTIN format. Standard format is 15 alphanumeric characters (e.g. 07AAAAA0000A1Z5).');
   }
 
-  // 2. Strict Duplicate Prevention Check
+  // 2. Strict Duplicate Prevention Check (PAN only checked if provided)
   const dupCheck = checkClientDuplicates({
     pan: cleanPan,
     mobile: payload.mobile,
@@ -444,7 +667,7 @@ export function enrollManualClient(
     timestamp: now,
     action: 'MANUAL_ENROLLMENT',
     actionTitle: `Client Enrolled (${clientId})`,
-    description: `Manually enrolled into Workflow Management by ${performedBy.name} (${performedBy.role || 'Executive'}). Assigned Manager: ${payload.assignedManagerName}.`,
+    description: `Manually enrolled into Workflow Management by ${performedBy.name} (${performedBy.role || 'Executive'}). Service: ${payload.serviceRequired || 'Standard'}. Signatory: ${effectiveName}. Quoted: ₹${payload.finalQuotedAmount ?? 0}. Date: ${payload.dateOfEnrollment || now.split('T')[0]}. Assigned Manager: ${payload.assignedManagerName}.`,
     performedBy: {
       id: performedBy.id,
       name: performedBy.name,
@@ -452,20 +675,31 @@ export function enrollManualClient(
     },
     metadata: {
       source: payload.source,
-      category: payload.clientCategory,
-      pan: cleanPan
+      category: payload.clientCategory || 'Private Limited Company',
+      pan: cleanPan,
+      serviceRequired: payload.serviceRequired,
+      cataloguePrice: payload.cataloguePrice,
+      finalQuotedAmount: payload.finalQuotedAmount,
+      dateOfEnrollment: payload.dateOfEnrollment,
+      authorisedSignatoryName: effectiveName
     }
   };
 
   const newClient: WorkflowClient = {
     id: clientId,
-    clientName: payload.clientName.trim(),
+    clientName: effectiveName,
+    authorisedSignatoryName: effectiveName,
+    serviceRequired: (payload.serviceRequired || '').trim(),
+    cataloguePrice: payload.cataloguePrice,
+    finalQuotedAmount: payload.finalQuotedAmount,
+    dateOfEnrollment: payload.dateOfEnrollment,
+    whatsAppStatus: 'PENDING',
     mobile: payload.mobile.trim(),
     email: payload.email.trim().toLowerCase(),
     pan: cleanPan,
     gstin: (payload.gstin || '').trim().toUpperCase(),
     address: (payload.address || '').trim(),
-    clientCategory: payload.clientCategory,
+    clientCategory: payload.clientCategory || 'Private Limited Company',
     source: payload.source || 'Manual Direct',
     assignedManagerId: payload.assignedManagerId,
     assignedManagerName: payload.assignedManagerName,
@@ -654,6 +888,8 @@ export function updateWorkflowClient(
 
   const fieldLabels: Record<string, string> = {
     clientName: 'Client Name',
+    authorisedSignatoryName: 'Authorised Signatory Name',
+    serviceRequired: 'Service Required',
     mobile: 'Mobile Number',
     email: 'Email Address',
     pan: 'PAN',

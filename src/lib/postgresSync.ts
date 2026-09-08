@@ -417,6 +417,125 @@ function mergeArraysCloudWins<T extends { id?: string; teamLeaderId?: string }>(
   return Array.from(mergedMap.values());
 }
 
+export function mergeLeadsWithStatusFreeze(localList: any[], cloudList: any[]): any[] {
+  if (!Array.isArray(localList) || localList.length === 0) return cloudList;
+  if (!Array.isArray(cloudList) || cloudList.length === 0) return localList;
+
+  const localMap = new Map<string, any>();
+  localList.forEach(l => {
+    if (l && l.id) localMap.set(l.id, l);
+  });
+
+  const mergedLeads: any[] = [];
+  const processedIds = new Set<string>();
+
+  cloudList.forEach(cloudLead => {
+    if (!cloudLead || !cloudLead.id) return;
+    processedIds.add(cloudLead.id);
+    const localLead = localMap.get(cloudLead.id);
+
+    if (!localLead) {
+      mergedLeads.push(cloudLead);
+      return;
+    }
+
+    // Freeze Status Rule:
+    // If local was modified by user (stage differs, or updatedAt is more recent, or local version >= cloud version):
+    const localTime = localLead.updatedAt ? new Date(localLead.updatedAt).getTime() : 0;
+    const cloudTime = cloudLead.updatedAt ? new Date(cloudLead.updatedAt).getTime() : 0;
+    const localVersion = Number(localLead.version) || 1;
+    const cloudVersion = Number(cloudLead.version) || 1;
+
+    const isLocalModified = localLead.stage !== cloudLead.stage || localTime > cloudTime || localVersion >= cloudVersion;
+
+    if (isLocalModified) {
+      // Freeze the user's updated stage and details
+      mergedLeads.push({
+        ...cloudLead,
+        ...localLead,
+        stage: localLead.stage,
+        updatedAt: localLead.updatedAt || cloudLead.updatedAt || new Date().toISOString(),
+        version: Math.max(localVersion, cloudVersion)
+      });
+    } else {
+      mergedLeads.push(cloudLead);
+    }
+  });
+
+  // Preserve any leads created locally
+  localList.forEach(localLead => {
+    if (localLead && localLead.id && !processedIds.has(localLead.id)) {
+      mergedLeads.push(localLead);
+    }
+  });
+
+  return mergedLeads;
+}
+
+export function mergeGstReturnsWithStatusFreeze(localList: any[], cloudList: any[]): any[] {
+  if (!Array.isArray(localList) || localList.length === 0) return cloudList;
+  if (!Array.isArray(cloudList) || cloudList.length === 0) return localList;
+
+  const localMap = new Map<string, any>();
+  localList.forEach(r => {
+    if (r && r.id) localMap.set(r.id, r);
+  });
+
+  const mergedReturns: any[] = [];
+  const processedIds = new Set<string>();
+
+  cloudList.forEach(cloudReturn => {
+    if (!cloudReturn || !cloudReturn.id) return;
+    processedIds.add(cloudReturn.id);
+    const localReturn = localMap.get(cloudReturn.id);
+
+    if (!localReturn) {
+      mergedReturns.push(cloudReturn);
+      return;
+    }
+
+    // Freeze Status Rule:
+    // If local user marked as FILED (or updated the status), that status MUST NOT be reverted to NOT FILED
+    const gstr1 = (localReturn.gstr1 && localReturn.gstr1 !== 'NOT FILED')
+      ? localReturn.gstr1
+      : cloudReturn.gstr1;
+    const gstr3b = (localReturn.gstr3b && localReturn.gstr3b !== 'NOT FILED')
+      ? localReturn.gstr3b
+      : cloudReturn.gstr3b;
+    const gstr9 = (localReturn.gstr9 && localReturn.gstr9 !== 'NOT FILED')
+      ? localReturn.gstr9
+      : cloudReturn.gstr9;
+
+    const gstr1Date = localReturn.gstr1Date || cloudReturn.gstr1Date;
+    const gstr3bDate = localReturn.gstr3bDate || cloudReturn.gstr3bDate;
+    const gstr9Date = localReturn.gstr9Date || cloudReturn.gstr9Date;
+
+    const localTime = localReturn.updatedAt ? new Date(localReturn.updatedAt).getTime() : 0;
+    const cloudTime = cloudReturn.updatedAt ? new Date(cloudReturn.updatedAt).getTime() : 0;
+
+    const chosen = (localTime >= cloudTime) ? { ...cloudReturn, ...localReturn } : { ...localReturn, ...cloudReturn };
+
+    mergedReturns.push({
+      ...chosen,
+      gstr1,
+      gstr3b,
+      gstr9,
+      gstr1Date,
+      gstr3bDate,
+      gstr9Date,
+      updatedAt: localReturn.updatedAt || cloudReturn.updatedAt || new Date().toISOString()
+    });
+  });
+
+  localList.forEach(localReturn => {
+    if (localReturn && localReturn.id && !processedIds.has(localReturn.id)) {
+      mergedReturns.push(localReturn);
+    }
+  });
+
+  return mergedReturns;
+}
+
 /**
  * Pulls all keys from PostgreSQL crm_store table and restores them to active in-memory cache
  */
@@ -464,10 +583,48 @@ export async function pullFromPostgres(): Promise<boolean> {
       const cloudVal = dbRowMap.get(key);
 
       if (cloudVal !== undefined && cloudVal !== null) {
-        // Hydrate the in-memory cache directly with the cloud value to prevent local seed contamination
-        crmMemoryStore[key] = cloudVal;
+        // Hydrate the in-memory cache directly with the cloud value, with status freeze merging for leads and GST returns
+        const localVal = crmMemoryStore[key] || (typeof window !== 'undefined' ? localStorage.getItem(key) : null);
+        
+        let finalVal = cloudVal;
+        if (key === 'efilingg_crm_leads' && localVal) {
+          try {
+            const localLeads = JSON.parse(localVal);
+            const cloudLeads = JSON.parse(cloudVal);
+            if (Array.isArray(localLeads) && Array.isArray(cloudLeads)) {
+              const merged = mergeLeadsWithStatusFreeze(localLeads, cloudLeads);
+              finalVal = JSON.stringify(merged);
+              if (finalVal !== cloudVal) {
+                pushToPostgres(key, finalVal);
+              }
+            }
+          } catch (e) {
+            console.error('[Database Sync] Failed to merge leads with status freeze:', e);
+          }
+        } else if (key === 'efilingg_crm_v2_gst_returns' && localVal) {
+          try {
+            const localReturns = JSON.parse(localVal);
+            const cloudReturns = JSON.parse(cloudVal);
+            if (Array.isArray(localReturns) && Array.isArray(cloudReturns)) {
+              const merged = mergeGstReturnsWithStatusFreeze(localReturns, cloudReturns);
+              finalVal = JSON.stringify(merged);
+              if (finalVal !== cloudVal) {
+                pushToPostgres(key, finalVal);
+              }
+            }
+          } catch (e) {
+            console.error('[Database Sync] Failed to merge GST returns with status freeze:', e);
+          }
+        }
+
+        crmMemoryStore[key] = finalVal;
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem(key, finalVal);
+          } catch (e) {}
+        }
         if (key === 'efilingg_crm_services') {
-          console.log(`[SERVICE_DB_READBACK] Read back "${key}" from PostgreSQL. Value length: ${cloudVal.length} bytes.`);
+          console.log(`[SERVICE_DB_READBACK] Read back "${key}" from PostgreSQL. Value length: ${finalVal.length} bytes.`);
         }
       }
     }

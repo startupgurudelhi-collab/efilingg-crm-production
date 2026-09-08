@@ -33,6 +33,12 @@ import {
   resetWorkflowTemplatesToDefault,
   BUILT_IN_WORKFLOW_TEMPLATES
 } from '../../lib/workflowTemplates';
+import {
+  getCustomServices,
+  getDefaultPredefinedServices,
+  addCustomService
+} from '../../lib/db';
+import { CustomService } from '../../types';
 
 interface WorkflowTemplatesManagementProps {
   sessionUser: {
@@ -43,8 +49,72 @@ interface WorkflowTemplatesManagementProps {
   onUseTemplateInWorkOrder?: (templateId: string, serviceName: string) => void;
 }
 
+// Helpers to automatically derive standard metadata from service catalogue
+function deriveServiceCode(serviceName: string, category?: string): string {
+  if (!serviceName) return 'SRV';
+  const clean = serviceName.trim().toUpperCase();
+  if (clean.includes('PRIVATE LIMITED') || clean.includes('PVT LTD')) return 'PLC';
+  if (clean.includes('LLP') || clean.includes('LIMITED LIABILITY')) return 'LLP';
+  if (clean.includes('OPC') || clean.includes('ONE PERSON')) return 'OPC';
+  if (clean.includes('SECTION 8')) return 'SEC8';
+  if (clean.includes('GST')) return 'GST';
+  if (clean.includes('TRADEMARK') || clean.includes('TM')) return 'TM';
+  if (clean.includes('FSSAI') || clean.includes('FOOD')) return 'FSSAI';
+  if (clean.includes('MSME') || clean.includes('UDYAM')) return 'MSME';
+  if (clean.includes('ISO')) return 'ISO';
+  if (clean.includes('IMPORT EXPORT') || clean.includes('IEC')) return 'IEC';
+  if (clean.includes('SHOP') || clean.includes('GUMASTA')) return 'SHOP';
+  if (clean.includes('ITR') || clean.includes('INCOME TAX')) return 'ITR';
+  if (clean.includes('TDS')) return 'TDS';
+  if (clean.includes('AUDIT')) return 'AUD';
+  if (clean.includes('ROC')) return 'ROC';
+  if (clean.includes('WEBSITE') || clean.includes('WEB')) return 'WEB';
+
+  const words = clean.split(/\s+/).filter(w => !['AND', '&', 'OF', 'FOR', 'THE', 'IN', 'REGISTRATION'].includes(w));
+  if (words.length >= 2) {
+    return words.map(w => w[0]).join('').slice(0, 4);
+  }
+  return clean.replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'SRV';
+}
+
+function deriveDepartment(category?: string, serviceName?: string): string {
+  const cat = (category || '').toLowerCase();
+  const srv = (serviceName || '').toLowerCase();
+  if (cat.includes('mca') || srv.includes('company') || srv.includes('llp') || srv.includes('pvt') || srv.includes('incorporation') || srv.includes('roc')) {
+    return 'MCA & Corporate Legal';
+  }
+  if (cat.includes('gst') || srv.includes('gst')) {
+    return 'GST Department';
+  }
+  if (cat.includes('ip') || cat.includes('trademark') || srv.includes('trademark') || srv.includes('copyright') || srv.includes('patent')) {
+    return 'Intellectual Property (IP)';
+  }
+  if (cat.includes('license') || cat.includes('fssai') || srv.includes('fssai') || srv.includes('food') || srv.includes('drug') || srv.includes('ayush')) {
+    return 'Food & Licensing Authority';
+  }
+  if (cat.includes('itr') || cat.includes('tax') || srv.includes('income tax') || srv.includes('tds')) {
+    return 'Direct Tax & ITR Filing';
+  }
+  if (cat.includes('accounting') || srv.includes('accounting') || srv.includes('bookkeeping') || srv.includes('payroll') || srv.includes('audit')) {
+    return 'Accounting & Financials';
+  }
+  return 'Operations Command';
+}
+
+function deriveCategory(category?: string, serviceName?: string): string {
+  const cat = (category || '').toLowerCase();
+  const srv = (serviceName || '').toLowerCase();
+  if (cat.includes('mca') || srv.includes('company') || srv.includes('incorporation') || srv.includes('pvt') || srv.includes('llp')) return 'mca';
+  if (cat.includes('gst') || srv.includes('gst')) return 'gst';
+  if (cat.includes('ip') || cat.includes('trademark') || srv.includes('trademark')) return 'ip';
+  if (cat.includes('license') || cat.includes('fssai') || srv.includes('fssai')) return 'license';
+  if (cat.includes('itr') || cat.includes('tax') || srv.includes('tax')) return 'itr';
+  if (cat.includes('accounting') || srv.includes('accounting')) return 'accounting';
+  return 'other';
+}
+
 export default function WorkflowTemplatesManagement({
-  sessionUser: _sessionUser,
+  sessionUser,
   onUseTemplateInWorkOrder
 }: WorkflowTemplatesManagementProps) {
   const [templates, setTemplates] = useState<WorkflowTemplate[]>(() => getWorkflowTemplates());
@@ -55,6 +125,30 @@ export default function WorkflowTemplatesManagement({
     const list = getWorkflowTemplates();
     return list[0] || null;
   });
+
+  // Service Catalogue State
+  const [catalogueServices, setCatalogueServices] = useState<CustomService[]>(() => {
+    const custom = getCustomServices();
+    return custom && custom.length > 0 ? custom : getDefaultPredefinedServices();
+  });
+
+  const refreshCatalogue = () => {
+    const custom = getCustomServices();
+    const list = custom && custom.length > 0 ? custom : getDefaultPredefinedServices();
+    setCatalogueServices(list);
+    return list;
+  };
+
+  // Add New Service to Catalogue State
+  const [isNewServiceModalOpen, setIsNewServiceModalOpen] = useState(false);
+  const [newServiceForm, setNewServiceForm] = useState({
+    name: '',
+    category: 'Company Incorporation',
+    price: 4999,
+    timeline: '5-7 Working Days',
+    department: 'MCA & Corporate Legal'
+  });
+  const [newServiceError, setNewServiceError] = useState<string | null>(null);
 
   // Editor Modal State
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -113,16 +207,23 @@ export default function WorkflowTemplatesManagement({
 
   // Open Template Editor (Create or Edit)
   const handleOpenEditor = (template?: WorkflowTemplate) => {
+    const currentCatalogue = refreshCatalogue();
     if (template) {
       setEditingTemplate({ ...template });
       setEditorStages(JSON.parse(JSON.stringify(template.stages)));
     } else {
+      const firstSrv = currentCatalogue[0];
+      const initialName = firstSrv ? firstSrv.name : '';
+      const initialCode = firstSrv ? deriveServiceCode(firstSrv.name, firstSrv.category) : 'SRV';
+      const initialDept = firstSrv ? deriveDepartment(firstSrv.category, firstSrv.name) : 'MCA & Corporate Legal';
+      const initialCat = firstSrv ? deriveCategory(firstSrv.category, firstSrv.name) : 'mca';
+
       setEditingTemplate({
         id: `TMPL-CUSTOM-${Date.now()}`,
-        serviceName: '',
-        serviceCode: '',
-        department: 'MCA & Corporate Legal',
-        category: 'mca',
+        serviceName: initialName,
+        serviceCode: initialCode,
+        department: initialDept,
+        category: initialCat,
         description: '',
         totalExpectedDurationDays: 7
       });
@@ -142,6 +243,66 @@ export default function WorkflowTemplatesManagement({
     setNewChecklistText({});
     setNewDocText({});
     setIsEditorOpen(true);
+  };
+
+  // Create New Service on the fly & add to Service Catalogue
+  const handleCreateNewService = (e: React.FormEvent) => {
+    e.preventDefault();
+    setNewServiceError(null);
+    const trimmedName = newServiceForm.name.trim();
+    if (!trimmedName) {
+      setNewServiceError('Service Name is required.');
+      return;
+    }
+
+    // Check if already in catalogue
+    const alreadyExists = catalogueServices.some(s => s.name.toLowerCase() === trimmedName.toLowerCase());
+    if (alreadyExists) {
+      setNewServiceError(`"${trimmedName}" already exists in the Service Catalogue.`);
+      return;
+    }
+
+    try {
+      const priceNum = Math.max(0, Number(newServiceForm.price) || 0);
+      const created = addCustomService({
+        name: trimmedName,
+        category: newServiceForm.category,
+        price: priceNum,
+        timeline: newServiceForm.timeline || '5-7 Working Days',
+        packagesIncluded: ['Official Statutory Filing', 'Expert Consultation Certifications'],
+        documentsRequired: ['Aadhaar Card of Applicant', 'PAN Card of Applicant', 'Business Entity Proof / Address Details'],
+        scope: ['Client document verification', 'Statutory application preparation', 'Government portal filing & approval tracking'],
+        deliverables: ['Official Govt Registration Certificate / Filing Receipt'],
+        employeeIncentive: Math.round(priceNum * 0.15) || 200
+      }, sessionUser?.id || 'EMP-ADMIN');
+
+      refreshCatalogue();
+
+      // Automatically select into the active editing template
+      if (editingTemplate) {
+        const derivedCode = deriveServiceCode(created.name, created.category);
+        const derivedDept = newServiceForm.department || deriveDepartment(created.category, created.name);
+        const derivedCat = deriveCategory(created.category, created.name);
+        setEditingTemplate({
+          ...editingTemplate,
+          serviceName: created.name,
+          serviceCode: derivedCode,
+          department: derivedDept,
+          category: derivedCat
+        });
+      }
+
+      setIsNewServiceModalOpen(false);
+      setNewServiceForm({
+        name: '',
+        category: 'Company Incorporation',
+        price: 4999,
+        timeline: '5-7 Working Days',
+        department: 'MCA & Corporate Legal'
+      });
+    } catch (err: any) {
+      setNewServiceError(err?.message || 'Failed to save new service into catalogue.');
+    }
   };
 
   // Add Stage in Editor
@@ -177,18 +338,24 @@ export default function WorkflowTemplatesManagement({
 
   // Save Template
   const handleSaveTemplate = () => {
-    if (!editingTemplate?.serviceName?.trim() || !editingTemplate?.serviceCode?.trim()) {
-      alert('Service Name and Service Code are required.');
+    if (!editingTemplate?.serviceName?.trim()) {
+      alert('Please select a Service Name from the dropdown or add a new service.');
       return;
     }
+
+    const trimmedName = editingTemplate.serviceName.trim();
+    const matchedSrv = catalogueServices.find(s => s.name.toLowerCase() === trimmedName.toLowerCase());
+    const finalCode = editingTemplate.serviceCode?.trim().toUpperCase() || deriveServiceCode(trimmedName, matchedSrv?.category);
+    const finalDept = editingTemplate.department || (matchedSrv ? deriveDepartment(matchedSrv.category, trimmedName) : 'Operations Command');
+    const finalCat = editingTemplate.category || (matchedSrv ? deriveCategory(matchedSrv.category, trimmedName) : 'mca');
 
     const totalDays = editorStages.reduce((acc, s) => acc + (Number(s.expectedDurationDays) || 1), 0);
     const finalTemplate: WorkflowTemplate = {
       id: editingTemplate.id || `TMPL-${Date.now()}`,
-      serviceName: editingTemplate.serviceName.trim(),
-      serviceCode: editingTemplate.serviceCode.trim().toUpperCase(),
-      department: editingTemplate.department || 'Operations Command',
-      category: editingTemplate.category || 'mca',
+      serviceName: trimmedName,
+      serviceCode: finalCode,
+      department: finalDept,
+      category: finalCat,
       description: editingTemplate.description || '',
       totalExpectedDurationDays: totalDays,
       stages: editorStages,
@@ -715,79 +882,88 @@ export default function WorkflowTemplatesManagement({
               </button>
             </div>
 
-            {/* Basic Info Fields */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-1 md:col-span-2">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Service Name *
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. FSSAI State License Renewal"
-                  value={editingTemplate.serviceName || ''}
-                  onChange={e => setEditingTemplate({ ...editingTemplate, serviceName: e.target.value })}
-                  className="w-full text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                />
+            {/* Basic Info Fields: Service selected directly from Service Catalogue */}
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <Briefcase className="h-3.5 w-3.5 text-indigo-500" />
+                    <span>Select Service from Catalogue *</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewServiceError(null);
+                      setIsNewServiceModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/50 px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Add New Service</span>
+                  </button>
+                </div>
+
+                <div className="relative">
+                  <select
+                    value={editingTemplate.serviceName || ''}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === '__ADD_NEW__') {
+                        setNewServiceError(null);
+                        setIsNewServiceModalOpen(true);
+                        return;
+                      }
+                      const matched = catalogueServices.find(s => s.name === val);
+                      const derivedCode = matched ? deriveServiceCode(matched.name, matched.category) : deriveServiceCode(val);
+                      const derivedDept = matched ? deriveDepartment(matched.category, matched.name) : 'Operations Command';
+                      const derivedCat = matched ? deriveCategory(matched.category, matched.name) : 'mca';
+                      setEditingTemplate({
+                        ...editingTemplate,
+                        serviceName: val,
+                        serviceCode: derivedCode,
+                        department: derivedDept,
+                        category: derivedCat
+                      });
+                    }}
+                    className="w-full text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-medium cursor-pointer"
+                  >
+                    <option value="">-- Select Service from Catalogue --</option>
+                    {catalogueServices.map(srv => (
+                      <option key={srv.id || srv.name} value={srv.name}>
+                        {srv.name} • ₹{(srv.price || 0).toLocaleString('en-IN')} {srv.category ? `(${srv.category})` : ''}
+                      </option>
+                    ))}
+                    <option value="__ADD_NEW__" className="text-indigo-600 font-bold bg-indigo-50 dark:bg-slate-800">
+                      + Add New Service to Catalogue...
+                    </option>
+                  </select>
+                </div>
+
+                {/* Auto-synced catalogue metadata indicator */}
+                {editingTemplate.serviceName && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {(() => {
+                      const matched = catalogueServices.find(s => s.name === editingTemplate.serviceName);
+                      return matched?.price ? (
+                        <span className="text-[11px] px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 font-semibold border border-emerald-200 dark:border-emerald-800 font-mono">
+                          Standard Fee: ₹{matched.price.toLocaleString('en-IN')}
+                        </span>
+                      ) : null;
+                    })()}
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 italic">
+                      (Auto-synced from Catalogue)
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Service Code (Prefix) *
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. FSS, MCA, GST"
-                  value={editingTemplate.serviceCode || ''}
-                  onChange={e => setEditingTemplate({ ...editingTemplate, serviceCode: e.target.value.toUpperCase() })}
-                  className="w-full text-xs font-mono uppercase bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Department
-                </label>
-                <select
-                  value={editingTemplate.department || 'Operations Command'}
-                  onChange={e => setEditingTemplate({ ...editingTemplate, department: e.target.value })}
-                  className="w-full text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="MCA & Corporate Legal">MCA & Corporate Legal</option>
-                  <option value="GST Department">GST Department</option>
-                  <option value="Intellectual Property (IP)">Intellectual Property (IP)</option>
-                  <option value="Food & Licensing Authority">Food & Licensing Authority</option>
-                  <option value="Direct Tax & ITR Filing">Direct Tax & ITR Filing</option>
-                  <option value="Accounting & Financials">Accounting & Financials</option>
-                  <option value="Operations Command">Operations Command</option>
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Category
-                </label>
-                <select
-                  value={editingTemplate.category || 'mca'}
-                  onChange={e => setEditingTemplate({ ...editingTemplate, category: e.target.value as any })}
-                  className="w-full text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="mca">MCA / Incorporation</option>
-                  <option value="gst">GST Registration & Returns</option>
-                  <option value="ip">Trademark & IP</option>
-                  <option value="license">Licenses & FSSAI</option>
-                  <option value="itr">Income Tax Returns</option>
-                  <option value="accounting">Accounting & Bookkeeping</option>
-                  <option value="other">Other Regulatory</option>
-                </select>
-              </div>
-
-              <div className="space-y-1 md:col-span-3">
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                   Template Description
                 </label>
                 <textarea
                   rows={2}
-                  placeholder="Outline statutory basis and procedural steps..."
+                  placeholder="Outline statutory basis, regulatory rules, and procedural overview..."
                   value={editingTemplate.description || ''}
                   onChange={e => setEditingTemplate({ ...editingTemplate, description: e.target.value })}
                   className="w-full text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
@@ -942,6 +1118,146 @@ export default function WorkflowTemplatesManagement({
                 Save Template
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sub-modal: Add New Service to Catalogue */}
+      {isNewServiceModalOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h4 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Plus className="h-4 w-4 text-emerald-500" />
+                  Add New Service to Catalogue
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  This service will automatically be saved into the Service Catalogue and selected in your template.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsNewServiceModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {newServiceError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center space-x-2">
+                <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
+                <span>{newServiceError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateNewService} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Service Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Import Export Code (IEC) Registration"
+                  value={newServiceForm.name}
+                  onChange={e => setNewServiceForm({ ...newServiceForm, name: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Standard Fee / Price (₹) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    placeholder="e.g. 2999"
+                    value={newServiceForm.price || ''}
+                    onChange={e => setNewServiceForm({ ...newServiceForm, price: Number(e.target.value) })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Service Category <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={newServiceForm.category}
+                    onChange={e => {
+                      const cat = e.target.value;
+                      const dept = deriveDepartment(cat, newServiceForm.name);
+                      setNewServiceForm({ ...newServiceForm, category: cat, department: dept });
+                    }}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium focus:outline-hidden focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                  >
+                    <option value="Company Incorporation">MCA / Company Incorporation</option>
+                    <option value="GST Services">GST Registration & Returns</option>
+                    <option value="Trademark & IP">Trademark & IP</option>
+                    <option value="Licenses & Approvals">Licenses & FSSAI</option>
+                    <option value="Direct Tax & Compliance">Direct Tax & ITR Filing</option>
+                    <option value="Accounting & Audit">Accounting & Bookkeeping</option>
+                    <option value="General Regulatory">Other Regulatory</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Department
+                  </label>
+                  <select
+                    value={newServiceForm.department}
+                    onChange={e => setNewServiceForm({ ...newServiceForm, department: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium focus:outline-hidden focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                  >
+                    <option value="MCA & Corporate Legal">MCA & Corporate Legal</option>
+                    <option value="GST Department">GST Department</option>
+                    <option value="Intellectual Property (IP)">Intellectual Property (IP)</option>
+                    <option value="Food & Licensing Authority">Food & Licensing Authority</option>
+                    <option value="Direct Tax & ITR Filing">Direct Tax & ITR Filing</option>
+                    <option value="Accounting & Financials">Accounting & Financials</option>
+                    <option value="Operations Command">Operations Command</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Estimated SLA Timeline
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 3-5 Working Days"
+                    value={newServiceForm.timeline}
+                    onChange={e => setNewServiceForm({ ...newServiceForm, timeline: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsNewServiceModalOpen(false)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Save &amp; Add to Catalogue</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

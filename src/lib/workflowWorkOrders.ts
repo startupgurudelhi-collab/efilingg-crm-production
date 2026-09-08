@@ -43,6 +43,97 @@ export interface PredefinedServiceConfig {
 
 export const PREDEFINED_WORKFLOW_SERVICES: PredefinedServiceConfig[] = [
   {
+    name: 'Company Registration',
+    code: 'PLC',
+    department: 'MCA & Corporate Legal',
+    defaultTatDays: 10,
+    description: 'Complete end-to-end Pvt Ltd incorporation including RUN name approval, SPICe+ Part A & B, MOA/AOA, PAN, TAN & Bank AC.'
+  },
+  {
+    name: 'LLP Registration',
+    code: 'LLP',
+    department: 'MCA & Corporate Legal',
+    defaultTatDays: 10,
+    description: 'Limited Liability Partnership registration with FiLLiP, partner DIN, DSC and LLP Agreement drafting.'
+  },
+  {
+    name: 'GST Registration',
+    code: 'GST',
+    department: 'GST Department',
+    defaultTatDays: 5,
+    description: 'New GSTIN registration, ARN tracking, document verification, query resolution and GSTIN generation.'
+  },
+  {
+    name: 'Trademark Registration',
+    code: 'TM',
+    department: 'Intellectual Property (IP)',
+    defaultTatDays: 14,
+    description: 'Trademark search, brand classification, Form TM-A drafting and filing with examination tracking.'
+  },
+  {
+    name: 'ITR Filing',
+    code: 'ITR',
+    department: 'Income Tax & Audit',
+    defaultTatDays: 5,
+    description: 'Filing ITR-1 to ITR-7, computation of total income, Form 26AS/AIS reconciliation, tax audit.'
+  },
+  {
+    name: 'ISO Certification',
+    code: 'ISO',
+    department: 'Licensing & Registrations',
+    defaultTatDays: 7,
+    description: 'ISO 9001/27001 standard gap analysis, documentation preparation, certification body audit coordination.'
+  },
+  {
+    name: 'FSSAI Registration',
+    code: 'FSSAI',
+    department: 'Licensing & Registrations',
+    defaultTatDays: 7,
+    description: 'FSSAI basic/state food license application via FoSCoS portal with food safety compliance verification.'
+  },
+  {
+    name: 'MSME Registration',
+    code: 'MSME',
+    department: 'Licensing & Registrations',
+    defaultTatDays: 2,
+    description: 'Udyam MSME online registration, NIC code mapping, Aadhaar/PAN validation and certificate download.'
+  },
+  {
+    name: 'Website Development',
+    code: 'WEB',
+    department: 'Operations Command',
+    defaultTatDays: 15,
+    description: 'Full stack responsive web application development, domain/SSL configuration and CMS training.'
+  },
+  {
+    name: 'Accounting Services',
+    code: 'ACC',
+    department: 'Accounts & Financial Services',
+    defaultTatDays: 30,
+    description: 'Monthly Tally/Zoho bookkeeping, bank reconciliation, TDS withholding compliance, pay slip generation.'
+  },
+  {
+    name: 'Trust, Society & Section 8 NGO Formation',
+    code: 'NGO',
+    department: 'NGO & Trust Management',
+    defaultTatDays: 21,
+    description: 'Trust deed registration, 12A & 80G provisional/final approvals, CSR-1 filing, Darpan portal enrollment.'
+  },
+  {
+    name: 'MCA Annual Filing & ROC Compliance',
+    code: 'MCA',
+    department: 'MCA & Corporate Legal',
+    defaultTatDays: 15,
+    description: 'AOC-4, MGT-7/7A, DIR-3 KYC annual filings, board resolutions, statutory registers maintenance.'
+  },
+  {
+    name: 'Class 3 Digital Signature Certificate',
+    code: 'DSC',
+    department: 'Digital Credentials & DSC',
+    defaultTatDays: 2,
+    description: 'Paperless e-KYC video verification Class 3 signing and encryption USB cryptographic token issuance.'
+  },
+  {
     name: 'Private Limited Company Incorporation',
     code: 'PLC',
     department: 'MCA & Corporate Legal',
@@ -69,27 +160,6 @@ export const PREDEFINED_WORKFLOW_SERVICES: PredefinedServiceConfig[] = [
     department: 'Income Tax & Audit',
     defaultTatDays: 5,
     description: 'Filing ITR-1 to ITR-7, computation of total income, Form 26AS/AIS reconciliation, 44AB tax audit.'
-  },
-  {
-    name: 'MCA Annual Filing & ROC Compliance',
-    code: 'MCA',
-    department: 'MCA & Corporate Legal',
-    defaultTatDays: 15,
-    description: 'AOC-4, MGT-7/7A, DIR-3 KYC annual filings, board resolutions, statutory registers maintenance.'
-  },
-  {
-    name: 'Trust, Society & Section 8 NGO Formation',
-    code: 'NGO',
-    department: 'NGO & Trust Management',
-    defaultTatDays: 21,
-    description: 'Trust deed registration, 12A & 80G provisional/final approvals, CSR-1 filing, Darpan portal enrollment.'
-  },
-  {
-    name: 'Class 3 Digital Signature Certificate',
-    code: 'DSC',
-    department: 'Digital Credentials & DSC',
-    defaultTatDays: 2,
-    description: 'Paperless e-KYC video verification Class 3 signing and encryption USB cryptographic token issuance.'
   },
   {
     name: 'Government Licensing & Registrations',

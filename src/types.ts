@@ -210,6 +210,19 @@ export interface Lead extends VersionedRecord {
   linkedClientName?: string;
   linkedWorkOrderId?: string;
   convertedAt?: string;
+  // Website Leads Integration (LEGOMARK INDIA & external landing pages)
+  externalLeadId?: string;      // e.g. "f1af6d40"
+  websiteUrl?: string;          // e.g. "legomarkindia.com"
+  city?: string;                // e.g. "Siliguri"
+  state?: string;               // e.g. "West Bengal"
+  submissionChannel?: string;   // e.g. "service_landing_page_application_form"
+  packageDetails?: string;      // e.g. "Growth & Compliance - ₹11,999"
+  packageFee?: number;          // e.g. 11999
+  source?: string;              // e.g. "Website", "Google Ads"
+  internalNotes?: string;       // Staff / advisory notes
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
 }
 
 export interface FollowUp {

@@ -2266,6 +2266,265 @@ app.post('/api/admin/event-bus/dlq/clear', (req, res) => {
   res.json({ success: true, message: 'Dead Letter Queue cleared.' });
 });
 
+/**
+ * =========================================================================
+ * WEBSITE LEADS INTEGRATION API (LEGOMARK INDIA & Landing Pages)
+ * =========================================================================
+ * Endpoint: POST /api/leads/website
+ * HTTP Method: POST
+ * Auth: Bearer Token or x-api-key header
+ */
+const DEFAULT_WEBSITE_API_KEY = 'efilingg_legomark_live_sec_8923fae9912c';
+
+app.post('/api/leads/website', async (req, res) => {
+  try {
+    // 1. Authentication verification
+    const authHeader = req.headers['authorization'];
+    const apiKeyHeader = req.headers['x-api-key'] || req.headers['x-auth-token'];
+    const queryApiKey = req.query.api_key || req.query.token;
+
+    let providedToken = '';
+    if (authHeader && typeof authHeader === 'string') {
+      if (authHeader.startsWith('Bearer ')) {
+        providedToken = authHeader.slice(7).trim();
+      } else {
+        providedToken = authHeader.trim();
+      }
+    } else if (apiKeyHeader && typeof apiKeyHeader === 'string') {
+      providedToken = apiKeyHeader.trim();
+    } else if (queryApiKey && typeof queryApiKey === 'string') {
+      providedToken = queryApiKey.trim();
+    }
+
+    const expectedApiKey = process.env.WEBSITE_LEADS_API_KEY || DEFAULT_WEBSITE_API_KEY;
+
+    // Reject if unauthorized
+    if (providedToken && providedToken !== expectedApiKey) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: Invalid API key. Please provide a valid Bearer Token or x-api-key header.'
+      });
+    }
+
+    // 2. Validate input fields
+    const {
+      customerName, name, fullName, clientName,
+      mobile, phone, phoneNumber, contactNumber,
+      email, businessEmail,
+      serviceRequired, service, serviceOfInterest,
+      source, leadSource,
+      submissionChannel,
+      city, location, jurisdiction, state,
+      packageDetails, message, notes, requirementDetails,
+      packageFee, fee, amount, value,
+      externalLeadId, leadId, referenceId,
+      websiteUrl, website
+    } = req.body || {};
+
+    const finalName = (customerName || name || fullName || clientName || '').trim();
+    const finalPhone = (mobile || phone || phoneNumber || contactNumber || '').trim();
+
+    if (!finalName && !finalPhone) {
+      return res.status(400).json({
+        success: false,
+        error: "Validation failed: 'customerName' (or 'name') and 'mobile' (or 'phone') are required fields."
+      });
+    }
+
+    // 3. Load leads list from previewStore or disk
+    let leads: any[] = [];
+    try {
+      if (previewStore['efilingg_crm_leads']) {
+        leads = JSON.parse(previewStore['efilingg_crm_leads']);
+      }
+    } catch (e) {}
+
+    if (!Array.isArray(leads) || leads.length === 0) {
+      try {
+        if (fs.existsSync(PREVIEW_STORE_FILE)) {
+          const storeData = JSON.parse(fs.readFileSync(PREVIEW_STORE_FILE, 'utf8'));
+          if (storeData.efilingg_crm_leads) {
+            leads = JSON.parse(storeData.efilingg_crm_leads);
+          }
+        }
+      } catch (e) {}
+    }
+    if (!Array.isArray(leads)) leads = [];
+
+    // 4. Check for existing lead by external ID or phone
+    const cleanPhone = finalPhone.replace(/\D/g, '');
+    const last10 = cleanPhone.length > 10 ? cleanPhone.slice(-10) : cleanPhone;
+    const finalExtId = externalLeadId || leadId || referenceId || '';
+    const finalService = serviceRequired || service || serviceOfInterest || 'Trademark Registration';
+
+    let existingIndex = -1;
+    if (finalExtId) {
+      existingIndex = leads.findIndex(l => l.externalLeadId === finalExtId);
+    }
+    if (existingIndex === -1 && last10.length >= 10) {
+      existingIndex = leads.findIndex(l => {
+        const lMobile = (l.mobile || '').replace(/\D/g, '');
+        const lLast10 = lMobile.length > 10 ? lMobile.slice(-10) : lMobile;
+        return lLast10 === last10 && (l.serviceRequired === finalService || !l.serviceRequired);
+      });
+    }
+
+    const nowIso = new Date().toISOString();
+    let targetLead: any;
+
+    if (existingIndex !== -1) {
+      // Update existing lead
+      targetLead = {
+        ...leads[existingIndex],
+        customerName: finalName || leads[existingIndex].customerName,
+        email: email || businessEmail || leads[existingIndex].email,
+        city: city || location || jurisdiction || leads[existingIndex].city,
+        state: state || leads[existingIndex].state,
+        packageDetails: packageDetails || message || requirementDetails || leads[existingIndex].packageDetails,
+        packageFee: packageFee || fee || amount || value ? Number(packageFee || fee || amount || value) : leads[existingIndex].packageFee,
+        externalLeadId: finalExtId || leads[existingIndex].externalLeadId,
+        websiteUrl: websiteUrl || website || leads[existingIndex].websiteUrl || 'legomarkindia.com',
+        submissionChannel: submissionChannel || leads[existingIndex].submissionChannel || 'service_landing_page_application_form',
+        source: source || leads[existingIndex].source || 'Website',
+        leadSource: leadSource || (source ? `${source} (LEGOMARK INDIA)` : 'Website (LEGOMARK INDIA)'),
+        updatedAt: nowIso,
+        updatedBy: 'API-LEGOMARK',
+        version: (leads[existingIndex].version || 1) + 1
+      };
+      leads[existingIndex] = targetLead;
+    } else {
+      // Calculate next LD-XXXX
+      let maxIdNum = 2240;
+      leads.forEach(l => {
+        if (l.id && l.id.startsWith('LD-')) {
+          const num = parseInt(l.id.replace('LD-', ''), 10);
+          if (!isNaN(num) && num > maxIdNum) maxIdNum = num;
+        }
+      });
+
+      const newId = `LD-${maxIdNum + 1}`;
+      targetLead = {
+        id: newId,
+        customerName: finalName || 'Website Visitor',
+        mobile: finalPhone || '',
+        email: email || businessEmail || '',
+        businessName: '',
+        serviceRequired: finalService,
+        leadSource: leadSource || (source ? `${source} (LEGOMARK INDIA)` : 'Website (LEGOMARK INDIA)'),
+        source: source || 'Website',
+        submissionChannel: submissionChannel || 'service_landing_page_application_form',
+        city: city || location || jurisdiction || '',
+        state: state || '',
+        packageDetails: packageDetails || message || requirementDetails || '',
+        packageFee: packageFee || fee || amount || value ? Number(packageFee || fee || amount || value) : 0,
+        externalLeadId: finalExtId || `lego-${Date.now().toString(36)}`,
+        websiteUrl: websiteUrl || website || 'legomarkindia.com',
+        stage: 'New Lead',
+        creationDate: nowIso,
+        notes: notes || packageDetails || message || 'Captured via legomarkindia.com website lead form',
+        internalNotes: 'Client submitted lead form via website. Immediate callback recommended.',
+        assignedTo: 'EMP-ADMIN',
+        createdBy: 'EMP-ADMIN',
+        version: 1,
+        updatedAt: nowIso,
+        updatedBy: 'API-LEGOMARK'
+      };
+      leads.unshift(targetLead);
+    }
+
+    // 5. Persist to storage
+    const leadsJson = JSON.stringify(leads, null, 2);
+    savePreviewStore('efilingg_crm_leads', leadsJson);
+
+    const p = getPostgresPool();
+    if (p && postgresConnected) {
+      p.query(
+        `INSERT INTO crm_store (key, value, updated_at) VALUES ($1, $2, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+        ['efilingg_crm_leads', leadsJson]
+      ).catch(err => {
+        console.warn('[Website Lead API] PostgreSQL push deferred:', err.message);
+      });
+    }
+
+    // 6. Broadcast event & log audit
+    const ip = getRequestIP(req);
+    await logAudit(
+      'WEBSITE_LEAD_INGESTED',
+      'LEGOMARK_WEBHOOK',
+      ip,
+      `Ingested website lead: ${targetLead.customerName} (${targetLead.mobile}) for ${targetLead.serviceRequired} [${targetLead.id}]`
+    );
+
+    // 7. Publish to event bus if available
+    try {
+      eventBus.publishAsync('lead.created', 'LEAD', {
+        leadId: targetLead.id,
+        customerName: targetLead.customerName,
+        source: targetLead.source,
+        timestamp: nowIso
+      });
+    } catch (e) {}
+
+    return res.status(201).json({
+      success: true,
+      message: existingIndex !== -1
+        ? 'Website lead updated successfully in eFilingg CRM'
+        : 'Website lead created successfully in eFilingg CRM',
+      lead: targetLead
+    });
+  } catch (err: any) {
+    console.error('[Website Lead API Error]', err);
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Internal server error while processing website lead'
+    });
+  }
+});
+
+app.get('/api/leads/website', async (req, res) => {
+  try {
+    let leads: any[] = [];
+    if (previewStore['efilingg_crm_leads']) {
+      try {
+        leads = JSON.parse(previewStore['efilingg_crm_leads']);
+      } catch (e) {}
+    }
+    const websiteLeads = leads.filter((l: any) => {
+      if (!l) return false;
+      if (l.externalLeadId || l.websiteUrl || l.submissionChannel) return true;
+      const src = (l.leadSource || l.source || '').toLowerCase();
+      return src.includes('website') || src.includes('legomark') || src.includes('google ads');
+    });
+
+    res.json({
+      success: true,
+      status: 'active',
+      endpoint: '/api/leads/website',
+      method: 'POST',
+      totalCount: websiteLeads.length,
+      leads: websiteLeads
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/leads/website/config', (req, res) => {
+  res.json({
+    success: true,
+    endpointUrl: 'https://efilingg.cloud/api/leads/website',
+    httpMethod: 'POST',
+    authentication: 'Bearer Token or x-api-key header',
+    apiKey: process.env.WEBSITE_LEADS_API_KEY || DEFAULT_WEBSITE_API_KEY,
+    requiredFields: ['customerName (or name)', 'mobile (or phone)'],
+    optionalFields: [
+      'email', 'serviceRequired', 'source', 'submissionChannel',
+      'city', 'state', 'packageDetails', 'packageFee', 'externalLeadId', 'websiteUrl', 'notes'
+    ]
+  });
+});
+
 function applyPreviewStoreOverrides(mergedRowsMap: Map<string, string>) {
   for (const [k, v] of Object.entries(previewStore)) {
     if (!v) continue;

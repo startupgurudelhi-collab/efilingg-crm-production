@@ -37,6 +37,7 @@ import {
   CheckSquare,
   Zap,
   BarChart3,
+  Globe,
 } from 'lucide-react';
 import { Employee } from '../types';
 import { hasModuleAccess } from '../lib/permissions';
@@ -82,6 +83,7 @@ export type NavigationTarget =
   // Sales & Marketing
   | 'sales_dashboard'
   | 'sales_leads'
+  | 'sales_website_leads'
   | 'sales_followups'
   | 'sales_proposals'
   | 'sales_services'
@@ -214,6 +216,7 @@ interface ExecutiveSidebarProps {
   isOpenMobile: boolean;
   onCloseMobile: () => void;
   leadCount?: number;
+  websiteLeadCount?: number;
   followupCount?: number;
   proposalCount?: number;
   opsPendingCount?: number;
@@ -231,6 +234,7 @@ export default function ExecutiveSidebar({
   isOpenMobile,
   onCloseMobile,
   leadCount,
+  websiteLeadCount,
   followupCount,
   proposalCount,
   opsPendingCount,
@@ -382,6 +386,7 @@ export default function ExecutiveSidebar({
     items: [
       { id: 'sales_dashboard', label: 'Sales Dashboard', icon: LayoutDashboard },
       { id: 'sales_leads', label: 'Leads Pipeline', icon: TrendingUp, badge: leadCount },
+      { id: 'sales_website_leads', label: 'Website Leads', icon: Globe, badge: websiteLeadCount, highlight: true },
       { id: 'sales_followups', label: 'Pending Followups', icon: PhoneCall, badge: followupCount },
       { id: 'sales_proposals', label: 'Proposals & Quotes', icon: FileText, badge: proposalCount },
       { id: 'sales_services', label: 'Service Catalogue', icon: Award },

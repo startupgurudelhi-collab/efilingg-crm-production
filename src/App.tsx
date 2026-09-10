@@ -31,6 +31,8 @@ import { WorkflowAutomationEngine } from './components/workflow/WorkflowAutomati
 import { WorkflowReportingDashboard } from './components/workflow/WorkflowReportingDashboard';
 import MasterExecutiveLanding from './components/MasterExecutiveLanding';
 import ExecutiveSidebar, { NavigationTarget } from './components/ExecutiveSidebar';
+import WebsiteLeadsDashboard from './components/WebsiteLeadsDashboard';
+import { getWebsiteLeads } from './lib/websiteLeads';
 import LeadModal from './components/LeadModal';
 import EnrollmentWizardModal from './components/workflow/EnrollmentWizardModal';
 import ProposalBuilder from './components/ProposalBuilder';
@@ -306,6 +308,7 @@ function AppContent() {
 
       case 'sales_dashboard': return { group: 'Sales & Marketing', title: 'Sales Performance & Analytics' };
       case 'sales_leads': return { group: 'Sales & Marketing', title: 'Leads Pipeline Management' };
+      case 'sales_website_leads': return { group: 'Sales & Marketing', title: 'Website Leads · LEGOMARK & Landing Page Ingestion' };
       case 'sales_followups': return { group: 'Sales & Marketing', title: 'Pending Followups & Client Calls' };
       case 'sales_proposals': return { group: 'Sales & Marketing', title: 'Proposals, Quotations & Estimates' };
       case 'sales_services': return { group: 'Sales & Marketing', title: 'Service Catalogue & Rate Master' };
@@ -584,6 +587,7 @@ function AppContent() {
             isOpenMobile={isSidebarMobileOpen}
             onCloseMobile={() => setIsSidebarMobileOpen(false)}
             leadCount={getLeads().length}
+            websiteLeadCount={getWebsiteLeads().length}
             followupCount={getFollowUps().filter((f) => f.status === 'pending').length}
             proposalCount={getProposals().length}
             opsPendingCount={getV2Tasks().filter((t) => t.status === 'pending').length}
@@ -757,6 +761,22 @@ function AppContent() {
                   initialSegment={getOpsDashboardSegment(adminNavTarget)}
                   activeNavTarget={adminNavTarget}
                   onNavigateTarget={(target) => setAdminNavTarget(target as any)}
+                />
+              ) : adminNavTarget === 'sales_website_leads' ? (
+                <WebsiteLeadsDashboard
+                  sessionUser={sessionUser}
+                  onRefreshData={handleRefreshAllData}
+                  triggerRefresh={triggerRefresh}
+                  onTriggerLeadDetail={(id) => {
+                    if (id === null) {
+                      setIsCreatingLead(true);
+                    } else {
+                      setActiveLeadId(id);
+                    }
+                  }}
+                  onOpenEnrollmentWizard={(lead) => {
+                    setActiveEnrollmentWizardLead(lead);
+                  }}
                 />
               ) : (
                 <AdminDashboard

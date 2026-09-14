@@ -241,6 +241,9 @@ export async function pushToPostgres(key: string, value: string): Promise<boolea
     });
     if (data && data.success) {
       updateSyncMeta({ status: 'connected', errorMessage: null, lastSyncedAt: new Date().toLocaleTimeString() });
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('crm_data_synced', { detail: { key } }));
+      }
       if (key === 'efilingg_crm_services') {
         console.log(`[SERVICE_SAVE_RESPONSE] Successfully persisted "${key}" to PostgreSQL via /api/postgres/push.`);
       }
@@ -576,7 +579,8 @@ export function mergeServicesWithFreeze(localList: any[], cloudList: any[]): any
     const localVersion = Number(localService.version) || 1;
     const cloudVersion = Number(cloudService.version) || 1;
 
-    const isLocalModified = localTime >= cloudTime || localVersion >= cloudVersion;
+    // Only prefer local if it was strictly modified after cloud or version was incremented
+    const isLocalModified = localTime > cloudTime || localVersion > cloudVersion;
 
     if (isLocalModified) {
       mergedServices.push({
@@ -784,6 +788,9 @@ export async function pullFromPostgres(): Promise<boolean> {
     }
 
     updateSyncMeta({ status: 'connected', errorMessage: null, lastSyncedAt: new Date().toLocaleTimeString() });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('crm_data_synced'));
+    }
     return true;
   } catch (err: any) {
     console.error('Unexpected error pulling from database:', err);

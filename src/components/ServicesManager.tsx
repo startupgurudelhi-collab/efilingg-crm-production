@@ -32,7 +32,8 @@ import {
   PlusCircle,
   Loader2,
   AlertCircle,
-  ShieldCheck
+  ShieldCheck,
+  RefreshCw
 } from 'lucide-react';
 
 interface ServicesManagerProps {
@@ -119,14 +120,71 @@ export default function ServicesManager({ currentUserId, currentUserRole, onRefr
     onConfirm: () => {},
   });
 
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+
   useEffect(() => {
     loadServices();
+    let active = true;
+
+    // Immediately pull latest services on mount so additions from other devices/systems show up instantly
+    (async () => {
+      try {
+        const { pullFromPostgres } = await import('../lib/postgresSync');
+        const updated = await pullFromPostgres();
+        if (active && updated) {
+          loadServices();
+        }
+      } catch (e) {
+        console.warn('[SERVICE_LOAD] Initial cloud pull error:', e);
+      }
+    })();
+
+    // Subscribe to ongoing sync meta updates
+    let unsubscribe: (() => void) | null = null;
+    (async () => {
+      try {
+        const { subscribeToSync } = await import('../lib/postgresSync');
+        unsubscribe = subscribeToSync((meta) => {
+          if (active && meta.status === 'connected') {
+            loadServices();
+          }
+        });
+      } catch (e) {}
+    })();
+
+    // Listen to custom cross-tab / cross-component sync events
+    const handleSyncEvent = () => {
+      if (active) loadServices();
+    };
+    window.addEventListener('crm_data_synced', handleSyncEvent);
+    window.addEventListener('storage', handleSyncEvent);
+
+    return () => {
+      active = false;
+      if (unsubscribe) unsubscribe();
+      window.removeEventListener('crm_data_synced', handleSyncEvent);
+      window.removeEventListener('storage', handleSyncEvent);
+    };
   }, []);
 
   const loadServices = () => {
     console.log('[SERVICE_LOAD] ServicesManager loading active services catalog...');
     const list = getCustomServices();
     setServices(list);
+  };
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      const { pullFromPostgres } = await import('../lib/postgresSync');
+      await pullFromPostgres();
+      loadServices();
+      triggerAlert('success', 'Services synchronized with cloud database successfully.');
+    } catch (e: any) {
+      triggerAlert('error', `Sync failed: ${e.message || 'Network error'}`);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const triggerAlert = (type: 'success' | 'error', text: string) => {
@@ -354,14 +412,27 @@ export default function ServicesManager({ currentUserId, currentUserRole, onRefr
           </div>
         </div>
 
-        <button
-          onClick={handleOpenCreate}
-          id="btn-add-service"
-          className="flex items-center justify-center space-x-2 py-2.5 px-5 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold text-xs rounded-xl cursor-pointer transition-all shadow-sm active:scale-95"
-        >
-          <Plus className="h-4.5 w-4.5" />
-          <span>Add Custom Service</span>
-        </button>
+        <div className="flex items-center space-x-2.5">
+          <button
+            onClick={handleManualSync}
+            disabled={isSyncing}
+            id="btn-sync-services"
+            title="Refresh services from cloud database"
+            className="flex items-center justify-center space-x-1.5 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl cursor-pointer transition-all active:scale-95 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin text-indigo-600 dark:text-indigo-400' : ''}`} />
+            <span className="hidden sm:inline">{isSyncing ? 'Syncing...' : 'Sync Cloud'}</span>
+          </button>
+
+          <button
+            onClick={handleOpenCreate}
+            id="btn-add-service"
+            className="flex items-center justify-center space-x-2 py-2.5 px-5 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold text-xs rounded-xl cursor-pointer transition-all shadow-sm active:scale-95"
+          >
+            <Plus className="h-4.5 w-4.5" />
+            <span>Add Custom Service</span>
+          </button>
+        </div>
       </div>
 
       {/* Alert notifier banner */}

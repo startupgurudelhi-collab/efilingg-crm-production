@@ -416,9 +416,9 @@ function initCrmStoreInMemory(): void {
 
   cleanLegacyCPaaSChats();
 
-  // 2. Query PostgreSQL crm_store and populate memory + re-sync logs
+  // 2. Query PostgreSQL crm_store or sync from cloud
   const p = getPostgresPool();
-  if (p) {
+  if (p && !isSandboxMirrorMode) {
     p.query('SELECT key, value FROM crm_store').then((res) => {
       for (const row of res.rows) {
         crmMemoryStore[row.key] = row.value;
@@ -429,10 +429,58 @@ function initCrmStoreInMemory(): void {
       syncAllStoredWebhookLogs();
     }).catch((err) => {
       console.warn('[CRM Memory Sync] Warning reading crm_store on startup:', err.message);
+      syncFromCloudOnStartup();
       syncAllStoredWebhookLogs();
     });
   } else {
+    syncFromCloudOnStartup();
     syncAllStoredWebhookLogs();
+  }
+}
+
+async function syncFromCloudOnStartup(): Promise<void> {
+  try {
+    console.log('[CRM Cloud Sync] Pulling latest keys from efilingg.cloud on startup...');
+    const res = await fetch('https://efilingg.cloud/api/postgres/pull');
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success && Array.isArray(data.rows)) {
+        for (const row of data.rows) {
+          if (row.key === 'efilingg_crm_services') {
+            try {
+              const cloudServs = JSON.parse(row.value || '[]');
+              const localServs = JSON.parse(previewStore[row.key] || '[]');
+              if (Array.isArray(cloudServs) && Array.isArray(localServs)) {
+                const localMap = new Map(localServs.map((s: any) => [s.id, s]));
+                const merged = cloudServs.map((cs: any) => {
+                  const loc = localMap.get(cs.id);
+                  if (!loc) return cs;
+                  return { ...cs, ...loc, updatedAt: loc.updatedAt || cs.updatedAt };
+                });
+                const cloudIds = new Set(cloudServs.map((cs: any) => cs.id));
+                for (const loc of localServs) {
+                  if (loc && loc.id && !cloudIds.has(loc.id)) {
+                    merged.push(loc);
+                  }
+                }
+                const serialized = JSON.stringify(merged);
+                previewStore[row.key] = serialized;
+                crmMemoryStore[row.key] = serialized;
+                savePreviewStore(row.key, serialized);
+                continue;
+              }
+            } catch (e) {}
+          }
+          if (!previewStore[row.key]) {
+            previewStore[row.key] = row.value;
+          }
+          crmMemoryStore[row.key] = previewStore[row.key] || row.value;
+        }
+        console.log(`[CRM Cloud Sync] Successfully synchronized startup dataset from efilingg.cloud.`);
+      }
+    }
+  } catch (err: any) {
+    console.warn('[CRM Cloud Sync] Startup pull from efilingg.cloud error:', err.message);
   }
 }
 
@@ -2606,7 +2654,10 @@ function applyPreviewStoreOverrides(mergedRowsMap: Map<string, string>) {
               merged.push(loc);
             }
           }
-          mergedRowsMap.set(k, JSON.stringify(merged));
+          const mergedStr = JSON.stringify(merged);
+          mergedRowsMap.set(k, mergedStr);
+          previewStore[k] = mergedStr;
+          crmMemoryStore[k] = mergedStr;
           continue;
         }
       } catch (e) {}
@@ -2725,6 +2776,23 @@ app.post('/api/postgres/push', async (req, res) => {
     savePreviewStore(key, value);
     await saveVersionHistory(key, value, req);
     await logAudit('WRITE_SUCCESS', user, ip, `Successfully wrote key "${key}".`);
+
+    // Synchronously forward push to upstream efilingg.cloud so all devices, mobile phones & browsers stay in sync
+    try {
+      const upstreamRes = await fetch('https://efilingg.cloud/api/postgres/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, value, user, role })
+      });
+      if (upstreamRes.ok) {
+        console.log(`[PostgreSQL Proxy Client] Upstream sync to efilingg.cloud succeeded for key "${key}".`);
+      } else {
+        console.warn(`[PostgreSQL Proxy Client] Upstream sync to efilingg.cloud returned HTTP ${upstreamRes.status} for key "${key}".`);
+      }
+    } catch (upstreamErr: any) {
+      console.warn(`[PostgreSQL Proxy Client] Upstream push to efilingg.cloud failed for key "${key}":`, upstreamErr.message);
+    }
+
     return res.json({ success: true });
   }
 
@@ -2786,6 +2854,15 @@ app.post('/api/postgres/push', async (req, res) => {
     // 7. Post-success activities: Save Version History and Log Audit
     await saveVersionHistory(key, value, req);
     await logAudit('WRITE_SUCCESS', user, ip, `Successfully wrote key "${key}". Record length: ${value.length} bytes.`);
+
+    // Upstream mirror to ensure cross-device consistency across all systems and mobile
+    try {
+      fetch('https://efilingg.cloud/api/postgres/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, value, user, role })
+      }).catch(() => {});
+    } catch (e) {}
 
     res.json({ success: true });
   } catch (err: any) {

@@ -121,6 +121,8 @@ export const ALL_APP_MODULES: AppModuleInfo[] = [
 
 export interface VersionedRecord {
   version?: number;
+  createdAt?: string;
+  createdBy?: string;
   updatedAt?: string;
   updatedBy?: string;
 }

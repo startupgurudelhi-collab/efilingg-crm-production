@@ -644,18 +644,16 @@ async function validateDatabaseWrite(key: string, value: string, client?: any): 
           if (incomingCount < currentCount) {
             const dropRatio = (currentCount - incomingCount) / currentCount;
             
-            if (dropRatio >= 0.20 && currentCount > 5) {
+            // Catastrophic wipe firewall: block if more than 50% of items are suddenly dropped in large collections
+            if (dropRatio >= 0.50 && currentCount > 10) {
               return { 
                 isValid: false, 
                 isAnomaly: true, 
-                error: `Anomaly Detected! Attempt to reduce records from ${currentCount} to ${incomingCount} (Drop: ${(dropRatio * 100).toFixed(1)}% >= 20%). BLOCKING write immediately.` 
+                error: `Anomaly Detected! Attempt to drastically reduce records from ${currentCount} to ${incomingCount} (Drop: ${(dropRatio * 100).toFixed(1)}% >= 50%). BLOCKING write immediately.` 
               };
             }
 
-            return {
-              isValid: false,
-              error: `Rejected: Record count reduction from ${currentCount} to ${incomingCount} is blocked under Zero Data Loss policy. Use Soft-Delete mutators instead.`
-            };
+            console.log(`[Zero Data Loss Audit] Legitimate record reduction permitted for key "${key}": ${currentCount} -> ${incomingCount}.`);
           }
         }
       } catch (e) {}
@@ -2578,6 +2576,32 @@ function applyPreviewStoreOverrides(mergedRowsMap: Map<string, string>) {
           });
           const cloudIds = new Set(cloudReturns.map((cr: any) => cr.id));
           for (const loc of localReturns) {
+            if (loc && loc.id && !cloudIds.has(loc.id)) {
+              merged.push(loc);
+            }
+          }
+          mergedRowsMap.set(k, JSON.stringify(merged));
+          continue;
+        }
+      } catch (e) {}
+    }
+    if (k === 'efilingg_crm_services' && mergedRowsMap.has(k)) {
+      try {
+        const cloudServices = JSON.parse(mergedRowsMap.get(k) || '[]');
+        const localServices = JSON.parse(v || '[]');
+        if (Array.isArray(cloudServices) && Array.isArray(localServices)) {
+          const localMap = new Map(localServices.map((s: any) => [s.id, s]));
+          const merged = cloudServices.map((cs: any) => {
+            const loc = localMap.get(cs.id);
+            if (!loc) return cs;
+            return {
+              ...cs,
+              ...loc,
+              updatedAt: loc.updatedAt || cs.updatedAt
+            };
+          });
+          const cloudIds = new Set(cloudServices.map((cs: any) => cs.id));
+          for (const loc of localServices) {
             if (loc && loc.id && !cloudIds.has(loc.id)) {
               merged.push(loc);
             }

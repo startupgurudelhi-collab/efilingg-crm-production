@@ -187,13 +187,24 @@ export function registerServerPersistHandler(handler: ServerPersistHandler): voi
   serverPersistHandler = handler;
 }
 
-// Helper to get raw storage (with memory fallback)
+// Helper to get raw storage (with memory fallback and local persistence)
 export const getStorageString = (key: string): string | null => {
   try {
     if (typeof window !== 'undefined' && (key.includes('_theme') || key.includes('_is_fresh_load') || key === 'efilingg_crm_session' || key.includes('good_practice_shown_'))) {
       return localStorage.getItem(key);
     }
-    return crmMemoryStore[key] || null;
+    // Return from in-memory cache, OR fallback to localStorage for durable freeze persistence
+    if (crmMemoryStore[key]) {
+      return crmMemoryStore[key];
+    }
+    if (typeof window !== 'undefined') {
+      const localVal = localStorage.getItem(key);
+      if (localVal) {
+        crmMemoryStore[key] = localVal; // warm cache
+        return localVal;
+      }
+    }
+    return null;
   } catch (e) {
     return null;
   }
@@ -205,7 +216,17 @@ export const setStorageString = async (key: string, val: string): Promise<boolea
       localStorage.setItem(key, val);
       return true;
     }
+    // 1. Freeze in RAM cache
     crmMemoryStore[key] = val;
+
+    // 2. ALWAYS freeze in browser localStorage for offline durability & protection against refresh/loss
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(key, val);
+      } catch (storageErr) {
+        console.warn(`[Local Storage Freeze] Unable to write to localStorage for key "${key}":`, storageErr);
+      }
+    }
 
     if (serverPersistHandler) {
       serverPersistHandler(key, val).catch((err) => {
@@ -2640,8 +2661,27 @@ export async function updateCustomServiceAsync(
     );
     return pushSuccess;
   } else {
-    console.warn(`[SERVICE_COMMIT_FAILED] Service ID ${id} not found for update.`);
-    return false;
+    console.warn(`[SERVICE_COMMIT_RECOVERY] Service ID ${id} not found for update. Appending as persistent service.`);
+    const recoveredService: CustomService = {
+      id,
+      name: updates.name || 'Custom Service',
+      category: updates.category || 'Other',
+      price: updates.price || 0,
+      employeeIncentive: updates.employeeIncentive || 0,
+      timeline: updates.timeline || '5-7 Business Days',
+      packagesIncluded: updates.packagesIncluded || [],
+      documentsRequired: updates.documentsRequired || [],
+      scope: updates.scope || [],
+      deliverables: updates.deliverables || [],
+      priceBreakup: updates.priceBreakup,
+      version: 1,
+      createdAt: new Date().toISOString(),
+      createdBy: triggerByUserId || 'EMP-ADMIN',
+      updatedAt: new Date().toISOString(),
+      updatedBy: triggerByUserId || 'EMP-ADMIN'
+    };
+    services.push(recoveredService);
+    return await saveCustomServices(services);
   }
 }
 

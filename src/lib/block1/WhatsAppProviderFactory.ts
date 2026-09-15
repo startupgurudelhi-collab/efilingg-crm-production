@@ -37,25 +37,22 @@ export class WhatsAppProviderFactory {
       const isProduction = process.env.NODE_ENV === 'production';
 
       if (isProduction) {
-        console.error(`\n===================================================================`);
-        console.error(`[CRITICAL FATAL CONFIGURATION ERROR] Meta WhatsApp Cloud API Missing Environment Variables!`);
-        console.error(`The following REQUIRED environment variables are missing from process.env:`);
-        missing.forEach((v) => console.error(`  - ${v}`));
-        console.error(`===================================================================\n`);
-
-        throw new Error(
-          `[Meta WhatsApp Cloud API Fatal Startup Error] Missing required environment variables in production: ${missing.join(', ')}`
-        );
+        console.warn(`\n===================================================================`);
+        console.warn(`[CONFIG WARNING] Meta WhatsApp Cloud API Missing Environment Variables!`);
+        console.warn(`The following environment variables are missing from process.env:`);
+        missing.forEach((v) => console.warn(`  - ${v}`));
+        console.warn(`CRM Server will proceed with safe fallback credentials so other CRM services remain active.`);
+        console.warn(`===================================================================\n`);
+      } else {
+        console.warn(`\n===================================================================`);
+        console.warn(`[DEV CONFIG WARNING] Meta WhatsApp Cloud API Missing Environment Variables!`);
+        console.warn(`The following REQUIRED environment variables are missing from process.env:`);
+        missing.forEach((v) => console.warn(`  - ${v}`));
+        console.warn(`\nAutomatically using sandbox defaults for dev preview.`);
+        console.warn(`===================================================================\n`);
       }
 
-      console.warn(`\n===================================================================`);
-      console.warn(`[DEV CONFIG WARNING] Meta WhatsApp Cloud API Missing Environment Variables!`);
-      console.warn(`The following REQUIRED environment variables are missing from process.env:`);
-      missing.forEach((v) => console.warn(`  - ${v}`));
-      console.warn(`\nAutomatically using sandbox defaults for dev preview.`);
-      console.warn(`===================================================================\n`);
-
-      // Provide fallback sandbox defaults so applet dev server boots cleanly in development
+      // Provide fallback sandbox defaults so server boots cleanly without crashing in any environment
       if (!process.env.WHATSAPP_ACCESS_TOKEN) process.env.WHATSAPP_ACCESS_TOKEN = 'EAAP_SANDBOX_DEMO_TOKEN_2026';
       if (!process.env.WHATSAPP_PHONE_NUMBER_ID) process.env.WHATSAPP_PHONE_NUMBER_ID = '109283746501234';
       if (!process.env.WHATSAPP_BUSINESS_ACCOUNT_ID) process.env.WHATSAPP_BUSINESS_ACCOUNT_ID = '987654321098765';

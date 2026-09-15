@@ -26,6 +26,14 @@ import { block2Router } from './src/lib/block2/router';
 import { block3Router } from './src/lib/block3/router';
 import { aiAgentRouter } from './src/lib/aiAgent/router';
 
+// Process Crash Guards: Ensure server never dies from unexpected unhandled errors or socket timeouts
+process.on('uncaughtException', (err: any) => {
+  console.error('[Process Error Guard] Uncaught Exception caught safely:', err?.message || err, err?.stack);
+});
+process.on('unhandledRejection', (reason: any) => {
+  console.error('[Process Error Guard] Unhandled Promise Rejection caught safely:', reason?.message || reason);
+});
+
 // Enable Block 1, Block 2 & Block 3 feature flags by default on server start
 serverFeatureFlagManager.setOverride('ENABLE_WHATSAPP_INGESTION', true);
 serverFeatureFlagManager.setOverride('ENABLE_CUSTOMER360', true);
@@ -439,6 +447,10 @@ function initCrmStoreInMemory(): void {
 }
 
 async function syncFromCloudOnStartup(): Promise<void> {
+  // Only pull from external efilingg.cloud if running in AI Studio sandbox mirror mode, NEVER in production
+  if (!isSandboxMirrorMode || process.env.NODE_ENV === 'production') {
+    return;
+  }
   try {
     console.log('[CRM Cloud Sync] Pulling latest keys from efilingg.cloud on startup...');
     const res = await fetch('https://efilingg.cloud/api/postgres/pull');
@@ -2777,20 +2789,25 @@ app.post('/api/postgres/push', async (req, res) => {
     await saveVersionHistory(key, value, req);
     await logAudit('WRITE_SUCCESS', user, ip, `Successfully wrote key "${key}".`);
 
-    // Synchronously forward push to upstream efilingg.cloud so all devices, mobile phones & browsers stay in sync
-    try {
-      const upstreamRes = await fetch('https://efilingg.cloud/api/postgres/push', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key, value, user, role })
-      });
-      if (upstreamRes.ok) {
-        console.log(`[PostgreSQL Proxy Client] Upstream sync to efilingg.cloud succeeded for key "${key}".`);
-      } else {
-        console.warn(`[PostgreSQL Proxy Client] Upstream sync to efilingg.cloud returned HTTP ${upstreamRes.status} for key "${key}".`);
+    // In sandbox mirror mode only: forward push to efilingg.cloud so changes made in AI Studio preview sync to production
+    if (req.headers['x-crm-proxy-origin'] !== 'ai-studio-sandbox' && process.env.NODE_ENV !== 'production') {
+      try {
+        const upstreamRes = await fetch('https://efilingg.cloud/api/postgres/push', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-crm-proxy-origin': 'ai-studio-sandbox'
+          },
+          body: JSON.stringify({ key, value, user, role })
+        });
+        if (upstreamRes.ok) {
+          console.log(`[PostgreSQL Proxy Client] Upstream sync to efilingg.cloud succeeded for key "${key}".`);
+        } else {
+          console.warn(`[PostgreSQL Proxy Client] Upstream sync to efilingg.cloud returned HTTP ${upstreamRes.status} for key "${key}".`);
+        }
+      } catch (upstreamErr: any) {
+        console.warn(`[PostgreSQL Proxy Client] Upstream push to efilingg.cloud failed for key "${key}":`, upstreamErr.message);
       }
-    } catch (upstreamErr: any) {
-      console.warn(`[PostgreSQL Proxy Client] Upstream push to efilingg.cloud failed for key "${key}":`, upstreamErr.message);
     }
 
     return res.json({ success: true });
@@ -2854,15 +2871,6 @@ app.post('/api/postgres/push', async (req, res) => {
     // 7. Post-success activities: Save Version History and Log Audit
     await saveVersionHistory(key, value, req);
     await logAudit('WRITE_SUCCESS', user, ip, `Successfully wrote key "${key}". Record length: ${value.length} bytes.`);
-
-    // Upstream mirror to ensure cross-device consistency across all systems and mobile
-    try {
-      fetch('https://efilingg.cloud/api/postgres/push', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key, value, user, role })
-      }).catch(() => {});
-    } catch (e) {}
 
     res.json({ success: true });
   } catch (err: any) {

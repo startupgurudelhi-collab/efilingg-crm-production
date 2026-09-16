@@ -277,20 +277,34 @@ function AppContent() {
     return undefined;
   };
 
-  const getOpsDashboardSegment = (target: NavigationTarget): 'dashboard' | 'masters' | 'gst' | 'mca' | 'itr' | 'dockets' | 'mapping' => {
+  const getOpsDashboardSegment = (target: NavigationTarget): 'dashboard' | 'masters' | 'gst' | 'mca' | 'itr' | 'dockets' | 'mapping' | 'balance_sheet' => {
     switch (target) {
       case 'ops_dashboard': return 'dashboard';
+      case 'ops_balance_sheet': return 'balance_sheet';
       case 'ops_gst': return 'gst';
       case 'ops_itr': return 'itr';
       case 'ops_mca': return 'mca';
       case 'ops_tasks': return 'dockets';
       case 'ops_clients': return 'mapping';
+      case 'ops_masters':
+      case 'ops_auditors':
+      case 'ops_attorneys':
+      case 'ops_master_categories': return 'masters';
       default: return 'dashboard';
     }
   };
 
   const getBreadcrumbs = (target: NavigationTarget) => {
     switch (target) {
+      // Balance Sheet Preparation
+      case 'ops_balance_sheet': return { group: 'Operation Management', title: 'Balance Sheet Preparation (Proprietorship)' };
+
+      // Masters & Catalogue
+      case 'ops_masters': return { group: 'Operation Management', title: 'CA, CS, Advocates & Professional Masters' };
+      case 'ops_auditors': return { group: 'Operation Management', title: 'CA & CS Statutory Auditors Registry' };
+      case 'ops_attorneys': return { group: 'Operation Management', title: 'Trademark Advocates & Counsels Master' };
+      case 'ops_master_categories': return { group: 'Operation Management', title: 'Service Categories Master' };
+
       // Workflow Management
       case 'workflow_clients': return { group: 'Workflow Management', title: 'Clients Directory & Lifecycle' };
       case 'workflow_clients_enroll': return { group: 'Workflow Management', title: 'Client Enrollment Engine (CL-ID)' };

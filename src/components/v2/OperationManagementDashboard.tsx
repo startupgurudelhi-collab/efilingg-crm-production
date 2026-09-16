@@ -17,6 +17,7 @@ import V2RegistrationLicenses from './V2RegistrationLicenses';
 import V2Tasks from './V2Tasks';
 import V2TrademarkCopyright from './V2TrademarkCopyright';
 import V2ClientMapper from './V2ClientMapper';
+import BalanceSheetManagement from '../balancesheet/BalanceSheetManagement';
 import OperationsHeader from './OperationsHeader';
 import ExecutiveAlertCenter, { AlertItem } from './ExecutiveAlertCenter';
 import ComplianceControlGrid, {
@@ -51,7 +52,7 @@ import {
 } from 'lucide-react';
 
 export interface OperationsNavTarget {
-  section: 'dashboard' | 'tasks' | 'trademark' | 'gst' | 'itr' | 'mca' | 'trust' | 'dsc' | 'license' | 'clients' | 'masters';
+  section: 'dashboard' | 'tasks' | 'trademark' | 'gst' | 'itr' | 'balance_sheet' | 'mca' | 'trust' | 'dsc' | 'license' | 'clients' | 'masters';
   subTab?: string;
   filter?: string;
   action?: string;
@@ -205,6 +206,21 @@ export default function OperationManagementDashboard({
       setNavTarget({ section: 'clients' });
     } else if (activeNavTarget === 'ops_clients_allocation') {
       setNavTarget({ section: 'clients', filter: 'UNMAPPED' });
+    } else if (activeNavTarget === 'ops_masters') {
+      setNavTarget({ section: 'masters', subTab: 'auditor' });
+      setNavigationKey(prev => prev + 1);
+    } else if (activeNavTarget === 'ops_auditors') {
+      setNavTarget({ section: 'masters', subTab: 'auditor' });
+      setNavigationKey(prev => prev + 1);
+    } else if (activeNavTarget === 'ops_attorneys') {
+      setNavTarget({ section: 'masters', subTab: 'attorney' });
+      setNavigationKey(prev => prev + 1);
+    } else if (activeNavTarget === 'ops_master_categories') {
+      setNavTarget({ section: 'masters', subTab: 'category' });
+      setNavigationKey(prev => prev + 1);
+    } else if (activeNavTarget === 'ops_balance_sheet') {
+      setNavTarget({ section: 'balance_sheet' });
+      setNavigationKey(prev => prev + 1);
     }
   }, [activeNavTarget]);
 
@@ -691,16 +707,23 @@ export default function OperationManagementDashboard({
     // Notify parent if callback provided
     if (onNavigateTarget) {
       if (target.section === 'dashboard') onNavigateTarget('ops_dashboard');
+      else if (target.section === 'balance_sheet') onNavigateTarget('ops_balance_sheet');
       else if (target.section === 'gst') onNavigateTarget('ops_gst');
       else if (target.section === 'itr') onNavigateTarget('ops_itr');
       else if (target.section === 'mca') onNavigateTarget('ops_mca');
       else if (target.section === 'tasks') onNavigateTarget('ops_tasks');
       else if (target.section === 'clients') onNavigateTarget('ops_clients');
+      else if (target.section === 'masters') {
+        if (target.subTab === 'attorney') onNavigateTarget('ops_attorneys');
+        else if (target.subTab === 'category') onNavigateTarget('ops_master_categories');
+        else onNavigateTarget('ops_auditors');
+      }
     }
   };
 
   const getSectionTitle = (sec: string) => {
     switch (sec) {
+      case 'balance_sheet': return 'Balance Sheet Preparation (Proprietorship)';
       case 'gst': return 'GST Compliance';
       case 'trademark': return 'Trademark & Copyright';
       case 'mca': return 'MCA & ROC Compliance';
@@ -750,6 +773,14 @@ export default function OperationManagementDashboard({
         case '12a':
         case '80g': return '12A & 80G Statutory Registry';
         default: return 'Trusts & NGOs Compliance';
+      }
+    }
+    if (sec === 'masters') {
+      switch (sub.toLowerCase()) {
+        case 'auditor': return 'CA & CS Auditor Registry';
+        case 'attorney': return 'Advocates & Attorneys Master';
+        case 'category': return 'Service Categories';
+        default: return 'Masters Catalogue';
       }
     }
     return sub;
@@ -871,13 +902,14 @@ export default function OperationManagementDashboard({
               <QuickActionDock
                 sessionUser={sessionUser}
                 onAction={(act) => {
-                  if (act === 'gst' || act === 'new_gst_task') handleNavigate({ section: 'gst', subTab: 'MONTHLY', action: 'NEW' });
+                  if (act === 'balance_sheet') handleNavigate({ section: 'balance_sheet' });
+                  else if (act === 'gst' || act === 'new_gst_task') handleNavigate({ section: 'gst', subTab: 'MONTHLY', action: 'NEW' });
                   else if (act === 'mca' || act === 'new_mca_task') handleNavigate({ section: 'mca', subTab: 'mca', action: 'NEW' });
                   else if (act === 'itr' || act === 'new_itr_task') handleNavigate({ section: 'itr', subTab: 'itr', action: 'NEW' });
                   else if (act === 'trust' || act === 'new_ngo_task') handleNavigate({ section: 'trust', subTab: 'trust', action: 'NEW' });
                   else if (act === 'assign' || act === 'assign_employee') setIsQuickTaskOpen(true);
                   else if (act === 'clients' || act === 'open_clients') handleNavigate({ section: 'clients' });
-                  else if (act === 'service' || act === 'create_service_request') handleNavigate({ section: 'masters' });
+                  else if (act === 'service' || act === 'create_service_request' || act === 'masters') handleNavigate({ section: 'masters' });
                 }}
               />
 
@@ -1009,6 +1041,15 @@ export default function OperationManagementDashboard({
       {navTarget.section === 'masters' && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-5 shadow-xs">
           <V2Masters key={`v2masters-${navigationKey}`} />
+        </div>
+      )}
+
+      {/* =========================================================================
+          SUB-VIEW 8: BALANCE SHEET PREPARATION (PROPRIETORSHIP)
+          ========================================================================= */}
+      {navTarget.section === 'balance_sheet' && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-4 sm:p-6 shadow-xs">
+          <BalanceSheetManagement key={`balancesheet-${navigationKey}`} />
         </div>
       )}
 

@@ -17,14 +17,16 @@ import {
   exportToCSVFile,
   getV1Employees,
   deleteV2McaClient,
-  deleteV2McaClients
+  deleteV2McaClients,
+  V2Auditor
 } from '../../lib/v2_db';
 import { getCurrentSession, setStorageString } from '../../lib/db';
 import { isClientAssignedToUser, getEmployeesWithModuleAccess } from '../../lib/permissions';
 import ConfirmModal from './ConfirmModal';
+import V2Masters from './V2Masters';
 import { 
   Building2, Users, Receipt, Calendar, Plus, Download, UploadCloud, Search, Check, AlertTriangle, ShieldAlert,
-  Edit2, UserCheck, X, Trash2, LayoutDashboard, Filter
+  Edit2, UserCheck, X, Trash2, LayoutDashboard, Filter, GraduationCap
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import McaDashboardView from './McaDashboardView';
@@ -62,7 +64,8 @@ export default function V2MCA({
     initialRocSubTab || (initialActiveTab === 'roc_llp' ? 'LLP' : 'PVT')
   );
 
-  const auditors = getV2Auditors();
+  const [auditors, setAuditors] = useState<V2Auditor[]>(() => getV2Auditors());
+  const [showAuditorsModal, setShowAuditorsModal] = useState(false);
 
   const [addAssignedEmpId, setAddAssignedEmpId] = useState('');
   const [transferringClient, setTransferringClient] = useState<V2McaClient | null>(null);
@@ -253,7 +256,7 @@ export default function V2MCA({
       clientState: state,
       incomeTaxId: itId,
       incomeTaxPassword: itPass,
-      auditorFirmId: (type === 'PRIVATE LIMITED COMPANY' || type === 'SECTION 8 NGO') ? selectedAuditorId : undefined,
+      auditorFirmId: selectedAuditorId || undefined,
       isInc20aFiled: (type === 'PRIVATE LIMITED COMPANY' || type === 'SECTION 8 NGO') ? isInc20aFiled : undefined,
       isAdt1Filed: (type === 'PRIVATE LIMITED COMPANY' || type === 'SECTION 8 NGO') ? isAdt1Filed : undefined,
       directors,
@@ -593,6 +596,15 @@ export default function V2MCA({
               <button onClick={handleExportMcaClients} className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold px-3 py-1.5 rounded-xl cursor-pointer">
                 <Download className="h-4 w-4" /> Export Excel
               </button>
+              <button 
+                type="button" 
+                onClick={() => setShowAuditorsModal(true)} 
+                className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold px-3 py-1.5 rounded-xl border border-indigo-200/60 dark:border-indigo-800/60 cursor-pointer shadow-3xs"
+                title="Add, edit or delete CA/CS Statutory Auditors"
+              >
+                <GraduationCap className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                <span>Auditors (CA/CS) ({auditors.length})</span>
+              </button>
             </div>
           </div>
 
@@ -643,15 +655,25 @@ export default function V2MCA({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-500">Auditor / CA firm link</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] uppercase font-bold text-slate-500">Appointed CA / CS Auditor</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowAuditorsModal(true)}
+                      className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                    >
+                      + Manage CA/CS
+                    </button>
+                  </div>
                   <select 
-                    disabled={type === 'LLP'}
                     value={selectedAuditorId} 
                     onChange={e => setSelectedAuditorId(e.target.value)} 
-                    className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl disabled:bg-slate-100 disabled:opacity-50"
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl"
                   >
-                    <option value="">-- No Auditor (Only private Ltd/NGO Audits) --</option>
-                    {auditors.map(a => <option key={a.id} value={a.id}>{a.name} (FRN {a.frnNo})</option>)}
+                    <option value="">-- Choose Appointed Statutory Auditor --</option>
+                    {auditors.map(a => (
+                      <option key={a.id} value={a.id}>{a.name} ({a.professionalType || 'CA'}) - {a.firmName} {a.frnNo ? `[FRN: ${a.frnNo}]` : ''}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -1710,18 +1732,27 @@ export default function V2MCA({
               </div>
 
               <div className="space-y-1 md:col-span-2">
-                <label className="text-[10px] uppercase font-bold text-slate-400 block font-sans">Auditor firm link</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 block font-sans">Appointed CA / CS Auditor</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowAuditorsModal(true)}
+                    className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                  >
+                    + Manage CA/CS
+                  </button>
+                </div>
                 <select 
                   value={editingMcaClient.auditorFirmId || ''}
                   onChange={e => {
                     const val = e.target.value;
-                    setEditingMcaClient(prev => prev ? { ...prev, auditorFirmId: val } : null);
+                    setEditingMcaClient(prev => prev ? { ...prev, auditorFirmId: val || undefined } : null);
                   }}
                   className="w-full p-2 bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl font-sans text-slate-800 dark:text-slate-100"
                 >
-                  <option value="">-- Choose Connected CA Auditor --</option>
+                  <option value="">-- Choose Appointed Statutory Auditor --</option>
                   {auditors.map(a => (
-                    <option key={a.id} value={a.id}>{a.name} ({a.firmName || 'CA Firm'})</option>
+                    <option key={a.id} value={a.id}>{a.name} ({a.professionalType || 'CA'}) - {a.firmName || 'Firm'} {a.frnNo ? `[FRN: ${a.frnNo}]` : ''}</option>
                   ))}
                 </select>
               </div>
@@ -1929,6 +1960,24 @@ export default function V2MCA({
                 Save Changes
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reusable CA/CS Masters Modal */}
+      {showAuditorsModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl p-6 relative">
+            <button
+              onClick={() => {
+                setShowAuditorsModal(false);
+                setAuditors(getV2Auditors());
+              }}
+              className="absolute top-5 right-5 p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <V2Masters initialTab="auditor" />
           </div>
         </div>
       )}

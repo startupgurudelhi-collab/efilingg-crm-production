@@ -38,6 +38,8 @@ import {
   Zap,
   BarChart3,
   Globe,
+  GraduationCap,
+  Scale
 } from 'lucide-react';
 import { Employee } from '../types';
 import { hasModuleAccess } from '../lib/permissions';
@@ -52,7 +54,9 @@ import {
   getV2DscClients,
   getV2OtherServiceClients,
   getV2Tasks,
-  getV2Trademarks
+  getV2Trademarks,
+  getV2Auditors,
+  getV2TrademarkAttorneys
 } from '../lib/v2_db';
 import { getISTDateString } from '../lib/db';
 import { AiAgentRepository } from '../lib/aiAgent/db';
@@ -123,6 +127,8 @@ export type NavigationTarget =
   | 'ops_itr_individual'
   | 'ops_itr_business'
   | 'ops_itr_audit'
+  // Balance Sheet Preparation (Proprietorship)
+  | 'ops_balance_sheet'
   // MCA & ROC
   | 'ops_mca_dashboard'
   | 'ops_mca_pvt_ltd'
@@ -158,6 +164,11 @@ export type NavigationTarget =
   | 'ops_clients_master'
   | 'ops_clients_allocation'
   | 'ops_clients_mapping'
+  // CA, CS & Advocates Masters
+  | 'ops_masters'
+  | 'ops_auditors'
+  | 'ops_attorneys'
+  | 'ops_master_categories'
   // Legacy aliases
   | 'ops_gst'
   | 'ops_itr'
@@ -250,11 +261,13 @@ export default function ExecutiveSidebar({
     trademark: true,
     gst: false,
     itr: false,
+    balance_sheet: true,
     mca: false,
     trust: false,
     dsc: false,
     license: false,
-    clients: false
+    clients: false,
+    masters: true
   });
 
   const toggleAccordion = (key: string) => {
@@ -343,6 +356,9 @@ export default function ExecutiveSidebar({
       const totalClients = gstClients.length + mcaClients.length + itrClients.length + trustClients.length + dscClients.length + otherClients.length;
       const unmappedClients = gstClients.filter(c => !c.assignedEmployeeId).length + mcaClients.filter(c => !c.assignedEmployeeId).length + itrClients.filter(c => !c.assignedEmployeeId).length;
 
+      const auditors = getV2Auditors();
+      const attorneys = getV2TrademarkAttorneys();
+
       return {
         myTasks, teamTasks, assignedTasks: tasks.length, dueTodayTasks, overdueTasks, completedTasks,
         tmTotal, tmApplied, tmObjected, tmHearings, tmApproved,
@@ -352,7 +368,8 @@ export default function ExecutiveSidebar({
         ngoClients, count12A, count80G: count12A, form10bPending,
         dscActive, dscRenewalDue, dscExpired,
         fssaiCount, msmeCount, iecCount, tradeLicenseCount, labourLicenseCount,
-        totalClients, unmappedClients
+        totalClients, unmappedClients,
+        auditorsCount: auditors.length, attorneysCount: attorneys.length
       };
     } catch (e) {
       return {
@@ -364,7 +381,8 @@ export default function ExecutiveSidebar({
         ngoClients: 0, count12A: 0, count80G: 0, form10bPending: 0,
         dscActive: 0, dscRenewalDue: 0, dscExpired: 0,
         fssaiCount: 0, msmeCount: 0, iecCount: 0, tradeLicenseCount: 0, labourLicenseCount: 0,
-        totalClients: 0, unmappedClients: 0
+        totalClients: 0, unmappedClients: 0,
+        auditorsCount: 0, attorneysCount: 0
       };
     }
   }, [sessionUser.id]);
@@ -413,6 +431,7 @@ export default function ExecutiveSidebar({
     items: [
       { id: 'settings_ai', label: 'AI Sales Agent', icon: ShieldCheck, highlight: true },
       { id: 'settings_whatsapp', label: 'WhatsApp Settings', icon: PhoneCall },
+      { id: 'ops_masters', label: 'CA/CS & Advocates Master', icon: GraduationCap },
       { id: 'settings_recovery', label: 'Recovery Center', icon: Lock },
       { id: 'settings_audit', label: 'Audit Logs', icon: Database },
       { id: 'settings_security', label: 'Security Telemetry', icon: Shield },
@@ -741,6 +760,30 @@ export default function ExecutiveSidebar({
             </div>
           )}
 
+          {/* ACCORDION: BALANCE SHEET PREPARATION (PROPRIETORSHIP ONLY) */}
+          {hasModuleAccess(sessionUser, 'balance_sheet') && (
+            <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
+              <button
+                onClick={() => toggleAccordion('balance_sheet')}
+                className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 cursor-pointer"
+              >
+                <div className="flex items-center gap-1.5">
+                  <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-500" />
+                  {!isCollapsed && <span>BALANCE SHEET (PROPRIETOR)</span>}
+                </div>
+                {!isCollapsed && (
+                  <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.balance_sheet ? 'rotate-180' : ''}`} />
+                )}
+              </button>
+
+              {(!isCollapsed && openAccordions.balance_sheet) && (
+                <div className="space-y-0.5 pl-2 border-l border-emerald-500/20 ml-2">
+                  {renderOpsSubItem('ops_balance_sheet', 'Balance Sheet Prep', undefined, 'green')}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ACCORDION 5: MCA & ROC */}
           {hasModuleAccess(sessionUser, 'mca_roc') && (
             <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
@@ -885,6 +928,31 @@ export default function ExecutiveSidebar({
               )}
             </div>
           )}
+
+          {/* ACCORDION 10: PROFESSIONAL MASTERS (CA/CS & ADVOCATES) */}
+          <div className="space-y-0.5 border-t border-slate-150 dark:border-slate-800 pt-1.5">
+            <button
+              onClick={() => toggleAccordion('masters')}
+              className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+            >
+              <div className="flex items-center gap-1.5">
+                <GraduationCap className="h-3.5 w-3.5 text-indigo-500" />
+                {!isCollapsed && <span>CA/CS & ADVOCATES</span>}
+              </div>
+              {!isCollapsed && (
+                <ChevronDown className={`h-3 w-3 transition-transform ${openAccordions.masters ? 'rotate-180' : ''}`} />
+              )}
+            </button>
+
+            {(!isCollapsed && openAccordions.masters) && (
+              <div className="space-y-0.5 pl-2 border-l border-indigo-500/20 ml-2">
+                {renderOpsSubItem('ops_masters', 'Master Directory')}
+                {renderOpsSubItem('ops_auditors', 'CA & CS Auditors', opsCounts.auditorsCount)}
+                {renderOpsSubItem('ops_attorneys', 'Advocates & Attorneys', opsCounts.attorneysCount)}
+                {renderOpsSubItem('ops_master_categories', 'Service Categories')}
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         /* STANDARD MODULES (SALES, WORKFLOW, SETTINGS, HR) */

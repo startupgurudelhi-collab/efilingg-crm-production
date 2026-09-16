@@ -378,7 +378,14 @@ export default function ComplianceControlGrid({
           </div>
 
           <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400">
-            <span>Notice & Scrutiny Cases: <strong className="text-rose-500 font-bold">{itrData.noticeCasesCount}</strong></span>
+            <button
+              onClick={() => onNavigate('balance_sheet')}
+              className="text-emerald-600 dark:text-emerald-400 font-bold hover:underline cursor-pointer flex items-center gap-1"
+              title="Open Balance Sheet Preparation for Proprietorship"
+            >
+              <FileSpreadsheet className="h-3 w-3" />
+              <span>Balance Sheet Prep</span>
+            </button>
             <button
               onClick={() => onNavigate('itr', 'itr')}
               className="text-blue-600 dark:text-blue-400 font-bold hover:underline cursor-pointer"

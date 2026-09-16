@@ -6,7 +6,7 @@
 import React from 'react';
 import {
   PlusCircle, FileSpreadsheet, Building2, Shield, Landmark,
-  UserCheck, Users, FilePlus, Zap, Sparkles
+  UserCheck, Users, FilePlus, Zap, Sparkles, GraduationCap
 } from 'lucide-react';
 import { Employee } from '../../types';
 import { hasModuleAccess } from '../../lib/permissions';
@@ -22,6 +22,7 @@ export default function QuickActionDock({ onAction, sessionUser }: QuickActionDo
   const canMca = isAdmin || hasModuleAccess(sessionUser, 'mca_roc');
   const canItr = isAdmin || hasModuleAccess(sessionUser, 'income_tax');
   const canTrust = isAdmin || hasModuleAccess(sessionUser, 'trust_ngo');
+  const canBalanceSheet = isAdmin || hasModuleAccess(sessionUser, 'balance_sheet');
   const canHr = isAdmin || hasModuleAccess(sessionUser, 'hr_workforce');
   const canClients = isAdmin || hasModuleAccess(sessionUser, 'client_master');
   const canServices = isAdmin || hasModuleAccess(sessionUser, 'registration_license');
@@ -126,11 +127,33 @@ export default function QuickActionDock({ onAction, sessionUser }: QuickActionDo
         <button
           id="dock-btn-create-service-request"
           onClick={() => onAction('create_service_request')}
-          className="p-2.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-rose-800 dark:text-rose-300 hover:bg-rose-100 hover:border-rose-300 transition flex flex-col items-center justify-center gap-1.5 text-center cursor-pointer group shadow-3xs"
+          className="p-2.5 rounded-2xl bg-rose-50 dark:bg-rose-955/40 border border-rose-200 dark:border-rose-800/60 text-rose-800 dark:text-rose-300 hover:bg-rose-100 hover:border-rose-300 transition flex flex-col items-center justify-center gap-1.5 text-center cursor-pointer group shadow-3xs"
         >
           <FilePlus className="h-4 w-4 text-rose-600 dark:text-rose-400 group-hover:scale-110 transition-transform" />
           <span className="text-[10.5px] font-extrabold leading-tight">Service Request</span>
         </button>
+        )}
+
+        {/* 8. CA/CS & Advocates Masters */}
+        <button
+          id="dock-btn-masters"
+          onClick={() => onAction('masters')}
+          className="p-2.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 text-indigo-800 dark:text-indigo-300 hover:bg-indigo-100 hover:border-indigo-300 transition flex flex-col items-center justify-center gap-1.5 text-center cursor-pointer group shadow-3xs"
+        >
+          <GraduationCap className="h-4 w-4 text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform" />
+          <span className="text-[10.5px] font-extrabold leading-tight">CA/CS Masters</span>
+        </button>
+
+        {/* 9. Balance Sheet Prep */}
+        {canBalanceSheet && (
+          <button
+            id="dock-btn-balance-sheet"
+            onClick={() => onAction('balance_sheet')}
+            className="p-2.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 hover:border-emerald-300 transition flex flex-col items-center justify-center gap-1.5 text-center cursor-pointer group shadow-3xs"
+          >
+            <FileSpreadsheet className="h-4 w-4 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
+            <span className="text-[10.5px] font-extrabold leading-tight">Balance Sheet</span>
+          </button>
         )}
       </div>
     </div>

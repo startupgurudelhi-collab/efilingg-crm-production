@@ -11,6 +11,7 @@ export const DEFAULT_OPS_MODULES: AppModuleId[] = [
   'gst',
   'mca_roc',
   'income_tax',
+  'balance_sheet',
   'trademark',
   'trust_ngo',
   'dsc',
@@ -119,6 +120,11 @@ export function canAccessNavigationTarget(emp: Employee | null, target: string):
   // Client Master Targets
   if (target === 'ops_clients' || target.startsWith('ops_clients_')) {
     return hasModuleAccess(emp, 'client_master');
+  }
+
+  // CA/CS & Advocates Master Targets
+  if (target === 'ops_masters' || target === 'ops_auditors' || target === 'ops_attorneys' || target === 'ops_master_categories') {
+    return hasModuleAccess(emp, 'mca_roc') || hasModuleAccess(emp, 'trademark') || hasModuleAccess(emp, 'client_master') || hasModuleAccess(emp, 'settings_control') || emp.role === 'team_leader';
   }
 
   // HR Module Targets

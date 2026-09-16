@@ -8,11 +8,13 @@ import {
   V2TrademarkClient, 
   getV2Trademarks, 
   addV2Trademark, 
+  updateV2Trademark,
   getV2TrademarkAttorneys, 
   getV1Employees 
 } from '../../lib/v2_db';
 import { getCurrentSession, setStorageString, getStorageString } from '../../lib/db';
 import { isClientAssignedToUser, getEmployeesWithModuleAccess } from '../../lib/permissions';
+import V2Masters from './V2Masters';
 import { 
   ShieldCheck, Award, FileText, Search, Plus, Filter, 
   Calendar, CheckCircle2, Clock, AlertTriangle, Scale, 
@@ -56,7 +58,8 @@ export default function V2TrademarkCopyright({
 
   // Load masters & databases
   const [trademarks, setTrademarks] = useState<V2TrademarkClient[]>(getV2Trademarks());
-  const attorneys = getV2TrademarkAttorneys();
+  const [attorneys, setAttorneys] = useState(() => getV2TrademarkAttorneys());
+  const [showMastersModal, setShowMastersModal] = useState(false);
   const rawEmployees = getV1Employees();
 
   // Copyright records state
@@ -434,6 +437,15 @@ export default function V2TrademarkCopyright({
             {stats.totalCopyrights}
           </span>
         </button>
+
+        <button
+          onClick={() => setShowMastersModal(true)}
+          className="px-3 py-2 font-bold uppercase rounded-xl text-xs transition cursor-pointer shrink-0 flex items-center gap-1.5 ml-auto text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 shadow-3xs"
+          title="Add, edit or delete Trademark Advocates & Counsels"
+        >
+          <Scale className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+          <span>Advocates / Attorneys ({attorneys.length})</span>
+        </button>
       </div>
 
       {/* =========================================================================
@@ -606,14 +618,22 @@ export default function V2TrademarkCopyright({
             <div className="space-y-4">
               {/* Trademark Attorneys Registry */}
               <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-5 shadow-xs space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-150 dark:border-slate-800">
                   <h3 className="font-extrabold text-sm uppercase text-slate-900 dark:text-white flex items-center gap-1.5">
                     <Scale className="h-4 w-4 text-indigo-500" />
                     <span>Representing Counsels</span>
                   </h3>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold">
-                    {attorneys.length} Attorneys
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowMastersModal(true)}
+                      className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-200/50 flex items-center gap-1"
+                    >
+                      <Plus className="h-3 w-3" /> Manage Advocates
+                    </button>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold">
+                      {attorneys.length} Attorneys
+                    </span>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -764,12 +784,30 @@ export default function V2TrademarkCopyright({
                             {tm.dateOfApply}
                           </td>
                           <td className="p-3.5">
-                            <div className="font-semibold text-slate-700 dark:text-slate-200">
-                              {counsel ? counsel.name : 'Unassigned'}
+                            <div className="space-y-1">
+                              <select
+                                value={tm.attorneyId || ''}
+                                onChange={e => {
+                                  const newAttId = e.target.value;
+                                  const updated = updateV2Trademark(tm.id, { attorneyId: newAttId || undefined });
+                                  if (updated) {
+                                    setTrademarks(prev => prev.map(t => t.id === tm.id ? updated : t));
+                                  }
+                                }}
+                                className="px-2 py-1 text-[10.5px] font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg cursor-pointer max-w-[170px] truncate"
+                                title="Click to reassign filing advocate/attorney"
+                              >
+                                <option value="">-- No Attorney --</option>
+                                {attorneys.map(a => (
+                                  <option key={a.id} value={a.id}>{a.name} ({a.attorneyCode})</option>
+                                ))}
+                              </select>
+                              {counsel && (
+                                <div className="text-[9px] text-slate-400 font-mono">
+                                  Code: {counsel.attorneyCode} {counsel.phone ? `• ${counsel.phone}` : ''}
+                                </div>
+                              )}
                             </div>
-                            {counsel && (
-                              <div className="text-[9.5px] text-slate-400 font-mono">Code: {counsel.attorneyCode}</div>
-                            )}
                           </td>
                           <td className="p-3.5">
                             <span className={`px-2 py-0.5 border rounded-lg text-[9.5px] font-bold ${getStageBadgeColor(tm.stage)}`}>
@@ -1209,7 +1247,16 @@ export default function V2TrademarkCopyright({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-500">Representing Attorney</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] uppercase font-bold text-slate-500">Representing Attorney</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowMastersModal(true)}
+                    className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                  >
+                    + Manage Advocates
+                  </button>
+                </div>
                 <select
                   value={tmAttorneyId}
                   onChange={e => setTmAttorneyId(e.target.value)}
@@ -1374,6 +1421,24 @@ export default function V2TrademarkCopyright({
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Masters Modal for Advocates & Attorneys */}
+      {showMastersModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl p-6 relative">
+            <button
+              onClick={() => {
+                setShowMastersModal(false);
+                setAttorneys(getV2TrademarkAttorneys());
+              }}
+              className="absolute top-5 right-5 p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <V2Masters initialTab="attorney" />
+          </div>
         </div>
       )}
 

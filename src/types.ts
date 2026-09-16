@@ -11,6 +11,7 @@ export type AppModuleId =
   | 'gst'                   // GST
   | 'mca_roc'               // MCA & ROC
   | 'income_tax'            // INCOME TAX RETURN
+  | 'balance_sheet'         // BALANCE SHEET PREPARATION (PROPRIETORSHIP)
   | 'trademark'             // TRADEMARK & COPYRIGHT
   | 'trust_ngo'             // TRUST AND NGO
   | 'dsc'                   // DSC MANAGEMENT
@@ -60,6 +61,14 @@ export const ALL_APP_MODULES: AppModuleInfo[] = [
     description: 'Individual & Business ITR, Direct Tax Clearance & Tax Audit 3CD',
     shortTitle: 'Income Tax',
     defaultIcon: 'Shield'
+  },
+  {
+    id: 'balance_sheet',
+    label: 'Balance Sheet Preparation',
+    category: 'Operations',
+    description: 'Trading A/c, Profit & Loss, Balance Sheet & Annexure A Depreciation for Proprietorship',
+    shortTitle: 'Balance Sheet',
+    defaultIcon: 'FileSpreadsheet'
   },
   {
     id: 'trademark',

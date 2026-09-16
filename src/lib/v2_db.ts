@@ -15,6 +15,9 @@ export interface V2Auditor {
   address: string;
   panNumber: string;
   email: string;
+  phone?: string;
+  professionalType?: 'CA' | 'CS' | 'CMA' | 'ADVOCATE';
+  stampUrl?: string; // Uploaded Round Stamp image (Base64 data URL)
 }
 
 export interface V2TrademarkAttorney {
@@ -23,6 +26,9 @@ export interface V2TrademarkAttorney {
   attorneyCode: string;
   email: string;
   address: string;
+  phone?: string;
+  barCouncilNo?: string;
+  professionalType?: 'ATTORNEY' | 'ADVOCATE' | 'CONSULTANT';
 }
 
 export interface V2GstClient {
@@ -1172,6 +1178,17 @@ export function updateV2TrademarkClient(updated: V2TrademarkClient): void {
     list[idx] = updated;
     saveV2Items(KEY_V2_TRADEMARKS, list);
   }
+}
+
+export function updateV2Trademark(id: string, updates: Partial<V2TrademarkClient>): V2TrademarkClient | null {
+  const list = getV2Trademarks();
+  const idx = list.findIndex(item => item.id === id);
+  if (idx !== -1) {
+    list[idx] = { ...list[idx], ...updates };
+    saveV2Items(KEY_V2_TRADEMARKS, list);
+    return list[idx];
+  }
+  return null;
 }
 
 export function deleteV2ItrClient(id: string): void {
